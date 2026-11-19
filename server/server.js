@@ -193,6 +193,7 @@ const PushSubscription = require('./models/PushSubscription');
 const pushService = require('./services/pushService');
 const { createHelloo, HELLOO_VOICE_PATH } = require('./lib/helloo');
 const { createSocial, SOCIAL_MEDIA_PATH } = require('./lib/social');
+const { createUsed } = require('./lib/used');
 const adsLib = require('./lib/ads');
 const HoomanAnswer = require('./models/HoomanAnswer');
 const HoomanProfile = require('./models/HoomanProfile');
@@ -445,6 +446,8 @@ app.use((req, res, next) => {
   // A social post's picture or short video (lib/social.js) — up to 8 MB,
   // read after sign-in and checked by its own first bytes.
   if (req.method === 'POST' && SOCIAL_MEDIA_PATH.test(req.path)) return next();
+  // A used item's picture (lib/used.js) — up to 700 KB, read after sign-in.
+  if (req.method === 'POST' && req.path === '/api/used/photos') return next();
   return globalJsonParser(req, res, next);
 });
 
@@ -1459,6 +1462,10 @@ helloo.mount(app, requireAuth);
 
 // GLOOBAL Social — posts, follows, likes, comments (lib/social.js).
 createSocial({ User, rateLimit, windowMs: WINDOW_MS, people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
+
+// GLOOBAL बाज़ार · Used (lib/used.js): people selling their own second-hand
+// things nearby. GLOOBAL keeps 0%: nothing there moves or holds money.
+createUsed({ User, rateLimit, windowMs: WINDOW_MS, currencyOf: async (user) => (await localCurrencyFor(accountCountryIso(user))) || 'INR' }).mount(app, requireAuth);
 
 // GLOOBAL Ads & Earn (lib/ads.js): each full view is one ordinary payment,
 // advertiser → viewer, through the send route below, under a standing

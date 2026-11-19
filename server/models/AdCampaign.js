@@ -22,6 +22,8 @@ const adCampaignSchema = new mongoose.Schema(
     budget: { type: Number, required: true, min: 1 },
     spent: { type: Number, default: 0, min: 0 },
     views: { type: Number, default: 0, min: 0 },
+    // Of those, how many watched to the end.
+    fullViews: { type: Number, default: 0, min: 0 },
     status: { type: String, enum: ['active', 'paused', 'ended'], default: 'active', index: true },
     // Why it stopped by itself: 'short' (the balance could not cover a
     // view), 'done' (budget used). Empty when the advertiser did it.

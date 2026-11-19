@@ -21,7 +21,9 @@
 // ── What stops it being farmed ──────────────────────────────────────────
 //
 //   · one paid view per ad per GLOOBAL ID, ever (a unique index);
-//   · the whole ad must be watched: the server times start → claim itself;
+//   · the server times start → claim itself. Watched to the end pays the
+//     whole price; skipped pays the share for the time watched (2 of 30
+//     seconds at 0.50 is 0.03), and under 0.01 pays nothing;
 //   · at most DAILY_CAP paid ads a day per person;
 //   · never your own ad, nor one from a shop you run or its owner;
 //   · the advertiser's currency only, so nothing is converted.
@@ -35,7 +37,7 @@
 //   PUT  /api/ads/prefs                      { price, topics }
 //   GET  /api/ads/next?tz=&topic=&lat=&lng=  the next ad for me (in one category, near me, if asked), or none
 //   POST /api/ads/:id/start                  begin watching
-//   POST /api/ads/:id/claim                  watched in full → paid
+//   POST /api/ads/:id/claim                  { skip? } watched in full → paid; skipped → paid for the time watched
 //   POST /api/ads/:id/feel                   { liked: true | false }
 //   GET  /api/ads/campaigns                  my ads, with counts
 //   POST /api/ads/campaigns                  { title, media, seconds, maxPerView, budget, topics, pin }
@@ -117,7 +119,7 @@ async function readAdMandate(req) {
   if (want.length !== got.length || !crypto.timingSafeEqual(want, got)) throw new Error('bad ad mandate');
   if (Math.abs(Date.now() - Number(at)) > MANDATE_TTL_MS) throw new Error('stale ad mandate');
   const view = await AdView.findById(viewId).lean();
-  if (!view || view.status !== 'paying' || !view.reserved) throw new Error('no view waiting to be paid');
+  if (!view || view.status !== 'paying' || !view.reserved || !(view.amount > 0)) throw new Error('no view waiting to be paid');
   const campaign = await AdCampaign.findById(view.campaign).lean();
   if (!campaign || campaign.status !== 'active' || !campaign.mandateAt) throw new Error('no standing instruction for this ad');
   return { view, campaign };
@@ -126,7 +128,8 @@ async function readAdMandate(req) {
 function adMandateCovers(mandate, { senderId, receiverId, amount, senderCurrency, receiverCurrency }) {
   return sameId(mandate.campaign.owner, senderId)
     && sameId(mandate.view.viewer, receiverId)
-    && cents(amount) === cents(mandate.view.price)
+    && cents(amount) === cents(mandate.view.amount)
+    && cents(mandate.view.amount) <= cents(mandate.view.price)
     && cents(mandate.view.price) <= cents(mandate.campaign.maxPerView)
     && String(senderCurrency || '') === String(receiverCurrency || '')
     && String(senderCurrency || '') === mandate.campaign.currency;
@@ -150,19 +153,19 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
   async function today(viewerId, tz) {
     const since = dayStart(tz);
     const month = new Date(since); month.setUTCDate(month.getUTCDate() - 29);
-    const paid = await AdView.find({ viewer: viewerId, status: 'paid', paidAt: { $gte: month } }).select('price paidAt campaign referenceId').sort({ paidAt: -1 }).limit(1000).lean();
+    const paid = await AdView.find({ viewer: viewerId, status: 'paid', paidAt: { $gte: month } }).select('amount full paidAt campaign referenceId').sort({ paidAt: -1 }).limit(1000).lean();
     const day = paid.filter((v) => v.paidAt >= since);
-    return { count: day.length, cap: DAILY_CAP, earned: cents(day.reduce((t, v) => t + v.price, 0)), month: cents(paid.reduce((t, v) => t + v.price, 0)), rows: day.slice(0, 30) };
+    return { count: day.length, cap: DAILY_CAP, earned: cents(day.reduce((t, v) => t + v.amount, 0)), month: cents(paid.reduce((t, v) => t + v.amount, 0)), rows: day.slice(0, 30) };
   }
   const campaignOut = (c, extra) => Object.assign({
     id: String(c._id), title: c.title, media: { kind: c.media.kind, url: mediaUrl(c.media.id) }, seconds: c.seconds, topics: c.topics || [], currency: c.currency,
-    nearKm: (c.near && c.near.km) || 0, maxPerView: c.maxPerView, budget: c.budget, spent: cents(c.spent), left: Math.max(0, cents(c.budget - c.spent)), views: c.views, status: c.status, stopReason: c.stopReason || '', at: c.createdAt,
+    nearKm: (c.near && c.near.km) || 0, maxPerView: c.maxPerView, budget: c.budget, spent: cents(c.spent), left: Math.max(0, cents(c.budget - c.spent)), views: c.views, fullViews: c.fullViews || 0, status: c.status, stopReason: c.stopReason || '', at: c.createdAt,
   }, extra || {});
 
   // The next ad this person may be paid for, or null.
   // `only`: one category the person is browsing right now, over their saved ones.
   async function pickFor(me, prefs, currency, only, where) {
-    const seen = await AdView.find({ viewer: me._id, status: { $in: ['paying', 'paid', 'failed'] } }).select('campaign').lean();
+    const seen = await AdView.find({ viewer: me._id, status: { $in: ['paying', 'paid', 'skipped', 'failed'] } }).select('campaign').lean();
     // Never your own ad, nor one from a shop you run, nor from its owner.
     const mine = [me._id];
     if (me.shopOwnerId) mine.push(me.shopOwnerId);
@@ -187,7 +190,7 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
         const camps = ids.length ? await AdCampaign.find({ _id: { $in: ids } }).select('title owner').lean() : [];
         const byId = new Map(camps.map((c) => [String(c._id), c]));
         const cards = people && camps.length ? await people.cardsFor(camps.map((c) => c.owner)) : new Map();
-        const rows = t.rows.map((v) => { const c = byId.get(String(v.campaign)); return { title: c ? c.title : '', advertiser: c ? cards.get(String(c.owner)) || null : null, price: v.price, at: v.paidAt, referenceId: v.referenceId }; });
+        const rows = t.rows.map((v) => { const c = byId.get(String(v.campaign)); return { title: c ? c.title : '', advertiser: c ? cards.get(String(c.owner)) || null : null, price: v.amount, full: Boolean(v.full), at: v.paidAt, referenceId: v.referenceId }; });
         return res.json({ success: true, currency, price: prefs.price, topics: prefs.topics, allTopics: TOPICS, priceMin: PRICE_MIN, priceMax: PRICE_MAX, today: { count: t.count, cap: t.cap, earned: t.earned }, month: t.month, rows });
       } catch (error) { return fail(res, 'me', error); }
     });
@@ -247,24 +250,37 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
         const id = oid(req.params.id);
         const view = id ? await AdView.findOne({ campaign: id, viewer: me._id }).lean() : null;
         if (!view) return res.status(404).json({ success: false, code: 'not_started', message: 'Start the ad first.' });
-        if (view.status === 'paid') return res.json({ success: true, paid: true, amount: view.price, currency: view.currency, referenceId: view.referenceId });
+        if (view.status === 'paid') return res.json({ success: true, paid: true, full: Boolean(view.full), amount: view.amount, currency: view.currency, referenceId: view.referenceId });
+        if (view.status === 'skipped') return res.json({ success: true, paid: false, skipped: true, amount: 0, currency: view.currency });
         if (view.status === 'failed') return res.status(409).json({ success: false, code: 'gone', message: 'That ad is not running any more.' });
         const c = await AdCampaign.findById(view.campaign).lean();
         if (!c) return res.status(404).json({ success: false, code: 'gone', message: 'That ad is not running any more.' });
         const waited = (Date.now() - new Date(view.startedAt).getTime()) / 1000;
-        if (waited < c.seconds - 1) return res.status(425).json({ success: false, code: 'too_soon', message: 'Keep watching to the end.', left: Math.ceil(c.seconds - waited) });
+        const skip = Boolean((req.body || {}).skip);
+        if (!skip && waited < c.seconds - 1) return res.status(425).json({ success: false, code: 'too_soon', message: 'Keep watching to the end.', left: Math.ceil(c.seconds - waited) });
+        // What this view is worth: all of the price at the end, or the share
+        // of it for the seconds watched — timed here, never by the phone.
+        // A view already at the paying step keeps the figure it was given.
+        const full = waited >= c.seconds - 1;
+        const due = view.status === 'paying' ? { amount: view.amount, watched: view.watched, full: view.full }
+          : { amount: full ? view.price : Math.floor(view.price * (Math.max(0, Math.min(c.seconds, Math.floor(waited))) / c.seconds) * 100 + 1e-6) / 100, watched: Math.max(0, Math.min(c.seconds, Math.floor(waited))), full };
+        if (!(due.amount >= 0.01)) {
+          const done = await AdView.findOneAndUpdate({ _id: view._id, status: 'started' }, { $set: { status: 'skipped', amount: 0, watched: due.watched, full: false } }, { returnDocument: 'after' }).lean();
+          if (!done) return res.status(409).json({ success: false, code: 'busy', message: 'This one is being paid. Give it a moment.' });
+          return res.json({ success: true, paid: false, skipped: true, amount: 0, currency: view.currency });
+        }
         // One claim at a time: only a view at 'started' moves on — or one
         // left at 'paying' by a crash, after a minute.
         const mine = await AdView.findOneAndUpdate(
           { _id: view._id, $or: [{ status: 'started' }, { status: 'paying', updatedAt: { $lt: new Date(Date.now() - STUCK_MS) } }] },
-          { $set: { status: 'paying' }, $inc: { tries: 1 } },
+          { $set: { status: 'paying', amount: due.amount, watched: due.watched, full: due.full }, $inc: { tries: 1 } },
           { returnDocument: 'after' }
         ).lean();
         if (!mine) return res.status(409).json({ success: false, code: 'busy', message: 'This one is being paid. Give it a moment.' });
         if (!mine.reserved) {
           const reserved = await AdCampaign.findOneAndUpdate(
-            { _id: c._id, status: 'active', $expr: { $lte: [{ $add: ['$spent', mine.price] }, { $add: ['$budget', 0.001] }] } },
-            { $inc: { spent: mine.price, views: 1 } },
+            { _id: c._id, status: 'active', $expr: { $lte: [{ $add: ['$spent', mine.amount] }, { $add: ['$budget', 0.001] }] } },
+            { $inc: { spent: mine.amount, views: 1, fullViews: mine.full ? 1 : 0 } },
             { returnDocument: 'after' }
           ).lean();
           if (!reserved) {
@@ -274,7 +290,7 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
           await AdView.updateOne({ _id: mine._id }, { $set: { reserved: true } });
         }
         const giveBack = async (status) => {
-          await AdCampaign.updateOne({ _id: c._id }, { $inc: { spent: -mine.price, views: -1 } });
+          await AdCampaign.updateOne({ _id: c._id }, { $inc: { spent: -mine.amount, views: -1, fullViews: mine.full ? -1 : 0 } });
           await AdView.updateOne({ _id: mine._id }, { $set: { status, reserved: false } });
         };
         const owner = await User.findById(c.owner).lean();
@@ -284,7 +300,7 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
           const r = await fetch(`http://127.0.0.1:${deps.PORT}/api/transactions/send`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${deps.issueAuthToken(owner)}`, [MANDATE_HEADER]: makeMandateHeader(String(mine._id)), 'X-Forwarded-For': '127.0.0.1' },
-            body: JSON.stringify({ senderSymbolId: owner.symbolId, receiverSymbolId: me.symbolId, amount: mine.price, note: `Ad watched · ${c.title}`.slice(0, 140), idempotencyKey: `ad-${String(mine._id)}`, adViewId: String(mine._id) }),
+            body: JSON.stringify({ senderSymbolId: owner.symbolId, receiverSymbolId: me.symbolId, amount: mine.amount, note: `Ad watched · ${c.title}`.slice(0, 140), idempotencyKey: `ad-${String(mine._id)}`, adViewId: String(mine._id) }),
           });
           const j = await r.json().catch(() => ({}));
           if (r.status === 201 || (r.status === 200 && j && j.success)) { outcome = 'paid'; referenceId = (j.transaction && j.transaction.referenceId) || j.referenceId || ''; }
@@ -295,7 +311,7 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
           await AdView.updateOne({ _id: mine._id }, { $set: { status: 'paid', paidAt: new Date(), referenceId } });
           const after = await AdCampaign.findById(c._id).select('budget spent').lean();
           if (after && after.budget - after.spent < PRICE_MIN - 1e-9) await AdCampaign.updateOne({ _id: c._id, status: 'active' }, { $set: { status: 'ended', stopReason: 'done', endedAt: new Date() } });
-          return res.json({ success: true, paid: true, amount: mine.price, currency: mine.currency, referenceId });
+          return res.json({ success: true, paid: true, full: Boolean(mine.full), amount: mine.amount, currency: mine.currency, referenceId });
         }
         if (outcome === 'short') {
           // The advertiser's balance could not cover it: stop the ad at

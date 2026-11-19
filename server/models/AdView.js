@@ -2,14 +2,20 @@ const mongoose = require('mongoose');
 
 // One person watching one ad. Unique per (campaign, viewer): a GLOOBAL ID
 // is paid for an ad once, ever. `price` is the viewer's own price, fixed
-// when they start. started → paying → paid, or back to started / failed.
+// when they start. started → paying → paid, or back to started / failed;
+// 'skipped' is a skip so early that its share came to nothing.
 const adViewSchema = new mongoose.Schema(
   {
     campaign: { type: mongoose.Schema.Types.ObjectId, ref: 'AdCampaign', required: true },
     viewer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     price: { type: Number, required: true, min: 0.1, max: 7 },
     currency: { type: String, required: true, uppercase: true },
-    status: { type: String, enum: ['started', 'paying', 'paid', 'failed'], default: 'started' },
+    status: { type: String, enum: ['started', 'paying', 'paid', 'skipped', 'failed'], default: 'started' },
+    // What this view pays: the whole price when watched to the end, the
+    // share of it for the time watched when skipped. Fixed when claimed.
+    amount: { type: Number, default: 0, min: 0 },
+    watched: { type: Number, default: 0, min: 0 },
+    full: { type: Boolean, default: false },
     startedAt: { type: Date, required: true },
     paidAt: { type: Date, default: null },
     referenceId: { type: String, default: '' },

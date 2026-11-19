@@ -47,8 +47,8 @@ function model(defaults = {}) {
   };
 }
 const stub = (rel, exp) => { const p = require.resolve(rel); require.cache[p] = { id: p, filename: p, loaded: true, exports: exp }; return exp; };
-const Campaign = stub('./models/AdCampaign', model({ spent: 0, views: 0, status: 'active', stopReason: '', topics: [] }));
-const View = stub('./models/AdView', model({ status: 'started', tries: 0, reserved: false, liked: null, referenceId: '' }));
+const Campaign = stub('./models/AdCampaign', model({ spent: 0, views: 0, fullViews: 0, status: 'active', stopReason: '', topics: [] }));
+const View = stub('./models/AdView', model({ status: 'started', tries: 0, reserved: false, liked: null, referenceId: '', amount: 0, watched: 0, full: false }));
 stub('./models/AdPrefs', model());
 const Media = stub('./models/SocialMedia', model({ post: null, ad: null }));
 stub('./models/Notification', { create: async () => ({}) });
@@ -138,7 +138,7 @@ test('watched in full: one ordinary payment, advertiser to viewer, at the viewer
   const v = watched(ad.id, asha, 9);
   const r = await call('post /api/ads/:id/claim', asha, { params: { id: ad.id } });
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body, { success: true, paid: true, amount: 0.3, currency: 'INR', referenceId: 'GLOOBAL-TXN-1' });
+  assert.deepEqual(r.body, { success: true, paid: true, full: true, amount: 0.3, currency: 'INR', referenceId: 'GLOOBAL-TXN-1' });
   assert.equal(sent.length, 1);
   assert.equal(sent[0].body.senderSymbolId, 'BRAND'); assert.equal(sent[0].body.receiverSymbolId, 'ASHA1'); assert.equal(sent[0].body.amount, 0.3);
   assert.equal(sent[0].body.idempotencyKey, `ad-${v._id}`);
@@ -239,4 +239,34 @@ test('an ad for a place: only people within its distance, and only when they say
   assert.equal((await call('post /api/ads/:id/start', dev, { params: { id: local } })).body.code, 'gone', 'cannot start it from nowhere');
   assert.equal((await call('post /api/ads/:id/start', dev, { params: { id: local }, query: { lat: '27.5600', lng: '76.6400' } })).status, 200);
   assert.ok(ads.kmBetween(here, { lat: 27.5600, lng: 76.6400 }) < 2);
+});
+
+test('skipping pays for the time watched, timed by the server; too early pays nothing; either way once', async () => {
+  const eve = { _id: id(), symbolId: 'EVE01', countryIso: 'IN' }; User.rows.push(eve);
+  const fay = { _id: id(), symbolId: 'FAY01', countryIso: 'IN' }; User.rows.push(fay);
+  await call('put /api/ads/prefs', eve, { body: { price: 0.5 } });
+  await call('put /api/ads/prefs', fay, { body: { price: 0.5 } });
+  const m = await Media.create({ owner: brand._id, kind: 'video' });
+  const long = (await call('post /api/ads/campaigns', brand, { body: { title: 'Thirty seconds', media: String(m._id), seconds: 30, maxPerView: 0.5, budget: 10, pin: '1' } })).body.campaign;
+  assert.equal(long.seconds, 30);
+  const before = sent.length;
+  // 2 of 30 seconds at 0.50 → 0.03
+  await call('post /api/ads/:id/start', eve, { params: { id: long.id } });
+  watched(long.id, eve, 2.4);
+  const r = await call('post /api/ads/:id/claim', eve, { params: { id: long.id }, body: { skip: true } });
+  assert.equal(r.body.paid, true); assert.equal(r.body.full, false); assert.equal(r.body.amount, 0.03);
+  assert.equal(sent[sent.length - 1].body.amount, 0.03);
+  const c = Campaign.rows.find((x) => eq(x._id, long.id));
+  assert.equal(c.spent, 0.03); assert.equal(c.views, 1); assert.equal(c.fullViews, 0);
+  // the phone cannot ask for more than the server timed
+  assert.equal((await call('post /api/ads/:id/claim', eve, { params: { id: long.id } })).body.amount, 0.03);
+  assert.equal(sent.length, before + 1);
+  assert.equal((await call('post /api/ads/:id/start', eve, { params: { id: long.id } })).body.code, 'seen');
+  // skipped at once: nothing, and no payment made
+  await call('post /api/ads/:id/start', fay, { params: { id: long.id } });
+  const none = await call('post /api/ads/:id/claim', fay, { params: { id: long.id }, body: { skip: true } });
+  assert.deepEqual({ paid: none.body.paid, skipped: none.body.skipped, amount: none.body.amount }, { paid: false, skipped: true, amount: 0 });
+  assert.equal(sent.length, before + 1);
+  assert.equal(c.spent, 0.03);
+  assert.equal((await call('post /api/ads/:id/start', fay, { params: { id: long.id } })).body.code, 'seen');
 });

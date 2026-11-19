@@ -19,7 +19,18 @@ const hellooMessageSchema = new mongoose.Schema(
   {
     conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'HellooConversation', required: true },
     from: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    kind: { type: String, enum: ['text', 'voice', 'payment', 'photo', 'call', 'order', 'sticker'], required: true },
+    kind: { type: String, enum: ['text', 'voice', 'payment', 'photo', 'video', 'call', 'order', 'sticker'], required: true },
+    // A short video clip (a snap): its bytes are in the chat's media store,
+    // like a photo's.
+    video: { seconds: { type: Number, default: 0 }, width: { type: Number, default: 0 }, height: { type: Number, default: 0 }, mime: { type: String, default: '' }, bytes: { type: Number, default: 0 } },
+    // How long a photo or clip stays: 'keep' (in the chat, may be saved),
+    // 'once' (gone after the other person opens it), 'day' (gone after 24
+    // hours). Empty on older messages, which behave as 'keep'.
+    view: { mode: { type: String, default: '' }, openedAt: { type: Date, default: null }, expiresAt: { type: Date, default: null } },
+    // The look the sender picked (a named filter the app draws); and who
+    // saved it to their phone, so the sender is told.
+    fx: { type: String, default: '', maxlength: 20 },
+    savedBy: { type: [mongoose.Schema.Types.ObjectId], default: [] },
     // A sticker is only its name: the picture is drawn by the app, so
     // nothing is uploaded and nothing here can carry a file.
     sticker: { id: { type: String, default: '', maxlength: 40 } },

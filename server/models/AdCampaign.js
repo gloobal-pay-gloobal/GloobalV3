@@ -14,6 +14,9 @@ const adCampaignSchema = new mongoose.Schema(
     // How long it must be watched to count, in seconds.
     seconds: { type: Number, required: true, min: 5, max: 60 },
     topics: { type: [String], default: [] },
+    // Only for people within `km` of this point (a tea stall wants the
+    // street, not the country). Empty: everyone in the currency.
+    near: { lat: { type: Number, default: null }, lng: { type: Number, default: null }, km: { type: Number, default: 0 } },
     currency: { type: String, required: true, uppercase: true },
     maxPerView: { type: Number, required: true, min: 0.1, max: 7 },
     budget: { type: Number, required: true, min: 1 },

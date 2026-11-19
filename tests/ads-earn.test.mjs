@@ -221,3 +221,22 @@ test('only the advertiser can pause, resume or end their ad', async () => {
   assert.equal((await call('post /api/ads/campaigns/:id', brand, { params: { id: ad.id }, body: { action: 'end' } })).body.campaign.status, 'ended');
   assert.equal((await call('post /api/ads/campaigns/:id', brand, { params: { id: ad.id }, body: { action: 'resume' } })).status, 409);
 });
+
+test('an ad for a place: only people within its distance, and only when they say where they are', async () => {
+  const stall = { _id: id(), symbolId: 'STALL', countryIso: 'IN' }; User.rows.push(stall);
+  const dev = { _id: id(), symbolId: 'DEV01', countryIso: 'IN' }; User.rows.push(dev);
+  await call('put /api/ads/prefs', dev, { body: { price: 0.1 } });
+  const here = { lat: 27.5530, lng: 76.6346 }; // Alwar
+  assert.equal((await newAd(stall, { title: 'Chai at the corner', near: { ...here, km: 40 } })).body.code, 'bad_place');
+  const made = await newAd(stall, { title: 'Chai at the corner', topics: ['food'], near: { ...here, km: 2 } });
+  assert.equal(made.body.campaign.nearKm, 2);
+  const local = made.body.campaign.id;
+  const idOf = async (query) => { const r = await call('get /api/ads/next', dev, { query: { topic: 'food', ...query } }); return r.body.ad && r.body.ad.id; };
+  assert.notEqual(await idOf({}), local, 'no place given');
+  assert.equal(await idOf({ lat: '27.5600', lng: '76.6400' }), local, 'about 1 km away');
+  assert.notEqual(await idOf({ lat: '27.6200', lng: '76.6346' }), local, 'about 7 km away');
+  assert.notEqual(await idOf({ lat: 'x', lng: '76.6' }), local, 'not a real place');
+  assert.equal((await call('post /api/ads/:id/start', dev, { params: { id: local } })).body.code, 'gone', 'cannot start it from nowhere');
+  assert.equal((await call('post /api/ads/:id/start', dev, { params: { id: local }, query: { lat: '27.5600', lng: '76.6400' } })).status, 200);
+  assert.ok(ads.kmBetween(here, { lat: 27.5600, lng: 76.6400 }) < 2);
+});

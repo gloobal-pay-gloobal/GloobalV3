@@ -86,7 +86,7 @@ User.rows.push(asha, ravi, meera, ashaShop);
 const ownItem = (await Item.create({ ownerSymbolId: 'CHAI1', title: 'Masala chai', price: 30, currency: 'INR', position: 0 }));
 const raviItem = (await Item.create({ ownerSymbolId: 'RAVI1', title: 'Not hers', price: 9, currency: 'INR', position: 0 }));
 
-const { createSocial, sniff } = require('./lib/social.js');
+const { createSocial, sniff, hashtagsOf } = require('./lib/social.js');
 const routes = {};
 const app = new Proxy({}, { get: (_, verb) => (path, ...fns) => { routes[`${verb} ${path}`] = fns; } });
 createSocial({ User, rateLimit: () => (q, s, n) => n(), windowMs: 1000 }).mount(app, (req, res, next) => { req.authUser = req._who; next(); });
@@ -195,4 +195,50 @@ test('deleting a post is only for its author', async () => {
   assert.equal(no.status, 404);
   const yes = await call('delete /api/social/posts/:id', asha, { params: { id: post.id } });
   assert.equal(yes.status, 200);
+});
+
+test('hashtags: taken from the caption, in any script, and a post is found by one', async () => {
+  assert.deepEqual(hashtagsOf('Subah ki #Chai aur #समोसा #chai #a #ok_2'), ['chai', 'समोसा', 'ok_2']);
+  const m = await upload(meera, JPEG);
+  const r = await call('post /api/social/posts', meera, { body: { media: [m.body.id], caption: 'Kulhad #Chai at the #corner', topic: 'food' } });
+  assert.deepEqual(r.body.post.hashtags, ['chai', 'corner']);
+  const byTag = await call('get /api/social/explore', ravi, { query: { plain: '1', tag: '#CHAI' } });
+  assert.ok(byTag.body.grid.length >= 1 && byTag.body.grid.every((p) => p.hashtags.includes('chai')));
+  const none = await call('get /api/social/explore', ravi, { query: { plain: '1', tag: 'nothinghere' } });
+  assert.equal(none.body.grid.length, 0);
+  const byTopics = await call('get /api/social/explore', ravi, { query: { plain: '1', topics: 'food,music' } });
+  assert.ok(byTopics.body.grid.length >= 1 && byTopics.body.grid.every((p) => ['food', 'music'].includes(p.topic)));
+  const found = await call('get /api/social/search', ravi, { query: { q: '#chai' } });
+  assert.ok(found.body.posts.some((p) => p.id === r.body.post.id));
+  const tags = await call('get /api/social/hashtags', ravi, { query: { q: 'ch' } });
+  assert.deepEqual(tags.body.tags.map((t) => t.tag), ['chai']);
+});
+
+test('a status lasts a day, shows to your followers and the people you follow, and never in the feed', async () => {
+  const m = await upload(asha, JPEG);
+  const st = await call('post /api/social/posts', asha, { body: { media: [m.body.id], caption: 'Open till 9', story: true, topic: 'food' } });
+  assert.equal(st.body.post.story, true);
+  assert.ok(new Date(st.body.post.expiresAt).getTime() > Date.now() + 23 * 3600e3);
+  const two = [await upload(asha, JPEG), await upload(asha, JPEG)];
+  assert.equal((await call('post /api/social/posts', asha, { body: { media: two.map((x) => x.body.id), story: true } })).body.code, 'one_status');
+  // Ravi follows Asha: he sees it. Meera has no tie to Asha: she does not.
+  const forRavi = await call('get /api/social/stories', ravi);
+  assert.ok(forRavi.body.people.some((g) => g.author.gloobalId === 'ASHA1' && g.items.length === 1));
+  // Asha is followed by Ravi: if Ravi posts one, Asha sees his too.
+  const rm = await upload(ravi, JPEG);
+  await call('post /api/social/posts', ravi, { body: { media: [rm.body.id], story: true } });
+  const forAsha = await call('get /api/social/stories', asha);
+  assert.equal(forAsha.body.people[0].mine, true, 'your own comes first');
+  assert.ok(forAsha.body.people.some((g) => g.author.gloobalId === 'RAVI1'));
+  const forMeera = await call('get /api/social/stories', meera);
+  assert.ok(!forMeera.body.people.some((g) => g.author.gloobalId === 'ASHA1'));
+  // Never in the feed, Explore or the profile grid.
+  const feed = await call('get /api/social/feed', ravi);
+  assert.ok(!feed.body.posts.some((p) => p.story));
+  const ex = await call('get /api/social/explore', ravi, { query: { plain: '1' } });
+  assert.ok(!ex.body.grid.some((p) => p.story));
+  // Gone after its day.
+  Post.rows.find((p) => String(p._id) === st.body.post.id).expiresAt = new Date(Date.now() - 1000);
+  const later = await call('get /api/social/stories', ravi);
+  assert.ok(!later.body.people.some((g) => g.author.gloobalId === 'ASHA1'));
 });

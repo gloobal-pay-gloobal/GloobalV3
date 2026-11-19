@@ -12,6 +12,8 @@
 //   DELETE /api/social/posts/:id            your own post
 //   GET    /api/social/feed?before=         people you follow, then more from everyone
 //   GET    /api/social/explore?topic=&before=
+//   GET    /api/social/hashtags?q=          the hashtags most used lately
+//   GET    /api/social/stories              day-long statuses of your circle
 //   GET    /api/social/search?q=
 //   GET    /api/social/profile/:gloobalId?side=&before=
 //   POST   /api/social/follow               { to, on }
@@ -36,6 +38,15 @@ const VIDEO_MAX = 8 * 1024 * 1024;
 const TOPICS = ['food', 'learn', 'shops', 'sports', 'music', 'travel', 'fun', 'work'];
 const HIDE_AFTER_REPORTS = 3;
 const PAGE = 15;
+const STORY_MS = 24 * 3600 * 1000;
+// The #words of a caption: letters and digits of any script, 2 to 30 long,
+// lower-cased, the first ten.
+function hashtagsOf(text) {
+  const out = [];
+  for (const m of String(text || '').matchAll(/#([\p{L}\p{M}\p{N}_]{2,30})/gu)) { const t = m[1].toLowerCase(); if (!out.includes(t)) out.push(t); if (out.length >= 10) break; }
+  return out;
+}
+const cleanTag = (v) => (hashtagsOf(`#${String(v || '').replace(/^#/, '')}`)[0] || '');
 
 const oid = (v) => (mongoose.isValidObjectId(v) ? new mongoose.Types.ObjectId(String(v)) : null);
 const sameId = (a, b) => String(a) === String(b);
@@ -93,6 +104,9 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       media: (p.media || []).map((m) => ({ id: String(m.id), kind: m.kind, url: mediaUrl(m.id) })),
       caption: p.caption || '',
       topic: p.topic || '',
+      hashtags: p.hashtags || [],
+      story: Boolean(p.story),
+      expiresAt: p.expiresAt || null,
       tags: (p.tags || []).map((t) => ({ itemId: String(t.itemId || ''), shop: t.shopSymbolId, title: t.title, price: t.price, currency: t.currency })),
       likes: p.likeCount || 0,
       comments: p.commentCount || 0,
@@ -101,7 +115,8 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       at: p.createdAt,
     })).filter((p) => p.author);
   }
-  const visible = (extra = {}) => Object.assign({ removedAt: null, hiddenAt: null }, extra);
+  // What feeds, Explore and search may show: live posts, never a status.
+  const visible = (extra = {}) => Object.assign({ removedAt: null, hiddenAt: null, story: { $ne: true } }, extra);
   const beforeOf = (req) => { const d = req.query.before ? new Date(String(req.query.before)) : null; return d && !Number.isNaN(d.getTime()) ? d : null; };
 
   function mount(app, baseAuth) {
@@ -150,7 +165,8 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       try {
         const id = oid(req.params.id);
         const m = id ? await SocialMedia.findById(id).lean() : null;
-        const post = m && m.post ? await SocialPost.findById(m.post).select('removedAt').lean() : null;
+        const post = m && m.post ? await SocialPost.findById(m.post).select('removedAt story expiresAt').lean() : null;
+        if (post && post.story && post.expiresAt && new Date(post.expiresAt).getTime() < Date.now()) return res.status(404).json({ success: false, message: 'Not here any more.' });
         // Served while it belongs to a live post, or to an ad.
         if (!m || !((post && !post.removedAt) || m.ad)) return res.status(404).json({ success: false, message: 'Not here any more.' });
         const buf = Buffer.from(m.data.buffer || m.data);
@@ -183,6 +199,8 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         if (!ids.length) return res.status(400).json({ success: false, code: 'no_media', message: 'Add a picture or a video.' });
         const media = await SocialMedia.find({ _id: { $in: ids }, owner: me._id, post: null }).select('_id kind').lean();
         if (media.length !== ids.length) return res.status(400).json({ success: false, code: 'bad_media', message: 'Some of those uploads are not yours or are already used.' });
+        const story = body.story === true;
+        if (story && media.length > 1) return res.status(400).json({ success: false, code: 'one_status', message: 'A status is one picture or one video.' });
         const videos = media.filter((m) => m.kind === 'video').length;
         if (videos > 1 || (videos && media.length > 1)) return res.status(400).json({ success: false, code: 'one_video', message: 'A post is up to 10 pictures, or one video.' });
         const order = new Map(ids.map((id, i) => [String(id), i]));
@@ -198,7 +216,10 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
           side: req.socialSide === 'shop' ? 'shop' : 'self',
           media: media.map((m) => ({ id: m._id, kind: m.kind })),
           caption: String(body.caption || '').slice(0, 2200),
-          topic,
+          hashtags: hashtagsOf(body.caption),
+          story,
+          expiresAt: story ? new Date(Date.now() + STORY_MS) : null,
+          topic: story ? '' : topic,
           tags: items.map((it) => ({ itemId: it._id, shopSymbolId: it.ownerSymbolId, title: it.title, price: it.price, currency: it.currency })),
         });
         await SocialMedia.updateMany({ _id: { $in: ids }, owner: me._id }, { $set: { post: post._id } });
@@ -238,14 +259,52 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       } catch (error) { return fail(res, 'feed', error); }
     });
 
+    // ── HASHTAGS ──────────────────────────────────────────────────────
+    // The hashtags most used lately (the last 600 posts), optionally those
+    // starting with what is typed: to pick from when posting, and to find by.
+    async function popularTags(prefix, limit) {
+      const rows = await SocialPost.find(visible({ 'hashtags.0': { $exists: true } })).select('hashtags').sort({ createdAt: -1 }).limit(600).lean();
+      const n = new Map();
+      for (const p of rows) for (const t of p.hashtags || []) if (!prefix || t.startsWith(prefix)) n.set(t, (n.get(t) || 0) + 1);
+      return [...n.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, limit).map(([tag, posts]) => ({ tag, posts }));
+    }
+    app.get('/api/social/hashtags', socialRead, requireAuth, async (req, res) => {
+      try {
+        return res.json({ success: true, tags: await popularTags(cleanTag(req.query.q), 20) });
+      } catch (error) { return fail(res, 'hashtags', error); }
+    });
+
+    // ── STATUS ────────────────────────────────────────────────────────
+    // The day-long statuses you may see: your own, those of the people you
+    // follow, and those of the people who follow you. Newest people first,
+    // each person's in the order they were posted.
+    app.get('/api/social/stories', socialRead, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser;
+        const [out, inn] = await Promise.all([SocialLink.find({ kind: 'follow', from: me._id }).select('to').lean(), SocialLink.find({ kind: 'follow', to: me._id }).select('from').lean()]);
+        const circle = [me._id, ...out.map((l) => l.to), ...inn.map((l) => l.from)];
+        const posts = await SocialPost.find({ author: { $in: circle }, story: true, removedAt: null, hiddenAt: null, expiresAt: { $gt: new Date() } }).sort({ createdAt: 1 }).limit(300).lean();
+        const shown = await postsOut(posts, me._id);
+        const groups = new Map();
+        for (const p of shown) { const k = `${p.author.accountId}:${p.author.side}`; if (!groups.has(k)) groups.set(k, { author: p.author, mine: p.mine, items: [], last: p.at }); const g = groups.get(k); g.items.push(p); g.last = p.at; }
+        const people = [...groups.values()].sort((a, b) => Number(b.mine) - Number(a.mine) || new Date(b.last) - new Date(a.last));
+        return res.json({ success: true, people });
+      } catch (error) { return fail(res, 'stories', error); }
+    });
+
     // ── EXPLORE ───────────────────────────────────────────────────────
     app.get('/api/social/explore', socialRead, requireAuth, async (req, res) => {
       try {
         const me = req.authUser;
         const topic = TOPICS.includes(String(req.query.topic || '')) ? String(req.query.topic) : '';
         const before = beforeOf(req);
-        const grid = await SocialPost.find(visible(Object.assign(topic ? { topic } : {}, before ? { createdAt: { $lt: before } } : {}))).sort({ createdAt: -1 }).limit(30).lean();
-        if (before) return res.json({ success: true, grid: await postsOut(grid, me._id), before: grid.length ? grid[grid.length - 1].createdAt : null });
+        // The plain Explore: a grid, narrowed to the categories the person
+        // chose (any of them) and, if asked, one hashtag.
+        const topics = String(req.query.topics || '').split(',').filter((t) => TOPICS.includes(t));
+        const tag = cleanTag(req.query.tag);
+        const narrow = Object.assign(topic ? { topic } : topics.length ? { topic: { $in: topics } } : {}, tag ? { hashtags: tag } : {});
+        const grid = await SocialPost.find(visible(Object.assign({}, narrow, before ? { createdAt: { $lt: before } } : {}))).sort({ createdAt: -1 }).limit(30).lean();
+        if (before || req.query.plain) return res.json({ success: true, grid: await postsOut(grid, me._id), before: grid.length ? grid[grid.length - 1].createdAt : null, tags: before ? undefined : await popularTags('', 14) });
         const weekAgo = new Date(Date.now() - 7 * 864e5);
         const trending = await SocialPost.find(visible(Object.assign({ createdAt: { $gte: weekAgo } }, topic ? { topic } : {}))).sort({ likeCount: -1, commentCount: -1, createdAt: -1 }).limit(6).lean();
         const learn = await SocialPost.find(visible({ $or: [{ topic: 'learn' }, { 'media.kind': 'video' }] })).sort({ createdAt: -1 }).limit(8).lean();
@@ -284,7 +343,9 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const shops = await User.find({ $or: [{ 'creatorProfile.handle': re }, { 'creatorProfile.handleFirst': re }] }).select(CARD).limit(12).lean();
         const posters = await SocialPost.distinct('author', { removedAt: null, side: 'self' });
         const persons = posters.length ? await User.find({ _id: { $in: posters.slice(0, 2000) }, fullName: re }).select(CARD).limit(12).lean() : [];
-        const posts = await SocialPost.find(visible({ caption: re })).sort({ likeCount: -1, createdAt: -1 }).limit(18).lean();
+        // "#chai" finds by the hashtag itself; plain words look in captions.
+        const asTag = q[0] === '#' ? cleanTag(q) : '';
+        const posts = await SocialPost.find(visible(asTag ? { hashtags: asTag } : { caption: re })).sort({ likeCount: -1, createdAt: -1 }).limit(18).lean();
         const found = await cards([...shops, ...persons].map((u) => u._id));
         return res.json({ success: true, people: [...shops.map((u) => cardOf(found.get(String(u._id)), 'shop')), ...persons.map((u) => cardOf(found.get(String(u._id)), 'self'))], posts: await postsOut(posts, req.authUser._id) });
       } catch (error) { return fail(res, 'search', error); }
@@ -301,7 +362,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const sideMatch = u.shopOwnerId ? {} : (hasShop ? (side === 'shop' ? { side: 'shop' } : { side: 'self' }) : {});
         const before = beforeOf(req);
         const own = sameId(u._id, me._id);
-        const base = Object.assign({ author: u._id, removedAt: null }, own ? {} : { hiddenAt: null }, sideMatch);
+        const base = Object.assign({ author: u._id, removedAt: null, story: { $ne: true } }, own ? {} : { hiddenAt: null }, sideMatch);
         const posts = await SocialPost.find(Object.assign({}, base, before ? { createdAt: { $lt: before } } : {})).sort({ createdAt: -1 }).limit(30).lean();
         const [postCount, followers, following, isFollowing] = await Promise.all([
           SocialPost.countDocuments(base), SocialLink.countDocuments({ kind: 'follow', to: u._id }), SocialLink.countDocuments({ kind: 'follow', from: u._id }),
@@ -414,4 +475,4 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
   return { mount };
 }
 
-module.exports = { createSocial, SOCIAL_MEDIA_PATH: MEDIA_PATH, sniff };
+module.exports = { hashtagsOf, createSocial, SOCIAL_MEDIA_PATH: MEDIA_PATH, sniff };

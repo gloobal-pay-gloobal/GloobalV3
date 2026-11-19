@@ -26,6 +26,13 @@ const socialPostSchema = new mongoose.Schema(
       price: { type: Number, default: 0 },
       currency: { type: String, maxlength: 3, default: '' },
     }],
+    // The #words in the caption, lower-cased: found by, like a category
+    // anybody can make.
+    hashtags: { type: [String], default: [], index: true },
+    // A status: shown for a day to the people who follow you and the people
+    // you follow, in the row above the feed — never in the feed or Explore.
+    story: { type: Boolean, default: false },
+    expiresAt: { type: Date, default: null },
     likeCount: { type: Number, default: 0 },
     commentCount: { type: Number, default: 0 },
     // Taken down by its author, or hidden after reports until someone looks.

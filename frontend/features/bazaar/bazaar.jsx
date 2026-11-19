@@ -444,7 +444,10 @@ function BazaarItemList({ items, busy, failed, fuzzy, query, near, sort, onSort,
   }</div></div>;
 }
 
-function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", ownerKey = "", onOpen, onPay, onQuery, onToast, filterOpen = false, onFilterClose, onActiveChange }) {
+function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", ownerKey = "", onOpen, onPay, onQuery, onToast, filterOpen = false, onFilterClose, onActiveChange, onUsedPay, onUsedChat }) {
+  // 0241: Used — neighbours selling second-hand things — opens over this.
+  const [usedOpen, setUsedOpen] = useState62(false);
+  const closeUsed = useBackClose(usedOpen, () => setUsedOpen(false));
   const [recent, setRecent] = useState62(() => bazaarRecentLoad(ownerKey));
   // Every way out of this section to a shop goes through here, so a shop
   // opened is remembered with the search that found it.
@@ -747,7 +750,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     /* 0226: the name is in the screen's header now (Dashboard, Pay &
        Services), so it is not said a second time here — only List / Map,
        on the right where it was. */
-  }<div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, margin: "2px 2px 10px" }}><span role="tablist" aria-label="Show as" style={{
+  }<div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, margin: "2px 2px 10px" }}>{usedOpen && typeof UsedMarket === "function" ? <UsedMarket here={here} onHere={(p) => setHere(p)} onClose={closeUsed} onPay={onUsedPay ? (seller, amount, item) => { setUsedOpen(false); onUsedPay(seller, amount, item); } : undefined} onChat={onUsedChat ? (person, item) => { setUsedOpen(false); onUsedChat(person, item); } : undefined} /> : null}{typeof UsedMarket === "function" ? <button onClick={() => setUsedOpen(true)} data-testid="bazaar-used" aria-label="Used: buy and sell second-hand near you" className="v2-tap" style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px", borderRadius: 12, border: "none", background: T.accentSoft, color: T.accent, fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: T.fontBody, flexShrink: 0 }}><BzItemIcon size={15} color={T.accent} />Used</button> : null}<span role="tablist" aria-label="Show as" style={{
     display: "inline-flex", padding: 3, borderRadius: 12, background: T.surfaceAlt, flexShrink: 0
   }}>{[["List", false, BzList], ["Map", true, BzMapIcon]].map(([label, value, Icon]) => <button
     key={label}

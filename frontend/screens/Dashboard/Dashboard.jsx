@@ -4220,6 +4220,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         setMoreQuery(dot > 0 ? text.slice(0, dot) : text);
         setMoreQueryLast(dot > 0 ? text.slice(dot + 1) : "");
       }}
+      onUsedPay={onPayPerson ? (seller, amount) => onPayPerson({ gloobalId: seller.gloobalId, name: seller.name, countryIso: seller.countryIso || (dialCountry && dialCountry.iso), prefillAmount: amount }) : undefined}
       onToast={showToast2}
       onOpen={async (shop, intent) => {
         const found = await GloobalApi.resolveCreatorHandle(shop.handle || "");

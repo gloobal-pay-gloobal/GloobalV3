@@ -369,6 +369,9 @@ const FRONTEND_MODULES = [
   // Gloobal बाज़ार on Pay & Services: famous categories and Near me.
   "features/bazaar/gloobalMap.jsx",
   "features/bazaar/bazaarMap.jsx",
+  // बाज़ार · Used: neighbours selling second-hand things; opened from
+  // BazaarSection, so it must come before it only for reading order.
+  "features/used/used.jsx",
   "features/bazaar/bazaar.jsx",
   // Where an owner changes how their shop looks. After CreatorPage only
   // for reading order; both are function declarations.

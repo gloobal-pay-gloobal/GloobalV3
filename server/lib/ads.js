@@ -60,7 +60,7 @@ const PRICE_MIN = 0.1;
 const PRICE_MAX = 7;
 const BUDGET_MIN = 10;
 const BUDGET_MAX = 100000;
-const TOPICS = ['food', 'travel', 'transport', 'phones', 'classes', 'fashion', 'sports', 'money', 'games', 'home', 'health'];
+const TOPICS = ['work', 'food', 'travel', 'transport', 'phones', 'classes', 'fashion', 'sports', 'money', 'games', 'home', 'health'];
 const STUCK_MS = 60 * 1000;
 const NEAR_KM = [1, 2, 3, 5, 10, 25, 50, 100];
 // An advertiser is told about the people an ad would reach only as a crowd:
@@ -202,7 +202,11 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
     }).sort({ maxPerView: -1, createdAt: 1 }).limit(200).lean();
     // Browsing by a hashtag: only ads that carry it. By a category: only that
     // category. Otherwise the person's saved categories.
-    const fits = (c) => (tag ? (c.hashtags || []).includes(tag) : only ? (c.topics || []).includes(only) : !prefs.topics.length || !(c.topics || []).length || c.topics.some((t) => prefs.topics.includes(t)));
+    // Categories are strict: an ad in a category reaches only people who
+    // chose that category or are browsing it — a labour ad never reaches
+    // someone who asked for food, nor someone who asked for nothing. An ad
+    // with no category reaches everyone.
+    const fits = (c) => (tag ? (c.hashtags || []).includes(tag) : only ? (c.topics || []).includes(only) : !(c.topics || []).length || c.topics.some((t) => prefs.topics.includes(t)));
     return list.find((c) => fits(c) && inReach(c, where) && openFor(c, prefs.price)) || null;
   }
 
@@ -220,7 +224,8 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
     const rows = await AdPrefs.find({ currency, userId: { $ne: me._id }, seenAt: { $gte: since } }).select('price topics place').limit(20000).lean();
     const fit = rows.filter((p) => {
       const t = cleanTopics(p.topics);
-      if (topics.length && t.length && !t.some((x) => topics.includes(x))) return false;
+      // The same strict rule as showing: only people who chose one of them.
+      if (topics.length && !t.some((x) => topics.includes(x))) return false;
       if (!km) return true;
       return Boolean(p.place) && p.place.lat !== null && p.place.lat !== undefined && kmBetween(where, p.place) <= km;
     });

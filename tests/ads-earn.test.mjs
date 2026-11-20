@@ -113,6 +113,8 @@ test('with the PIN the ad runs, and its picture belongs to it', async () => {
 
 test('a person sees ads that pay at least their price — and never their own', async () => {
   await call('put /api/ads/prefs', asha, { body: { price: 0.3 } });
+  assert.equal((await call('get /api/ads/next', asha)).body.ad, null, 'a phones ad does not reach someone who chose nothing');
+  await call('put /api/ads/prefs', asha, { body: { topics: ['phones'] } });
   assert.equal((await call('get /api/ads/next', asha)).body.ad.price, 0.3);
   await call('put /api/ads/prefs', ravi, { body: { price: 2 } });
   assert.equal((await call('get /api/ads/next', ravi)).body.ad, null, 'asks more than the ad pays');
@@ -285,7 +287,7 @@ test('an advertiser sees the crowd an ad would reach and what it asks — never 
   };
   const before = (await call('get /api/ads/audience', stall, { query: {} })).body.people;
   // Six people within about a kilometre of the stall; most ask 0.10.
-  for (const [i, price] of [0.1, 0.1, 0.1, 0.1, 0.5, 1].entries()) await mk(`NEAR${i}`, price, i === 5 ? ['travel'] : [], { lat: 27.5571 + i * 0.0001, lng: 76.6389 });
+  for (const [i, price] of [0.1, 0.1, 0.1, 0.1, 0.5, 1].entries()) await mk(`NEAR${i}`, price, i === 5 ? ['travel'] : ['food'], { lat: 27.5571 + i * 0.0001, lng: 76.6389 });
   // Two far away, one who never said where.
   await mk('FAR1', 0.1, [], { lat: 27.9, lng: 76.6 }); await mk('FAR2', 2, [], { lat: 28.6, lng: 77.2 }); await mk('NOWHERE', 0.1, [], null);
 
@@ -356,4 +358,25 @@ test('a budget spread over days: no more than a day\'s share in a day, and it en
   assert.equal((await call('post /api/ads/campaigns/:id', gym, { params: { id: c.id }, body: { action: 'pause' } })).body.code, 'time');
   const ended = (await call('get /api/ads/campaigns', gym)).body.campaigns.find((x) => x.id === c.id);
   assert.equal(ended.status, 'ended'); assert.equal(ended.stopReason, 'time'); assert.equal(ended.spent, 1);
+});
+
+test('a labour ad reaches only people looking for work — never someone who asked for food, nor someone who asked for nothing', async () => {
+  const worker = { _id: id(), symbolId: 'WORK1', countryIso: 'IN' }; User.rows.push(worker);
+  const hirer = { _id: id(), symbolId: 'HIRE1', countryIso: 'IN' }; const foodie = { _id: id(), symbolId: 'FOOD1', countryIso: 'IN' }; const blank = { _id: id(), symbolId: 'BLNK1', countryIso: 'IN' };
+  User.rows.push(hirer, foodie, blank);
+  await call('put /api/ads/prefs', hirer, { body: { price: 0.1, topics: ['work'] } });
+  await call('put /api/ads/prefs', foodie, { body: { price: 0.1, topics: ['food'] } });
+  await call('put /api/ads/prefs', blank, { body: { price: 0.1, topics: [] } });
+  const made = await newAd(worker, { title: 'Mason, 12 years, free from Monday', maxPerView: 7, budget: 700, topics: ['work'], hashtags: ['mason'] });
+  const c = made.body.campaign.id;
+  const seen = async (u, query = {}) => { const r = await call('get /api/ads/next', u, { query }); return r.body.ad && r.body.ad.id === c; };
+  assert.equal(await seen(hirer), true, 'chose work');
+  assert.equal(await seen(foodie), false, 'chose food');
+  assert.equal(await seen(blank), false, 'chose nothing');
+  assert.equal(await seen(foodie, { topic: 'work' }), true, 'browsing Work right now');
+  assert.equal(await seen(blank, { tag: 'mason' }), true, 'browsing its hashtag');
+  const crowd = (await call('get /api/ads/audience', worker, { query: { topics: 'work' } })).body;
+  assert.ok(crowd.people >= 1);
+  const hirers = Prefs.rows.filter((p) => (p.topics || []).includes('work') && !eq(p.userId, worker._id)).length;
+  assert.equal(crowd.people, hirers, 'the crowd counts only people who chose work');
 });

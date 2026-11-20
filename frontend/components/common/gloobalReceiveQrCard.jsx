@@ -553,6 +553,19 @@ function gloobalQrToPngBlob(value, { moduleScale = 12, discColor, markStep = 0, 
   });
 }
 
+// Helloo, GLOOBAL's messenger: its address, and its mark (the same picture
+// as Helloo's own app icon), for the QR card's Helloo button and the
+// Helloo row in Profile.
+var GLOOBAL_HELLOO_APP = "https://gloobalhelloo.netlify.app";
+function GloobalHellooMark({ size = 18 }) {
+  return <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden="true" style={{ flexShrink: 0, display: "block" }}><defs><linearGradient id="gl-helloo-mark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#4F46E5" /><stop offset="0.6" stopColor="#7C3AED" /><stop offset="1" stopColor="#C026D3" /></linearGradient></defs><rect width="100" height="100" rx="22" fill="url(#gl-helloo-mark)" /><g transform="translate(10 8) scale(0.4)"><path d="M143.8 56.2 A62 62 0 1 0 162 100 H150" fill="none" stroke="#fff" strokeWidth="30" strokeLinecap="round" strokeLinejoin="round" /><path d="M47 132 L26 184 L84 160 Z" fill="#fff" stroke="#fff" strokeWidth="8" strokeLinejoin="round" /><circle cx="84" cy="100" r="13" fill="#7CF5C4" /><circle cx="116" cy="100" r="13" fill="#FFB3CD" /></g></svg>;
+}
+// Opens Helloo on "Send to…" with these words (Helloo: screens/ShareIn.jsx).
+function gloobalOpenHelloo(text) {
+  const url = text ? `${GLOOBAL_HELLOO_APP}/?sharetext=${encodeURIComponent(String(text).slice(0, 1500))}` : `${GLOOBAL_HELLOO_APP}/`;
+  try { window.open(url, "_blank", "noopener"); } catch (e) { window.location.href = url; }
+}
+
 var GLOOBAL_QR_CARD_BUTTON = {
   flex: 1,
   minWidth: 0,
@@ -782,7 +795,17 @@ function GloobalReceiveQrCard({ gloobalId, name, side, style: forcedStyle = null
           style={{ ...GLOOBAL_QR_CARD_BUTTON, background: T.surface, color: T.ink, border: `1px solid ${T.line}` }}
         >
           <Copy4 size={16} aria-hidden="true" />
-          Copy ID
+          Copy
+        </button>
+        <button
+          type="button"
+          data-testid="qr-share-helloo"
+          onClick={() => gloobalOpenHelloo(`${side === "shop" && name ? `Pay ${name} on GLOOBAL:` : "Pay me on GLOOBAL:"} ${payload}`)}
+          aria-label="Send GLOOBAL QR on Helloo"
+          style={{ ...GLOOBAL_QR_CARD_BUTTON, background: T.surface, color: T.ink, border: `1px solid ${T.line}`, gap: 7 }}
+        >
+          <GloobalHellooMark size={18} />
+          Helloo
         </button>
         <button
           type="button"

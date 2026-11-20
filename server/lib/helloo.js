@@ -174,6 +174,8 @@ function photoKindOf(buf) {
 function createHelloo(deps) {
   // Hosted only under a verified GLOOBAL ID (lib/verifiedId.js); none in tests.
   const hostProblem = deps.hostProblem || (async () => null);
+  // The verified badge's colour for a person (lib/badges.js); 1 in tests.
+  const badgeTierOf = deps.badgeTierOf || ((u) => (u && u.badge && u.badge.tier) || 1);
   const {
     User,
     Transaction,
@@ -215,12 +217,14 @@ function createHelloo(deps) {
         shopName: shopNameOf(user),
         shopOnly: Boolean(user.shopOwnerId),
         calls: user.creatorProfile?.handle ? callsOut(user.creatorProfile.calls) : null,
+        // The verified badge's colour, 1–4 (lib/badges.js).
+        badge: badgeTierOf(user),
       },
       extra || {}
     );
   }
 
-  const CARD_FIELDS = '_id symbolId fullName countryIso mobileNumber shopOwnerId creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.calls';
+  const CARD_FIELDS = '_id symbolId fullName countryIso mobileNumber shopOwnerId creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.calls badge';
 
   // ── FACES ───────────────────────────────────────────────────────────
   //

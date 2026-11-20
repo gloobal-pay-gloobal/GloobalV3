@@ -243,7 +243,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         if (!m || !((post && !post.removedAt && !post.takenBackAt) || m.ad)) return res.status(post && post.takenBackAt ? 410 : 404).json({ success: false, code: post && post.takenBackAt ? 'taken_back' : 'gone', message: post && post.takenBackAt ? 'Taken back by its owner.' : 'Not here any more.' });
         const buf = Buffer.from(m.data.buffer || m.data);
         // Written down: this verified person opened it (My data counts them).
-        if (req.viewerId && m0id) ContentView.updateOne({ media: m0id, viewer: req.viewerId }, { $inc: { count: 1 }, $set: { lastAt: new Date() }, $setOnInsert: { kind: 'social' } }, { upsert: true }).catch(() => {});
+        if (req.viewerId && m0id) ContentView.updateOne({ media: m0id, viewer: req.viewerId }, { $inc: { count: 1 }, $set: { lastAt: new Date(), owner: m && m.owner }, $setOnInsert: { kind: 'social' } }, { upsert: true }).catch(() => {});
         res.set('Content-Type', m.mime);
         // Kept only by the viewer's own phone, for minutes, not a year: no
         // shared cache holds it (no open links), and taking a post back

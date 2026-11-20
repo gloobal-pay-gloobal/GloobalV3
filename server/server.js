@@ -199,6 +199,7 @@ const { createMyData } = require('./lib/mydata');
 const { createViewPass } = require('./lib/viewPass');
 const { createViewCheck } = require('./lib/viewCheck');
 const { createVerifiedId } = require('./lib/verifiedId');
+const { createBadges } = require('./lib/badges');
 const adsLib = require('./lib/ads');
 const HoomanAnswer = require('./models/HoomanAnswer');
 const HoomanProfile = require('./models/HoomanProfile');
@@ -1452,8 +1453,12 @@ const credentialAccountLimit = rateLimit({ name: 'credential-account', max: 20, 
 // videos and voice notes are stored only for an account with its GLOOBAL
 // ID, its live photo and fingerprint / Face ID.
 const verifiedId = createVerifiedId({ User, ProfilePhoto });
+// The verified badge's four colours (lib/badges.js), worked out from real
+// followers and verified reach, refreshed in the background.
+const badges = createBadges({ User, SocialLink: require('./models/SocialLink'), SocialPost: require('./models/SocialPost') });
 const helloo = createHelloo({
   hostProblem: verifiedId.hostProblem,
+  badgeTierOf: (u) => badges.tierOf(u),
   User,
   Transaction,
   ProfilePhoto,

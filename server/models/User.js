@@ -174,6 +174,9 @@ const userSchema = new mongoose.Schema({
   // The end of the five minutes after the phone's fingerprint / face check
   // that lets this account open people's pictures and videos (lib/viewCheck.js).
   viewCheckedUntil: { type: Date, default: null },
+  // The verified badge's colour (lib/badges.js): 1 Verified, 2 Rising,
+  // 3 Star, 4 Icon, with the numbers it was worked out from.
+  badge: { tier: { type: Number, default: 1 }, followers: { type: Number, default: 0 }, reach: { type: Number, default: 0 }, at: { type: Date, default: null } },
   passkeys: [{
     id: {
       type: String,

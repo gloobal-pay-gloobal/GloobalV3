@@ -128,7 +128,7 @@ function createUsed({ User, rateLimit, windowMs, currencyOf, publicBase = '', vi
         const it = p && p.item ? await UsedItem.findById(p.item).select('status').lean() : null;
         if (!p || !it || it.status === 'removed' || it.status === 'hidden') return res.status(404).json({ success: false, message: 'Not here any more.' });
         // Written down: this verified person opened it (My data counts them).
-        if (req.viewerId && m0id) ContentView.updateOne({ media: m0id, viewer: req.viewerId }, { $inc: { count: 1 }, $set: { lastAt: new Date() }, $setOnInsert: { kind: 'used' } }, { upsert: true }).catch(() => {});
+        if (req.viewerId && m0id) ContentView.updateOne({ media: m0id, viewer: req.viewerId }, { $inc: { count: 1 }, $set: { lastAt: new Date(), owner: p && p.owner }, $setOnInsert: { kind: 'used' } }, { upsert: true }).catch(() => {});
         res.set('Content-Type', p.mime);
         res.set('Cache-Control', 'private, max-age=300');
         res.set('X-Content-Type-Options', 'nosniff');

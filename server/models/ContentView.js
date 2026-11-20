@@ -10,11 +10,14 @@ const contentViewSchema = new mongoose.Schema(
     // The SocialMedia or UsedPhoto opened.
     media: { type: mongoose.Schema.Types.ObjectId, required: true },
     viewer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    // Whose picture it is: the badge counts the people who reached them.
+    owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     count: { type: Number, default: 1 },
     lastAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );
 contentViewSchema.index({ media: 1, viewer: 1 }, { unique: true });
+contentViewSchema.index({ owner: 1, lastAt: -1 });
 
 module.exports = mongoose.model('ContentView', contentViewSchema);

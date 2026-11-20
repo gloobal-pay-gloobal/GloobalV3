@@ -43,7 +43,7 @@ function BadgeNeed({ need, have, colour }) {
   const v = Number(have[need.key]) || 0;
   const done = v >= need.at;
   if (bdIsYesNo(need)) return <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: T.ink, padding: "4px 0" }}>
-    <span style={{ width: 18, height: 18, borderRadius: 9, background: done ? colour : T.surfaceSunk, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{done ? <BdCheck size={12} color="#fff" strokeWidth={3} /> : null}</span>
+    <span style={{ width: 18, height: 18, borderRadius: 9, background: done ? colour : "transparent", border: done ? "none" : `2px solid ${T.inkFaint}`, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{done ? <BdCheck size={12} color="#fff" strokeWidth={3} /> : null}</span>
     <span style={{ fontWeight: 600 }}>{need.label.charAt(0).toUpperCase() + need.label.slice(1)}</span>
   </div>;
   const pct = Math.max(0, Math.min(100, (v / need.at) * 100));
@@ -114,13 +114,14 @@ function GloobalBadgesScreen({ onClose }) {
   return gloobalMapPortal(<div data-testid="my-badges" style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", fontFamily: T.fontBody, overflow: "hidden" }}>
     <UsedTop onBack={onClose} title="My badges" subtitle="Your level in each, and how to reach the next" />
     <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 14px 28px" }}>
-      {data ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "6px 4px 14px" }}>
+      {data && order.some((k) => data[k]) ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "6px 4px 14px" }}>
         {order.filter((k) => data[k]).map((k) => <GloobalSeal key={k} family={k} glyph={data[k].glyph} tier={data[k].tier || 1} off={!data[k].tier} size={30} title={`${data[k].title}: ${data[k].tier ? data[k].names[data[k].tier - 1] : "not yet"}`} />)}
         <span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 600, marginLeft: 4 }}>Green · Blue · Gold · Pink</span>
       </div> : null}
       {err ? <div style={{ padding: 20, textAlign: "center", color: T.inkSoft, fontSize: 14 }}>{err}</div> : null}
       {!data && !err ? <div style={{ padding: 30, textAlign: "center", color: T.inkSoft, fontSize: 14 }}>Loading…</div> : null}
       {data ? order.filter((k) => data[k]).map((k) => <BadgeFamily key={k} id={k} f={data[k]} />) : null}
+      {data && !order.some((k) => data[k]) ? <div style={{ padding: 30, textAlign: "center", color: T.inkSoft, fontSize: 14 }}>No badges to show yet.</div> : null}
     </div>
   </div>, document.body);
 }

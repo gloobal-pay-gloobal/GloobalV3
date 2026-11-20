@@ -3,7 +3,8 @@
 // MY BADGES: every badge GLOOBAL gives, the level you are at, and exactly
 // what the next level needs — so anyone can see how to earn each one.
 // The rules come from the server (server/lib/badgeRules.js, LEVELS); this
-// screen only draws them. Opened from Profile → My badges, and from Helloo.
+// screen only draws them. Opened only from the badge button at the top right
+// of your GLOOBAL ID (Profile → Personal details).
 import { useState as useStateBd, useEffect as useEffectBd } from "react";
 import { Check as BdCheck, Lock as BdLock, Info as BdInfo } from "lucide-react";
 
@@ -124,4 +125,27 @@ function GloobalBadgesScreen({ onClose }) {
       {data && !order.some((k) => data[k]) ? <div style={{ padding: 30, textAlign: "center", color: T.inkSoft, fontSize: 14 }}>No badges to show yet.</div> : null}
     </div>
   </div>, document.body);
+}
+
+// The one way in: a round button at the top right of your GLOOBAL ID
+// (Profile → Personal details). It wears your highest badge; tap → My badges.
+function GloobalBadgesButton() {
+  const [open, setOpen] = useStateBd(false);
+  const [top, setTop] = useStateBd({ family: "pay", glyph: "globe", tier: 1 });
+  useEffectBd(() => {
+    let live = true;
+    gloobalBadgesApi.mine().then((r) => {
+      const f = (r && r.families) || {};
+      let best = null;
+      for (const k of ["social", "pay", "share", "work"]) if (f[k] && f[k].tier && (!best || f[k].tier > best.tier)) best = { family: k, glyph: f[k].glyph, tier: f[k].tier };
+      if (live && best) setTop(best);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [open]);
+  return <>
+    <button type="button" data-testid="id-my-badges" aria-label="My badges" onClick={() => setOpen(true)} className="v2-tap" style={{ marginLeft: "auto", width: NAV_BUTTON_SIZE, height: NAV_BUTTON_SIZE, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, padding: 0 }}>
+      <GloobalSeal family={top.family} glyph={top.glyph} tier={top.tier} size={24} title="My badges" />
+    </button>
+    {open ? <GloobalBadgesScreen onClose={() => setOpen(false)} /> : null}
+  </>;
 }

@@ -57,7 +57,8 @@ function model(name) {
     create: async (d) => { clock += 1000; const r = wrap({ _id: new mongoose.Types.ObjectId(), createdAt: new Date(clock), likeCount: 0, commentCount: 0, removedAt: null, hiddenAt: null, post: null, ...d }); rows.push(r); return r; },
     updateOne: async (f, u, o = {}) => {
       let r = rows.find((x) => match(x, f));
-      if (!r && o.upsert) { r = wrap({ _id: new mongoose.Types.ObjectId(), createdAt: new Date(), ...(u.$setOnInsert || {}) }); rows.push(r); return { upsertedCount: 1 }; }
+      // An upsert writes the filter's fields, $setOnInsert and $set, as Mongo does.
+      if (!r && o.upsert) { r = wrap({ _id: new mongoose.Types.ObjectId(), createdAt: new Date(), ...Object.fromEntries(Object.entries(f).filter(([, v]) => v === null || typeof v !== 'object' || v instanceof mongoose.Types.ObjectId)), ...(u.$setOnInsert || {}), ...(u.$set || {}) }); rows.push(r); return { upsertedCount: 1 }; }
       if (!r) return { matchedCount: 0 };
       Object.assign(r, u.$set || {});
       for (const [k, n] of Object.entries(u.$inc || {})) r[k] = (r[k] || 0) + n;
@@ -74,6 +75,7 @@ const Post = stub('./models/SocialPost', model('post'));
 const Media = stub('./models/SocialMedia', model('media'));
 const Link = stub('./models/SocialLink', model('link'));
 const Comment = stub('./models/SocialComment', model('comment'));
+const Seen = stub('./models/SocialSeen', model('seen'));
 const Item = stub('./models/CreatorItem', model('item'));
 const User = model('user');
 
@@ -241,4 +243,23 @@ test('a status lasts a day, shows to your followers and the people you follow, a
   Post.rows.find((p) => String(p._id) === st.body.post.id).expiresAt = new Date(Date.now() - 1000);
   const later = await call('get /api/social/stories', ravi);
   assert.ok(!later.body.people.some((g) => g.author.gloobalId === 'ASHA1'));
+});
+
+test('the heart: likes, comments and new followers for you — never your own — and what is new', async () => {
+  const mine = await upload(meera, JPEG);
+  const made = await call('post /api/social/posts', meera, { body: { media: [mine.body.id], caption: 'Meera\'s first' } });
+  const pid = made.body.post.id;
+  await call('post /api/social/posts/:id/like', ravi, { params: { id: pid }, body: { on: true } });
+  await call('post /api/social/posts/:id/like', meera, { params: { id: pid }, body: { on: true } });
+  await call('post /api/social/posts/:id/comments', asha, { params: { id: pid }, body: { text: 'Lovely!' } });
+  await call('post /api/social/follow', ravi, { body: { to: String(meera._id), on: true } });
+  const before = await call('get /api/social/activity', meera, { query: { count: '1' } });
+  assert.equal(before.body.unread, 3, 'a like, a comment and a follow — not her own like');
+  const list = await call('get /api/social/activity', meera);
+  assert.deepEqual(list.body.items.map((i) => i.type).sort(), ['comment', 'follow', 'like']);
+  assert.equal(list.body.items.find((i) => i.type === 'comment').text, 'Lovely!');
+  assert.equal(list.body.items.find((i) => i.type === 'follow').followingBack, false);
+  assert.ok(list.body.items.find((i) => i.type === 'like').post.media.url.includes('/api/social/media/'));
+  await call('post /api/social/activity/seen', meera);
+  assert.equal((await call('get /api/social/activity', meera, { query: { count: '1' } })).body.unread, 0, 'opened: nothing new');
 });

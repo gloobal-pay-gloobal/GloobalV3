@@ -9,6 +9,8 @@
 //   POST   /api/social/media                { kind, mime, data } → { id }   a picture (≤700 KB) or a short video (≤8 MB)
 //   GET    /api/social/media/:id?v=PASS     the bytes, for a signed-in viewer's pass, with Range
 //   GET    /api/social/pass                 a 15-minute view pass for the signed-in account
+//   GET    /api/social/activity             likes, comments and new followers for you, newest first (?count=1: just how many are new)
+//   POST   /api/social/activity/seen        you opened it: what came before is no longer new
 //   POST   /api/social/posts                { media:[id], caption, topic, tags:[itemId] }
 //   DELETE /api/social/posts/:id            your own post
 //   GET    /api/social/feed?before=         people you follow, then more from everyone
@@ -28,6 +30,7 @@
 // `?as=` acts as a shop you run, the same way Helloo does.
 const mongoose = require('mongoose');
 const ContentView = require('../models/ContentView');
+const SocialSeen = require('../models/SocialSeen');
 const SocialPost = require('../models/SocialPost');
 const SocialMedia = require('../models/SocialMedia');
 const SocialLink = require('../models/SocialLink');
@@ -167,6 +170,58 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     });
     // Public, like any post: a picture in a feed is an <img>, which sends no
     // sign-in. Only media that belongs to a live post is served.
+    // ── ACTIVITY (the heart) ────────────────────────────────────────────
+    // What happened to you on Social: who liked or commented on your posts
+    // and who started following you. Never your own doings.
+    async function activityOf(me, since, limit) {
+      const posts = await SocialPost.find({ author: me, removedAt: null }).sort({ createdAt: -1 }).limit(300).select('media caption').lean();
+      const postIds = posts.map((p) => p._id);
+      const after = since ? { createdAt: { $gt: since } } : {};
+      const [likes, comments, follows] = await Promise.all([
+        postIds.length ? SocialLink.find(Object.assign({ kind: 'like', to: { $in: postIds }, from: { $ne: me } }, after)).sort({ createdAt: -1 }).limit(limit).lean() : [],
+        postIds.length ? SocialComment.find(Object.assign({ post: { $in: postIds }, author: { $ne: me }, removedAt: null }, after)).sort({ createdAt: -1 }).limit(limit).lean() : [],
+        SocialLink.find(Object.assign({ kind: 'follow', to: me }, after)).sort({ createdAt: -1 }).limit(limit).lean(),
+      ]);
+      return { posts, rows: [
+        ...likes.map((l) => ({ type: 'like', who: l.from, post: l.to, at: l.createdAt })),
+        ...comments.map((c) => ({ type: 'comment', who: c.author, post: c.post, at: c.createdAt, text: c.text })),
+        ...follows.map((f) => ({ type: 'follow', who: f.from, at: f.createdAt })),
+      ].sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, limit) };
+    }
+    app.get('/api/social/activity', socialRead, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const seen = await SocialSeen.findOne({ user: me }).lean();
+        const seenAt = seen && seen.activityAt ? seen.activityAt : null;
+        if (req.query.count) {
+          const { rows } = await activityOf(me, seenAt, 99);
+          return res.json({ success: true, unread: rows.length });
+        }
+        const { posts, rows } = await activityOf(me, null, 60);
+        const byId = await cards(rows.map((r) => r.who));
+        const postOf = new Map(posts.map((p) => [String(p._id), p]));
+        const followingBack = new Set((await SocialLink.find({ kind: 'follow', from: me, to: { $in: rows.filter((r) => r.type === 'follow').map((r) => r.who) } }).select('to').lean()).map((l) => String(l.to)));
+        const items = rows.map((r) => {
+          const p = r.post ? postOf.get(String(r.post)) : null;
+          const first = p && (p.media || [])[0];
+          return {
+            type: r.type, at: r.at, text: r.text || '',
+            who: cardOf(byId.get(String(r.who)), 'self'),
+            post: p ? { id: String(p._id), caption: (p.caption || '').slice(0, 80), media: first ? { id: String(first.id), kind: first.kind, url: mediaUrl(first.id) } : null } : null,
+            followingBack: r.type === 'follow' ? followingBack.has(String(r.who)) : undefined,
+            fresh: !seenAt || new Date(r.at) > new Date(seenAt),
+          };
+        }).filter((i) => i.who);
+        return res.json({ success: true, items, unread: items.filter((i) => i.fresh).length });
+      } catch (error) { return fail(res, 'activity', error); }
+    });
+    app.post('/api/social/activity/seen', socialWrite, requireAuth, async (req, res) => {
+      try {
+        await SocialSeen.updateOne({ user: req.authUser._id }, { $set: { activityAt: new Date() } }, { upsert: true });
+        return res.json({ success: true });
+      } catch (error) { return fail(res, 'activity seen', error); }
+    });
+
     // A view pass for the signed-in account (lib/viewPass.js).
     app.get('/api/social/pass', socialRead, requireAuth, async (req, res) => {
       if (!viewPass) return res.status(503).json({ success: false, message: 'Not available.' });

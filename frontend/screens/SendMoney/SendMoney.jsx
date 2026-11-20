@@ -1717,7 +1717,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       pointerEvents: "none",
       whiteSpace: "nowrap"
     }}
-  >{effectiveSearchCountry.dialCode}</span>}</div> : <Flag emoji={bottom.flag} size="lg" badge="receive" />}{searchStage === "found" ? <span className="card-name">{identityDisplayValue(bottom, foundDisplayMode)}</span> : bottom.name && <span className="card-name">{bottom.name}</span>}{
+  >{effectiveSearchCountry.dialCode}</span>}</div> : <Flag emoji={bottom.flag} size="lg" badge="receive" />}{searchStage === "found" ? <span className="card-name" style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: "100%" }}><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{identityDisplayValue(bottom, foundDisplayMode)}</span>{bottom.id && foundDisplayMode !== "id" ? <GloobalNameBadge symbolId={bottom.id} size={18} /> : null}</span> : bottom.name && <span className="card-name">{bottom.name}</span>}{
     /* "Gloobal ID" label, aligned with the flag on the header
        row — the chip row + dial pad below already echo what's
        typed, so this is just the field label, not an input. */

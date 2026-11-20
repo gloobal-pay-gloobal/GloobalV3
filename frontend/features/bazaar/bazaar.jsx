@@ -865,10 +865,10 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
                 padding: "10px 14px", border: "none", background: "none", cursor: "pointer", fontFamily: "inherit",
                 borderTop: i === 0 ? "none" : `1px solid ${T.line}`
               }}
-            ><BusinessMark name={s.handle || ""} logo={s.logo} size={40} radius={13} /><span style={{ flex: 1, minWidth: 0 }}><span style={{
-              display: "block", fontSize: 14, fontWeight: 700, color: T.ink,
+            ><BusinessMark name={s.handle || ""} logo={s.logo} size={40} radius={13} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}><span style={{
+              minWidth: 0, fontSize: 14, fontWeight: 700, color: T.ink,
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-            }}>{creatorDisplayName(s)}</span><span style={{
+            }}>{creatorDisplayName(s)}</span><GloobalNameBadge symbolId={s.symbolId} shop size={14} /></span><span style={{
               display: "block", fontSize: 12, fontWeight: 600, color: T.inkSoft, marginTop: 2,
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
             }}>{[kind, dist].filter(Boolean).join(" · ")}{openLine.open !== null ? <span style={{

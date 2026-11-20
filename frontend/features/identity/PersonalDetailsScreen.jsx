@@ -357,7 +357,7 @@ function PersonalDetailsScreen({
     style={{ position: "absolute", right: -3, bottom: -3, width: 28, height: 28, borderRadius: "50%", background: T.accent, border: "2.5px solid #fff", display: "flex", alignItems: "center", justifyContent: "center" }}
   ><Camera4 size={12} color="#fff" /></span></button><div style={{ flex: 1, minWidth: 0 }}><div
     style={{ fontSize: 23, fontWeight: 800, letterSpacing: -0.5, fontFamily: T.fontDisplay, lineHeight: 1.15, overflowWrap: "anywhere" }}
-  >{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</div>{
+  >{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}{gloobalId ? <GloobalNameBadge symbolId={gloobalId} size={20} ring /> : null}</div>{
     /* 0237: no "Member since" here — "Joined" below is the one place the
        date lives; the founder saw it twice. */
   }</div></div><div
@@ -393,7 +393,7 @@ function PersonalDetailsScreen({
     onClick={onOpenShop}
     className="v2-tap"
     style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, border: "none", background: T.surface, borderRadius: 18, boxShadow: T.shadowCard, padding: "12px 14px", cursor: onOpenShop ? "pointer" : "default", textAlign: "left", fontFamily: T.fontBody }}
-  >{icon(PdStoreIcon, "#DB2777")}<span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink }}>{shopHandle ? <CreatorHandleText handle={shopHandle} /> : "Your shop"}</span><span style={{ display: "block", fontSize: 12, color: T.inkSoft, marginTop: 2 }}>{shopHandle ? "Open your shop" : "Pick a shop name and start selling"}</span></span><ChevronRight7 size={17} color={T.inkFaint} /></button>{
+  >{icon(PdStoreIcon, "#DB2777")}<span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink }}>{shopHandle ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5, maxWidth: "100%" }}><CreatorHandleText handle={shopHandle} /><GloobalNameBadge symbolId={gloobalId} shop /></span> : "Your shop"}</span><span style={{ display: "block", fontSize: 12, color: T.inkSoft, marginTop: 2 }}>{shopHandle ? "Open your shop" : "Pick a shop name and start selling"}</span></span><ChevronRight7 size={17} color={T.inkFaint} /></button>{
     /* ── THE PASSPORT PAGE ─────────────────────────────────────────── */
   }<div><div
     style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 9, padding: "0 2px" }}

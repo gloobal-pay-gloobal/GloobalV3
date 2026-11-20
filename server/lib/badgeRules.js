@@ -154,6 +154,37 @@ function createBadgeRules({ User, Transaction, SocialPost, WorkCard, badges, get
     return { card: card ? 1 : 0, clients: 0, repeat: 0, months: 0, clean: 1, pending: true };
   }
 
+  // Measure and keep the GLOOBAL tiers, so names elsewhere can wear them.
+  async function refresh(userId) {
+    const me = await User.findById(userId).select('_id symbolId countryIso mobileNumber shopOwnerId creatorProfile.handle').lean();
+    if (!me) return null;
+    const [p, sh] = await Promise.all([pay(me), share(me)]);
+    const tiers = { pay: tierFor('pay', p), share: sh ? Math.max(1, tierFor('share', sh)) : 0 };
+    await User.updateOne({ _id: me._id }, { $set: { 'gloobalBadge.pay': tiers.pay, 'gloobalBadge.share': tiers.share, 'gloobalBadge.at': new Date(now()) } });
+    return tiers;
+  }
+  // Tiers for many GLOOBAL IDs at once: kept values, re-measured in the
+  // background when older than 12 hours (at most a few at a time).
+  const pending = new Set();
+  const STALE = 12 * 3600e3;
+  async function tiersFor(symbolIds) {
+    const ids = [...new Set((symbolIds || []).map(String).filter(Boolean))].slice(0, 100);
+    if (!ids.length) return {};
+    const users = await User.find({ symbolId: { $in: ids } }).select('_id symbolId badge.tier gloobalBadge shopOwnerId creatorProfile.handle').lean();
+    const out = {};
+    for (const u of users) {
+      const g = u.gloobalBadge || {};
+      const shop = Boolean(u.shopOwnerId || (u.creatorProfile && u.creatorProfile.handle));
+      out[u.symbolId] = { social: (u.badge && u.badge.tier) || 1, pay: g.pay || 0, share: shop ? Math.max(1, g.share || 0) : 0 };
+      const old = !g.at || now() - new Date(g.at).getTime() > STALE;
+      if (old && !pending.has(String(u._id)) && pending.size < 5) {
+        pending.add(String(u._id));
+        refresh(u._id).catch(() => {}).finally(() => pending.delete(String(u._id)));
+      }
+    }
+    return out;
+  }
+
   async function mine(userId) {
     const me = await User.findById(userId).select('_id symbolId countryIso mobileNumber shopOwnerId creatorProfile.handle').lean();
     if (!me) return null;
@@ -162,13 +193,26 @@ function createBadgeRules({ User, Transaction, SocialPost, WorkCard, badges, get
     for (const [family, have] of [['social', s], ['pay', p], ['share', sh], ['work', w]]) {
       if (!have) continue;
       const def = LEVELS[family];
-      out[family] = { title: def.title, glyph: def.glyph, names: def.names, levels: def.levels, not: def.not, have, tier: family === 'work' ? tierFor(family, have) : Math.max(1, have.tier || tierFor(family, have)), pending: Boolean(have.pending) };
+      out[family] = { title: def.title, glyph: def.glyph, names: def.names, levels: def.levels, not: def.not, have, tier: family === 'work' || family === 'pay' ? tierFor(family, have) : Math.max(1, have.tier || tierFor(family, have)), pending: Boolean(have.pending) };
     }
+    User.updateOne({ _id: me._id }, { $set: { 'gloobalBadge.pay': out.pay ? out.pay.tier : 0, 'gloobalBadge.share': out.share ? out.share.tier : 0, 'gloobalBadge.at': new Date(now()) } }).catch(() => {});
     return out;
   }
 
   function mount(app, requireAuth, rateLimit, windowMs) {
     const limit = rateLimit({ name: 'badges-me', max: 30, windowMs });
+    // The badges beside other people's names: ?ids=SYMBOL,SYMBOL (up to 100).
+    const many = rateLimit({ name: 'badges-of', max: 120, windowMs });
+    app.get('/api/badges/of', many, requireAuth, async (req, res) => {
+      try {
+        const ids = String(req.query.ids || '').split(',').map((x) => x.trim()).filter(Boolean);
+        res.set('Cache-Control', 'private, max-age=300');
+        return res.json({ success: true, badges: await tiersFor(ids) });
+      } catch (error) {
+        console.error('Badges-of error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load badges.' });
+      }
+    });
     app.get('/api/badges/me', limit, requireAuth, async (req, res) => {
       try {
         const families = await mine(req.authUser._id);
@@ -181,7 +225,7 @@ function createBadgeRules({ User, Transaction, SocialPost, WorkCard, badges, get
       }
     });
   }
-  return { mount, mine, tierFor };
+  return { mount, mine, refresh, tiersFor, tierFor };
 }
 
 module.exports = { createBadgeRules, LEVELS, tierFor };

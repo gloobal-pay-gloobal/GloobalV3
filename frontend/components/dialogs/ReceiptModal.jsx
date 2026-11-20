@@ -1213,7 +1213,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     // Creator Share receipt `direction` describes the share — so a share Jio
     // sent me read "From Jio" on a tab about money I sent TO Jio.
     label={paymentIsSent ? "To" : "From"}
-    value={receipt.name}
+    value={receipt.id ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5, maxWidth: "100%" }}><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{receipt.name}</span><GloobalNameBadge symbolId={receipt.id} shop={Boolean(receipt.creatorHandle && paymentIsSent)} size={15} /></span> : receipt.name}
   />{receipt.id && <ReceiptRow
     testId="receipt-counterparty-id"
     label={<GloobalWordmark suffix=" ID" />}

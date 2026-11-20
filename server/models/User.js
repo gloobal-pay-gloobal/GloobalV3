@@ -184,6 +184,10 @@ const userSchema = new mongoose.Schema({
   // The verified badge's colour (lib/badges.js): 1 Verified, 2 Rising,
   // 3 Star, 4 Icon, with the numbers it was worked out from.
   badge: { tier: { type: Number, default: 1 }, followers: { type: Number, default: 0 }, reach: { type: Number, default: 0 }, at: { type: Date, default: null } },
+  // GLOOBAL's own badges, as the rules in lib/badgeRules.js last measured
+  // them: payments (0 = no payment yet, 1 Local … 4 World) and, for a shop,
+  // give back (1 Fair … 4 Community). Shown beside the name everywhere.
+  gloobalBadge: { pay: { type: Number, default: 0 }, share: { type: Number, default: 0 }, at: { type: Date, default: null } },
   passkeys: [{
     id: {
       type: String,

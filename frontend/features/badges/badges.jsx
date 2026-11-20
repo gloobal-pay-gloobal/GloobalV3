@@ -227,3 +227,60 @@ function GloobalBadgesButton() {
     {open ? <GloobalBadgesScreen onClose={() => setOpen(false)} /> : null}
   </>;
 }
+
+// ── THE BADGE BESIDE A NAME ──────────────────────────────────────────
+// Wherever GLOOBAL shows a name, the badge comes with it, by the rules
+// above: a person's name wears their payments badge (from their first
+// payment: Local, Cross-border, Global, World); a shop or creator name
+// wears its give-back badge (Fair, Sharing, Generous, Community). Looked
+// up by GLOOBAL ID in batches (GET /api/badges/of) and kept for 10 minutes.
+var gloobalTierCache = new Map(); // symbolId -> { v, at }
+var gloobalTierWant = new Set();
+var gloobalTierTimer = null;
+var gloobalTierHear = new Set();
+function gloobalTierAsk(sym) {
+  const hit = gloobalTierCache.get(sym);
+  if (hit && Date.now() - hit.at < 600000) return;
+  gloobalTierWant.add(sym);
+  if (gloobalTierTimer) return;
+  gloobalTierTimer = setTimeout(() => {
+    gloobalTierTimer = null;
+    const ids = [...gloobalTierWant].slice(0, 100);
+    ids.forEach((x) => gloobalTierWant.delete(x));
+    if (!ids.length || typeof gloobalApiClient === "undefined") return;
+    // Mark as asked, so a failing call is not repeated on every render.
+    ids.forEach((x) => gloobalTierCache.set(x, { v: (gloobalTierCache.get(x) || {}).v || null, at: Date.now() }));
+    gloobalApiClient.get(`/api/badges/of?ids=${encodeURIComponent(ids.join(","))}`).then((r) => {
+      const b = (r && r.badges) || {};
+      ids.forEach((x) => gloobalTierCache.set(x, { v: b[x] || null, at: Date.now() }));
+      gloobalTierHear.forEach((f) => f());
+    }).catch(() => {});
+    if (gloobalTierWant.size) gloobalTierAsk([...gloobalTierWant][0]);
+  }, 60);
+}
+function useGloobalTiers(sym) {
+  const [, bump] = useStateBd(0);
+  useEffectBd(() => {
+    if (!sym) return undefined;
+    const f = () => bump((n) => n + 1);
+    gloobalTierHear.add(f);
+    gloobalTierAsk(sym);
+    return () => { gloobalTierHear.delete(f); };
+  }, [sym]);
+  const hit = sym ? gloobalTierCache.get(sym) : null;
+  return hit ? hit.v : null;
+}
+function GloobalNameBadge({ symbolId, shop = false, size = "1em", tier, ring = false }) {
+  const t = useGloobalTiers(tier === undefined ? String(symbolId || "") : "");
+  const n = tier !== undefined ? tier : t ? (shop ? t.share : t.pay) : 0;
+  if (!n) return null;
+  const fam = shop ? "share" : "pay";
+  const names = shop ? ["Fair", "Sharing", "Generous", "Community"] : ["Local", "Cross-border", "Global", "World"];
+  const ringed = ring ? { marginLeft: 7, padding: 2, borderRadius: "50%", background: "#fff", boxShadow: "0 2px 6px rgba(0,0,0,0.18)", boxSizing: "content-box" } : {};
+  return <span data-name-badge={fam} title={`${shop ? "Give back" : "GLOOBAL payments"}: ${names[n - 1]}`} style={{ display: "inline-flex", flexShrink: 0, width: size, height: size, verticalAlign: "middle", ...ringed }}>
+    <svg width="100%" height="100%" viewBox="0 0 24 24" role="img" aria-label={`${names[n - 1]} badge`} style={{ display: "block" }}>
+      <path d={GLOOBAL_SEAL_PATH} fill={gloobalSealColour(fam, n)} stroke={gloobalSealColour(fam, n)} strokeWidth="1.2" strokeLinejoin="round" />
+      <GloobalSealGlyph glyph={shop ? "heart" : "globe"} />
+    </svg>
+  </span>;
+}

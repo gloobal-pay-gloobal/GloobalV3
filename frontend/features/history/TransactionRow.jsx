@@ -234,14 +234,14 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
       borderTop: isFirst ? "none" : `1px solid ${T.line}`,
       paddingTop: isFirst ? 0 : 9
     }}
-  ><span style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}><span
-    style={{ fontSize: 14.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+  ><span style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}><span style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}><span
+    style={{ minWidth: 0, fontSize: 14.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
   >{
     /* Paid TO a shop: listed under the shop's creator name, its dot in
        colour, so a shop payment and a personal one are told apart. No
        store mark here — the founder wants that on the receipt only. */
     t.creatorHandle && t.direction !== "received" ? <CreatorHandleText handle={t.creatorHandle} icon={false} /> : t.name
-  }</span>{
+  }</span>{t.id ? <GloobalNameBadge symbolId={t.id} shop={Boolean(t.creatorHandle && t.direction !== "received")} size={14} /> : null}</span>{
     /* Date and clock together — see historyRowStamp. Received AT your
        shop says so after the time. */
   }<span

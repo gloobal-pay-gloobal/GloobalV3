@@ -3628,7 +3628,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       overflow: "hidden",
       zIndex: 1
     }}
-  ><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</span><span
+  ><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</span>{myGloobalId ? <GloobalNameBadge symbolId={myGloobalId} size={18} /> : null}<span
     aria-label="Verified"
     style={{
       width: 12,

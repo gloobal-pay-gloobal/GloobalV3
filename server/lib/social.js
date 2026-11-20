@@ -80,7 +80,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
   const socialRead = rateLimit({ name: 'social-read', max: 600, windowMs });
   const socialWrite = rateLimit({ name: 'social-write', max: 120, windowMs });
   const socialUpload = rateLimit({ name: 'social-upload', max: 40, windowMs });
-  const CARD = '_id symbolId fullName countryIso shopOwnerId socialOn creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast';
+  const CARD = '_id symbolId fullName countryIso shopOwnerId socialOn badge.tier creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast';
 
   // Is this social profile on? Chosen → as chosen. Never chosen → on only
   // when it already has posts (from before profiles had to be turned on).
@@ -189,7 +189,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         await Promise.all(rows.map(async ([as, u, side]) => {
           const match = Object.assign({ author: u._id, removedAt: null, story: { $ne: true } }, u.shopOwnerId ? {} : { side });
           const [on, posts, followers] = await Promise.all([isOn(u, side), SocialPost.countDocuments(match), SocialLink.countDocuments({ kind: 'follow', to: u._id })]);
-          accounts[as] = { on, posts, followers };
+          accounts[as] = { on, posts, followers, badge: (u.badge && u.badge.tier) || 1 };
         }));
         return res.json({ success: true, accounts });
       } catch (error) { return fail(res, 'accounts', error); }

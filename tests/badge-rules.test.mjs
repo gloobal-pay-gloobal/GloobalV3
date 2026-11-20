@@ -23,7 +23,7 @@ function world({ txs = [], users = [], card = false, me = {} }) {
     return true;
   };
   return createBadgeRules({
-    User: { findById: () => lean(meU), find: (q) => lean(all.filter((u) => q._id.$in.includes(String(u._id)))) },
+    User: { findById: () => lean(meU), find: (q) => lean(all.filter((u) => (q._id ? q._id.$in.includes(String(u._id)) : q.symbolId.$in.includes(u.symbolId)))), updateOne: async (f, u) => { const t = all.find((x) => String(x._id) === String(f._id)); if (t) for (const [k, v] of Object.entries(u.$set)) { const ks = k.split('.'); let o = t; ks.slice(0, -1).forEach((x) => { o = o[x] = o[x] || {}; }); o[ks[ks.length - 1]] = v; } return {}; }, _all: all },
     Transaction: { find: (q) => lean(txs.filter((t) => match(q, t)).sort((a, b) => b.createdAt - a.createdAt)), exists: async (q) => txs.some((t) => match(q, t)) },
     WorkCard: { exists: async () => card },
     badges: { compute: async () => ({ followers: 1500, reach: 2000, tier: 2 }) },
@@ -76,4 +76,14 @@ test('give back: Creator Share as a share of what customers paid', async () => {
   assert.equal(out.share.tier, 3);
   assert.equal(out.share.have.people, 4);
   assert.equal(out.work.have.card, 1); assert.equal(out.work.tier, 1);
+});
+
+test('names elsewhere: tiers by GLOOBAL ID — no pay badge before a first payment; a shop is at least Fair', async () => {
+  const users = [{ _id: 'p1', symbolId: 'P1', countryIso: 'IN', badge: { tier: 3 }, gloobalBadge: { pay: 2, share: 0, at: new Date(NOW) } }, { _id: 's1', symbolId: 'S1', countryIso: 'IN', shopOwnerId: 'p1', gloobalBadge: { pay: 0, share: 0, at: new Date(NOW) } }, { _id: 'n1', symbolId: 'N1', countryIso: 'IN' }];
+  const r = world({ users });
+  const t = await r.tiersFor(['P1', 'S1', 'N1', 'NOPE']);
+  assert.deepEqual(t.P1, { social: 3, pay: 2, share: 0 });
+  assert.deepEqual(t.S1, { social: 1, pay: 0, share: 1 });
+  assert.deepEqual(t.N1, { social: 1, pay: 0, share: 0 });
+  assert.equal(t.NOPE, undefined);
 });

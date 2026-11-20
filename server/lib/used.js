@@ -59,7 +59,7 @@ function photoKind(buf) {
   return '';
 }
 
-function createUsed({ User, rateLimit, windowMs, currencyOf, publicBase = '', viewPass = null }) {
+function createUsed({ User, rateLimit, windowMs, currencyOf, publicBase = '', viewPass = null, verifiedHost = (req, res, next) => next() }) {
   // No open links (lib/viewPass.js): listing photos open only with a pass.
   const sealed = viewPass ? require('./viewPass').requireViewPass(viewPass, User) : (req, res, next) => next();
   const usedRead = rateLimit({ name: 'used-read', max: 600, windowMs });
@@ -105,7 +105,8 @@ function createUsed({ User, rateLimit, windowMs, currencyOf, publicBase = '', vi
     const whereOf = (req) => placeOf(req.query.lat, req.query.lng);
 
     // ── PHOTOS ────────────────────────────────────────────────────────
-    app.post('/api/used/photos', usedUpload, requireAuth, photoParser, async (req, res) => {
+    // Hosted only under a verified GLOOBAL ID (lib/verifiedId.js).
+    app.post('/api/used/photos', usedUpload, requireAuth, verifiedHost, photoParser, async (req, res) => {
       try {
         const raw = String((req.body && req.body.data) || '').replace(/^data:[^;]+;base64,/, '');
         const buf = raw ? Buffer.from(raw, 'base64') : null;
@@ -131,6 +132,8 @@ function createUsed({ User, rateLimit, windowMs, currencyOf, publicBase = '', vi
         res.set('Content-Type', p.mime);
         res.set('Cache-Control', 'private, max-age=300');
         res.set('X-Content-Type-Options', 'nosniff');
+        // Shown, not saved as a file: never served as a download.
+        res.set('Content-Disposition', 'inline');
         return res.end(Buffer.isBuffer(p.data) ? p.data : Buffer.from(p.data.buffer || p.data));
       } catch (error) { return fail(res, 'photo', error); }
     });

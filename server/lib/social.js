@@ -66,7 +66,7 @@ function sniff(buf) {
   return null;
 }
 
-function createSocial({ User, rateLimit, windowMs, publicBase = '', people = null, viewPass = null, personCheckedUntil = null }) {
+function createSocial({ User, rateLimit, windowMs, publicBase = '', people = null, viewPass = null, personCheckedUntil = null, verifiedHost = (req, res, next) => next() }) {
   // No open links (lib/viewPass.js): post and ad media opens only with a
   // signed-in account's pass.
   const sealed = viewPass ? require('./viewPass').requireViewPass(viewPass, User) : (req, res, next) => next();
@@ -150,7 +150,8 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
 
     // ── MEDIA ─────────────────────────────────────────────────────────
     const mediaParser = require('express').json({ limit: '12mb' });
-    app.post('/api/social/media', socialUpload, requireAuth, mediaParser, async (req, res) => {
+    // Hosted only under a verified GLOOBAL ID (lib/verifiedId.js).
+    app.post('/api/social/media', socialUpload, requireAuth, verifiedHost, mediaParser, async (req, res) => {
       try {
         const raw = String((req.body && req.body.data) || '').replace(/^data:[^;]+;base64,/, '');
         const buf = raw ? Buffer.from(raw, 'base64') : null;
@@ -194,6 +195,8 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         // reaches the people who already opened it (My data).
         res.set('Cache-Control', 'private, max-age=300');
         res.set('Accept-Ranges', 'bytes');
+        // Shown, not saved as a file: never served as a download.
+        res.set('Content-Disposition', 'inline');
         res.set('Cross-Origin-Resource-Policy', 'cross-origin');
         const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
         if (range) {

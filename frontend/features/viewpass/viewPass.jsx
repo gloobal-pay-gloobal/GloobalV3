@@ -17,12 +17,20 @@ import { Fingerprint as VpPrint, Lock as VpLock } from "lucide-react";
 
 var gloobalViewPass = { pass: "", exp: 0, wait: null, http: null, subs: new Set(), needCheck: false };
 // A picture with no address yet (no pass) is a blank space, not a broken
-// image: hidden until its sealed address arrives.
+// image: hidden until its sealed address arrives. And every picture and
+// video is for seeing only: download is off.
 try {
   if (typeof document !== "undefined" && !document.getElementById("gloobal-sealed-style")) {
     const st = document.createElement("style"); st.id = "gloobal-sealed-style";
-    st.textContent = 'img[src=""],img:not([src]),video[src=""]{visibility:hidden}';
+    // Seen, not downloaded: no long-press "Save image", no dragging a
+    // picture out, no selecting it. (A screenshot can't be stopped by any
+    // web app; that is said wherever it matters.)
+    st.textContent = 'img[src=""],img:not([src]),video[src=""]{visibility:hidden}' +
+      'img,video{-webkit-touch-callout:none;-webkit-user-drag:none;user-select:none;-webkit-user-select:none}';
     document.head.appendChild(st);
+    // No "Save image / Download video" menu on any picture or video.
+    document.addEventListener("contextmenu", (e) => { const t = e.target; if (t && (t.tagName === "IMG" || t.tagName === "VIDEO")) e.preventDefault(); }, true);
+    document.addEventListener("dragstart", (e) => { const t = e.target; if (t && (t.tagName === "IMG" || t.tagName === "VIDEO")) e.preventDefault(); }, true);
   }
 } catch (e) { /* no document (tests) */ }
 

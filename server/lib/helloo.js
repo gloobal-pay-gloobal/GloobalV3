@@ -172,6 +172,8 @@ function photoKindOf(buf) {
 }
 
 function createHelloo(deps) {
+  // Hosted only under a verified GLOOBAL ID (lib/verifiedId.js); none in tests.
+  const hostProblem = deps.hostProblem || (async () => null);
   const {
     User,
     Transaction,
@@ -1320,6 +1322,12 @@ function createHelloo(deps) {
           if (quoted && !quoted.deletedAt) doc.replyTo = { id: quoted._id, from: quoted.from, kind: quoted.kind, preview: previewOf(quoted).slice(0, 120) };
         }
 
+        // A photo, clip or voice note is stored only for a verified GLOOBAL
+        // ID (a forward stores nothing new, so it is not asked).
+        if (!body.forwardOf && ['photo', 'video', 'voice'].includes(kind)) {
+          const problem = await hostProblem(me);
+          if (problem) return res.status(403).json(Object.assign({ success: false }, problem));
+        }
         if (body.forwardOf) {
           // Passing on a photo, clip or voice note: no bytes are sent or
           // stored. The new message points at the original's single copy.

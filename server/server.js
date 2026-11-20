@@ -198,6 +198,7 @@ const { createWork } = require('./lib/work');
 const { createMyData } = require('./lib/mydata');
 const { createViewPass } = require('./lib/viewPass');
 const { createViewCheck } = require('./lib/viewCheck');
+const { createVerifiedId } = require('./lib/verifiedId');
 const adsLib = require('./lib/ads');
 const HoomanAnswer = require('./models/HoomanAnswer');
 const HoomanProfile = require('./models/HoomanProfile');
@@ -1447,7 +1448,12 @@ const credentialAccountLimit = rateLimit({ name: 'credential-account', max: 20, 
 // Helloo's routes — chats, contacts, voice notes — and its live socket.
 // See lib/helloo.js. Mounted here, after the limiters and requireAuth exist
 // and before any route that could shadow /api/helloo/...
+// Hosted only under verified GLOOBAL IDs (lib/verifiedId.js): photos,
+// videos and voice notes are stored only for an account with its GLOOBAL
+// ID, its live photo and fingerprint / Face ID.
+const verifiedId = createVerifiedId({ User, ProfilePhoto });
 const helloo = createHelloo({
+  hostProblem: verifiedId.hostProblem,
   User,
   Transaction,
   ProfilePhoto,
@@ -1470,14 +1476,14 @@ helloo.mount(app, requireAuth);
 const viewPass = createViewPass({ secret: AUTH_TOKEN_SECRET });
 // Set below, once the passkey helpers exist (lib/viewCheck.js).
 let viewCheckUntil = async () => null;
-createSocial({ User, rateLimit, windowMs: WINDOW_MS, viewPass, personCheckedUntil: (id) => viewCheckUntil(id), people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
+createSocial({ User, rateLimit, windowMs: WINDOW_MS, viewPass, verifiedHost: verifiedId.requireVerifiedHost, personCheckedUntil: (id) => viewCheckUntil(id), people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
 // Social · Work (lib/work.js): Work cards, openings near you, applying by
 // chat. GLOOBAL only connects people and keeps 0%.
 createWork({ User, rateLimit, windowMs: WINDOW_MS, currencyOf: async (user) => (await localCurrencyFor(accountCountryIso(user))) || 'INR', people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
 
 // GLOOBAL बाज़ार · Used (lib/used.js): people selling their own second-hand
 // things nearby. GLOOBAL keeps 0%: nothing there moves or holds money.
-createUsed({ User, rateLimit, windowMs: WINDOW_MS, viewPass, currencyOf: async (user) => (await localCurrencyFor(accountCountryIso(user))) || 'INR' }).mount(app, requireAuth);
+createUsed({ User, rateLimit, windowMs: WINDOW_MS, viewPass, verifiedHost: verifiedId.requireVerifiedHost, currencyOf: async (user) => (await localCurrencyFor(accountCountryIso(user))) || 'INR' }).mount(app, requireAuth);
 
 // My data (lib/mydata.js): everything you put into GLOOBAL, how far each
 // thing went, and taking it back — one thing or everything at once.

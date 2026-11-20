@@ -36,90 +36,77 @@ const strip = (s) => s.replace(/(^|[\s{(,])\/\*[\s\S]*?\*\//g, "$1").replace(/^\
 const base = readSource(BASE);
 const server = readSource(SERVER);
 
-describe("a quarter of a day, worked out once", () => {
-  // The real function, run against a stub repository and a stub currency
-  // table — so this is the app's arithmetic, not a copy of it.
-  const PURE = base.slice(base.indexOf("var ESSENTIALS_GLOOBAL_SHARE"), base.indexOf("\n}", base.indexOf("function computeEssentialsBaseline")) + 2);
-  // The methodology string is declared above the slice, so it is injected
-  // rather than carried along — the slice is deliberately just the share
-  // and the function, so a test that passes proves THAT function works
-  // rather than that the whole file loads.
+describe("a country's own amount, in its own money", () => {
+  // The founder: "essentials are independent from global currency and FX
+  // because we are sharing local units with local people from a local
+  // pool." The real function, run against a stub repository — and with
+  // `convert` deliberately throwing, so any exchange-rate call fails here.
+  const PURE = base.slice(base.indexOf("function computeEssentialsBaseline"), base.indexOf("\n}", base.indexOf("function computeEssentialsBaseline")) + 2);
   const lib = new Function("COUNTRY_CURRENCY", "convert", "ESSENTIALS_BASELINE_METHODOLOGY_VERSION", `${PURE}
-    return { computeEssentialsBaseline, ESSENTIALS_GLOOBAL_SHARE };`)(
-    { IN: "INR" },
-    (v) => v * 80,
+    return { computeEssentialsBaseline };`)(
+    { IN: "INR", GB: "GBP" },
+    () => { throw new Error("Essentials must not convert money"); },
     "test"
   );
-  const repo = {
-    dataSource: "stub",
-    hasCountry: () => true,
-    getBaselineUSD: () => ({ food: 2.4, water: 0.4, shelter: 4.5, creativity: 0.8 })
-  };
+  const IN = { currency: "INR", daily: 200, food: 100, shelter: 70, water: 10, creativity: 20, status: "set" };
+  const repo = { dataSource: "stub", getLocal: (iso) => (iso === "IN" ? IN : null) };
 
-  test("the daily total is a quarter of the estimated day", () => {
+  test("India is ₹200 a day, from the table, with no rate", () => {
     const out = lib.computeEssentialsBaseline("IN", repo);
-    // 8.10 USD at the stub rate is 648; a quarter is 162.
-    assert.equal(out.fullDailyTotal, 648);
-    assert.equal(out.dailyTotal, 162);
-    assert.equal(out.share, 0.25);
+    assert.equal(out.currencyCode, "INR");
+    assert.equal(out.dailyTotal, 200);
+    assert.equal(out.available, true);
+    assert.equal(out.status, "set");
   });
 
-  test("the four components still add up to the total", () => {
-    // Scaling only the total would leave four bars that no longer sum to
-    // the headline above them — a screen that contradicts itself in a way
-    // nobody can quite point at.
+  test("the four components add up to the day", () => {
     const out = lib.computeEssentialsBaseline("IN", repo);
     const sum = out.components.food + out.components.water + out.components.shelter + out.components.creativity;
     assert.equal(Math.round(sum * 100) / 100, out.dailyTotal);
   });
 
-  test("the whole estimate survives, so a screen can name it", () => {
-    const out = lib.computeEssentialsBaseline("IN", repo);
-    assert.equal(Math.round(out.dailyTotal / out.fullDailyTotal * 100) / 100, 0.25);
+  test("a country without a row is not available — no figure is invented", () => {
+    const out = lib.computeEssentialsBaseline("GB", repo);
+    assert.equal(out.available, false);
+    assert.equal(out.dailyTotal, 0);
+    assert.equal(out.currencyCode, "GBP");
   });
 
-  test("the share is applied in exactly one place", () => {
-    // Two screens quoting different daily totals for the same thing is a
-    // disagreement nobody reports and everybody notices. One multiplier,
-    // in the function both of them call.
-    const uses = (strip(base).match(/ESSENTIALS_GLOOBAL_SHARE/g) || []).length;
-    assert.equal(uses, 3, `the share constant appears ${uses} times — declared, applied, reported`);
+  test("India's row in the shipped table is the founder's ₹200", () => {
+    assert.match(base, /IN: \{ currency: "INR", daily: 200, food: 100, shelter: 70, water: 10, creativity: 20, status: "set" \}/);
+  });
+
+  test("every row adds up and names its own money", () => {
+    const rows = [...base.matchAll(/([A-Z]{2}): \{ currency: "([A-Z]{3})", daily: ([\d.]+), food: ([\d.]+), shelter: ([\d.]+), water: ([\d.]+), creativity: ([\d.]+), status: "(set|assumed)" \}/g)];
+    assert.ok(rows.length >= 10);
+    for (const m of rows) {
+      const [daily, food, shelter, water, creativity] = m.slice(3, 8).map(Number);
+      assert.ok(Math.abs(food + shelter + water + creativity - daily) < 0.02, `${m[1]} parts do not add up to its day`);
+    }
+  });
+
+  test("no screen scales or converts the amount itself", () => {
+    assert.doesNotMatch(strip(base), /convert\(/);
     for (const file of [ESS, CAT]) {
-      assert.doesNotMatch(strip(readSource(file)), /0\.25|\* 0\.25|\/ 4\b/,
-        `${file} is scaling the baseline itself instead of reading the one that is already scaled`);
+      assert.doesNotMatch(strip(readSource(file)), /0\.25|\* 0\.25|\/ 4\b/);
     }
   });
 });
 
-describe("the quarter is never printed as the whole", () => {
-  test("the Essentials screen says what it is a quarter of", () => {
-    // Without this line the screen states something false about the
-    // world: that a day of food, water, shelter and creativity costs a
-    // quarter of what the table estimates.
+describe("the screens say where it comes from", () => {
+  test("the Essentials screen names the local pool, and says when it is not available", () => {
     const src = strip(readSource(ESS));
-    assert.match(src, /<GloobalWordmark \/> carries \{Math\.round\(\(Number\(baseline\.share\)/);
-    assert.match(src, /baseline\.fullDailyTotal/,
-      "the full estimate is no longer shown beside the share");
-  });
-
-  test("and the bars no longer call themselves a baseline", () => {
-    const src = readSource(ESS);
-    assert.match(src, /share of what <GloobalWordmark \/> carries/);
-    assert.doesNotMatch(src, /share of your daily baseline/,
-      "a quarter of an estimate is being called the baseline again");
+    assert.match(src, /local pool, in local money\. Exchange rates never change it\./);
+    assert.match(src, /Essentials are not available in \{dialCountry\.name\} yet\./);
+    assert.match(src, /summary\.pool === "empty"/);
+    assert.doesNotMatch(src, /of an estimated day/);
   });
 
   test("the category says it too", () => {
     const src = strip(readSource(CAT));
-    assert.match(src, /of an estimated day where your account is registered/);
-    assert.match(src, /essentialsBaseline\.fullDailyTotal/);
-  });
-
-  test("the mock-data warning is still on the table it scales", () => {
-    // The scaling does not make the numbers real, and the file that holds
-    // them is the one place that says so.
-    assert.match(base, /MOCK DATA LAYER/);
-    assert.match(base, /NOT real and must not be presented as such/);
+    assert.match(src, /from the local pool where your account is registered/);
+    assert.match(src, /Essentials are not available where your account is registered yet\./);
+    assert.doesNotMatch(src, /of an estimated day/);
   });
 });
 

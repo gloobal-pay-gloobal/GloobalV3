@@ -9578,7 +9578,10 @@ require('./lib/staffTools').createStaffTools({
 // Bank balance, and the hold on leaving — everything an account has used
 // from Essentials stays in GLOOBAL. See lib/essentials.js.
 const essentials = require('./lib/essentials').createEssentials({
-  User, requireAuth, writeLimit, lookupLimit, getRate,
+  User, requireAuth, writeLimit, lookupLimit,
+  // Staff add money to a country's pool from the staff site; Render's
+  // ESSENTIALS_POOL_SEED ("IN=100000,KE=50000") puts a start-up amount in once.
+  requireStaff: admin.requireStaff, poolSeed: process.env.ESSENTIALS_POOL_SEED || '',
   // Wrapped: withAtomicSession is required further down this file, so it
   // does not exist yet when this line runs at start-up.
   withAtomicSession: (work) => withAtomicSession(work),

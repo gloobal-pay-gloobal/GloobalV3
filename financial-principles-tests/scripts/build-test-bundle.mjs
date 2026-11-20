@@ -157,7 +157,7 @@ const BASELINE_MODULES = [
 ];
 const baselineCombined = readModules(BASELINE_MODULES);
 const baselineExports = [
-  "ESSENTIALS_BASELINE_USD_BY_ISO", "ESSENTIALS_BASELINE_DEFAULT_USD", "ESSENTIALS_BASELINE_REQUIRED_KEYS",
+  "ESSENTIALS_LOCAL_BY_ISO", "ESSENTIALS_BASELINE_REQUIRED_KEYS",
   "isValidEssentialsBaselineEntry", "EssentialsBaselineRepository", "computeEssentialsBaseline",
   "COUNTRY_CURRENCY", "RATES", "convert"
 ];

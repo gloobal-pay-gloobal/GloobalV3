@@ -19,14 +19,14 @@ describe("one daily table, in two places", () => {
     const table = (src, start) => {
       const from = src.indexOf(start);
       const body = src.slice(from, src.indexOf("};", from));
-      return [...body.matchAll(/([A-Z]{2}): \{ food: ([\d.]+), water: ([\d.]+), shelter: ([\d.]+), creativity: ([\d.]+) \}/g)].map((m) => m.slice(1).join(","));
+      return [...body.matchAll(/([A-Z]{2}): \{ currency: "([A-Z]{3})", daily: ([\d.]+), food: ([\d.]+), shelter: ([\d.]+), water: ([\d.]+), creativity: ([\d.]+), status: "(\w+)" \}/g)].map((m) => m.slice(1).join(","));
     };
-    const browser = table(readSource("backend/data/essentialsBaseline.js"), "var ESSENTIALS_BASELINE_USD_BY_ISO");
-    const server = table(readSource("server/lib/essentials.js"), "const BASELINE_USD_BY_ISO");
-    assert.ok(browser.length > 30);
+    const browser = table(readSource("backend/data/essentialsBaseline.js"), "var ESSENTIALS_LOCAL_BY_ISO");
+    const server = table(readSource("server/lib/essentials.js"), "const ESSENTIALS_LOCAL_BY_ISO");
+    assert.ok(browser.length >= 10);
     assert.deepEqual(server, browser);
-    assert.match(readSource("server/lib/essentials.js"), /const ESSENTIALS_SHARE = 0\.25;/);
-    assert.match(readSource("backend/data/essentialsBaseline.js"), /var ESSENTIALS_GLOOBAL_SHARE = 0\.25;/);
+    // No exchange rate on either side.
+    assert.doesNotMatch(code("server/lib/essentials.js"), /getRate/);
   });
 });
 

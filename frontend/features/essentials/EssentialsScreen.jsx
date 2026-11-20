@@ -187,19 +187,20 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
     : "Nothing spent yet"}</span><span style={{ whiteSpace: "nowrap" }}>{revealed
     ? <>Daily limit {essentialsFigure(baseline.dailyTotal, 12.5)}</>
     : "Daily limit hidden"}</span></div></div>{
-    /* WHAT THE FIGURE IS A QUARTER OF.
-       The daily total is Gloobal's share of an estimated day, not the
-       cost of that day. Printing the share on its own would state
-       something false about the world — that a day of food, water,
-       shelter and creativity costs a quarter of what the table estimates
-       — so the whole estimate is named beside it rather than left
-       implied. One line, and it is the line that makes the rest of the
-       screen true. */
+    /* WHERE THE FIGURE COMES FROM.
+       A country's own amount in its own money, shared out of that
+       country's local pool. No exchange rate moves it. Where the country
+       has no amount yet, or the pool is used up, the line says so. */
   }<div
+    data-testid="essentials-local-note"
     style={{ fontSize: 11.5, color: T.inkSoft, lineHeight: 1.5, margin: "11px 2px 0" }}
-  >{revealed
-    ? <><GloobalWordmark /> carries {Math.round((Number(baseline.share) || 0) * 100)}% of an estimated day here, which is worked out at {essentialsFigure(baseline.fullDailyTotal, 11.5)} a day. The rest is yours.</>
-    : <><GloobalWordmark /> carries {Math.round((Number(baseline.share) || 0) * 100)}% of an estimated day here. The rest is yours.</>}</div>{summary && (summary.bankOpen || Number(summary.used) > 0) && <EssentialsUsedCard summary={summary} figure={essentialsFigure} />}{
+  >{!baseline.available
+    ? <>Essentials are not available in {dialCountry.name} yet.</>
+    : <>A day of essentials from {dialCountry.name}'s local pool, in local money. Exchange rates never change it.{baseline.status === "assumed" ? " This amount is an early estimate and may change before launch here." : ""}</>}{summary && summary.pool === "empty"
+    ? <div data-testid="essentials-pool-empty" style={{ marginTop: 6, fontWeight: 700, color: T.ink }}>Today's local pool is used up. Your amount stays the same; it opens again when the pool is topped up.</div>
+    : summary && summary.pool === "low"
+    ? <div data-testid="essentials-pool-low" style={{ marginTop: 6, fontWeight: 700, color: T.ink }}>The local pool is running low.</div>
+    : null}</div>{summary && (summary.bankOpen || Number(summary.used) > 0) && <EssentialsUsedCard summary={summary} figure={essentialsFigure} />}{
     /* The four components */
   }<div><div
     style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}
@@ -339,13 +340,13 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
     title="How this is worked out"
     subtitle={`${dialCountry.name} · methodology ${baseline.methodologyVersion}`}
   ><div style={{ display: "flex", flexDirection: "column", gap: 13, fontSize: 13, lineHeight: 1.55, color: T.inkSoft }}><div>
-      Your daily baseline is the sum of four components {"—"} food, water, shelter and creativity {"—"} estimated for {dialCountry.name}. Whatever is left of it refills tomorrow: unused amounts never carry over or accumulate.
+      Your daily amount is the sum of four components {"—"} food, water, shelter and creativity {"—"} set for {dialCountry.name} in its own money and paid from its local pool. Exchange rates never change it. Whatever is left of it refills tomorrow: unused amounts never carry over or accumulate.
     </div><div>
       The four bars above show how the baseline is divided between those components. They are not a record of what you spent on each, because nothing in this app tracks spending that way.
     </div>{baseline.usedFallback && <div
     style={{ borderRadius: T.radiusMd, background: T.surfaceAlt, padding: "12px 14px", fontWeight: 700, color: T.ink }}
   >
-      There is no entry for {dialCountry.name} yet, so these figures come from a regional default rather than from your own country.
+      Essentials are not available in {dialCountry.name} yet, so there is no daily amount here.
     </div>}<div
     style={{ borderRadius: T.radiusMd, background: T.surfaceAlt, padding: "12px 14px", fontWeight: 700, color: T.ink }}
   >

@@ -383,8 +383,10 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
     : <ChoiceMoney amount={essentialsBaseline.dailyTotal} code={essentialsBaseline.currencyCode} size={24} fit />}</div><div
     style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 8, lineHeight: 1.5 }}
   >{essentialsHidden
-    ? <>A share of an estimated day where your account is registered. The rest is yours.</>
-    : <>{Math.round((Number(essentialsBaseline.share) || 0) * 100)}% of an estimated day where your account is registered, worked out at <ChoiceMoney amount={essentialsBaseline.fullDailyTotal} code={essentialsBaseline.currencyCode} size={11.5} /> a day. The rest is yours.</>}</div></div>}{
+    ? <>A day of essentials from the local pool where your account is registered.</>
+    : !essentialsBaseline.available
+    ? <>Essentials are not available where your account is registered yet.</>
+    : <>A day of essentials from the local pool where your account is registered, in local money. Exchange rates never change it.</>}</div></div>}{
     /* The budget strip appears only when there is a budget. A category
        without one is not a category that is 0% through its budget. */
   }{budget && <div

@@ -1,61 +1,42 @@
 // src/data/essentialsBaseline.js
 // ---------------------------------------------------------------------
-// MOCK DATA LAYER — placeholder only, not sourced from any verified
-// cost-of-living dataset. These numbers exist so the UI has something
-// to render; they are NOT real and must not be presented as such.
-// Do not extend this table with additional invented countries — add
-// real entries only when the real dataset is provided.
+// ESSENTIALS, PER COUNTRY, IN ITS OWN MONEY
 //
-// Shape contract for every entry (per ISO-3166 alpha-2 country code):
-//   { food: number, water: number, shelter: number, creativity: number }
-// All four values are USD-per-day. isValidEssentialsBaselineEntry()
-// enforces this shape, so a future real dataset can be dropped in and
-// any malformed row safely falls back instead of breaking the UI.
+// "Essentials are independent from global currency and FX, because we are
+// sharing local units with local people from a local pool." So every
+// country has its own daily amount in its own currency, and nothing here
+// converts money. An amount changes only when GLOOBAL changes this table.
+//
+//   IN    ₹200 a day, set by the founder (status "set").
+//   rest  scaled from India by the World Bank's 2024 PPP conversion factor
+//         for private consumption (local money per international $), then
+//         rounded. Status "assumed" until checked locally before launch.
+//   none  Essentials are not available in that country yet.
+//
+// The same table is in server/lib/essentials.js, which pays the money;
+// tests/essentials-held-0208.test.mjs fails if the two ever differ.
 // ---------------------------------------------------------------------
-var ESSENTIALS_BASELINE_DATA_SOURCE = "mock-local";
-var ESSENTIALS_BASELINE_METHODOLOGY_VERSION = "essentials-baseline-mock-v0.1";
-var ESSENTIALS_BASELINE_DEFAULT_USD = { food: 6, water: 1.2, shelter: 11, creativity: 1.8 };
-var ESSENTIALS_BASELINE_USD_BY_ISO = {
-  US: { food: 9, water: 2, shelter: 32, creativity: 4 },
-  GB: { food: 8.5, water: 1.9, shelter: 29, creativity: 3.6 },
-  CA: { food: 8, water: 1.8, shelter: 27, creativity: 3.4 },
-  AU: { food: 8.8, water: 2, shelter: 30, creativity: 3.8 },
-  DE: { food: 7.6, water: 1.7, shelter: 24, creativity: 3.2 },
-  FR: { food: 7.8, water: 1.7, shelter: 25, creativity: 3.3 },
-  IT: { food: 7, water: 1.5, shelter: 22, creativity: 2.9 },
-  ES: { food: 6.5, water: 1.4, shelter: 19, creativity: 2.6 },
-  NL: { food: 7.9, water: 1.8, shelter: 27, creativity: 3.4 },
-  CH: { food: 11, water: 2.4, shelter: 38, creativity: 4.8 },
-  SE: { food: 8.2, water: 1.8, shelter: 26, creativity: 3.5 },
-  IE: { food: 8.4, water: 1.9, shelter: 28, creativity: 3.6 },
-  PL: { food: 5, water: 1, shelter: 13, creativity: 1.9 },
-  IN: { food: 2.4, water: 0.4, shelter: 4.5, creativity: 0.8 },
-  CN: { food: 4.2, water: 0.8, shelter: 9, creativity: 1.4 },
-  JP: { food: 7.2, water: 1.6, shelter: 23, creativity: 3 },
-  KR: { food: 6.8, water: 1.5, shelter: 21, creativity: 2.8 },
-  ID: { food: 2.8, water: 0.5, shelter: 5, creativity: 0.9 },
-  PH: { food: 2.6, water: 0.5, shelter: 4.6, creativity: 0.8 },
-  VN: { food: 2.5, water: 0.5, shelter: 4.2, creativity: 0.8 },
-  TH: { food: 3.4, water: 0.6, shelter: 6.5, creativity: 1.1 },
-  MY: { food: 3.6, water: 0.7, shelter: 7, creativity: 1.2 },
-  SG: { food: 7.4, water: 1.7, shelter: 26, creativity: 3.3 },
-  PK: { food: 2, water: 0.35, shelter: 3.8, creativity: 0.6 },
-  BD: { food: 1.9, water: 0.3, shelter: 3.4, creativity: 0.55 },
-  SA: { food: 6.2, water: 1.3, shelter: 18, creativity: 2.4 },
-  AE: { food: 7, water: 1.5, shelter: 24, creativity: 3 },
-  IL: { food: 7.8, water: 1.7, shelter: 26, creativity: 3.3 },
-  EG: { food: 2.1, water: 0.35, shelter: 4, creativity: 0.6 },
-  ZA: { food: 3.2, water: 0.6, shelter: 8, creativity: 1.2 },
-  NG: { food: 2.2, water: 0.4, shelter: 4.4, creativity: 0.7 },
-  KE: { food: 2.4, water: 0.4, shelter: 4.8, creativity: 0.7 },
-  BR: { food: 4.4, water: 0.9, shelter: 10, creativity: 1.6 },
-  MX: { food: 4.6, water: 0.9, shelter: 11, creativity: 1.7 },
-  AR: { food: 3.8, water: 0.7, shelter: 8.5, creativity: 1.3 },
-  NZ: { food: 8.6, water: 1.9, shelter: 29, creativity: 3.7 }
+var ESSENTIALS_BASELINE_DATA_SOURCE = "local-table";
+var ESSENTIALS_BASELINE_METHODOLOGY_VERSION = "essentials-local-2026-11";
+var ESSENTIALS_LOCAL_BY_ISO = {
+  IN: { currency: "INR", daily: 200, food: 100, shelter: 70, water: 10, creativity: 20, status: "set" },
+  BD: { currency: "BDT", daily: 330, food: 165, shelter: 115.5, water: 16.5, creativity: 33, status: "assumed" },
+  BR: { currency: "BRL", daily: 25, food: 12.5, shelter: 8.75, water: 1.25, creativity: 2.5, status: "assumed" },
+  CN: { currency: "CNY", daily: 36, food: 18, shelter: 12.6, water: 1.8, creativity: 3.6, status: "assumed" },
+  KE: { currency: "KES", daily: 450, food: 225, shelter: 157.5, water: 22.5, creativity: 45, status: "assumed" },
+  MY: { currency: "MYR", daily: 14.5, food: 7.25, shelter: 5.07, water: 0.73, creativity: 1.45, status: "assumed" },
+  PH: { currency: "PHP", daily: 210, food: 105, shelter: 73.5, water: 10.5, creativity: 21, status: "assumed" },
+  PK: { currency: "PKR", daily: 650, food: 325, shelter: 227.5, water: 32.5, creativity: 65, status: "assumed" },
+  SA: { currency: "SAR", daily: 19, food: 9.5, shelter: 6.65, water: 0.95, creativity: 1.9, status: "assumed" },
+  SG: { currency: "SGD", daily: 10.5, food: 5.25, shelter: 3.68, water: 0.52, creativity: 1.05, status: "assumed" },
+  US: { currency: "USD", daily: 10, food: 5, shelter: 3.5, water: 0.5, creativity: 1, status: "assumed" },
+  VN: { currency: "VND", daily: 72000, food: 36000, shelter: 25200, water: 3600, creativity: 7200, status: "assumed" },
+  ZA: { currency: "ZAR", daily: 77, food: 38.5, shelter: 26.95, water: 3.85, creativity: 7.7, status: "assumed" }
 };
 var ESSENTIALS_BASELINE_REQUIRED_KEYS = ["food", "water", "shelter", "creativity"];
 function isValidEssentialsBaselineEntry(entry) {
   if (!entry || typeof entry !== "object") return false;
+  if (typeof entry.currency !== "string" || !(Number(entry.daily) > 0)) return false;
   return ESSENTIALS_BASELINE_REQUIRED_KEYS.every(
     (k) => typeof entry[k] === "number" && Number.isFinite(entry[k]) && entry[k] >= 0
   );
@@ -63,78 +44,49 @@ function isValidEssentialsBaselineEntry(entry) {
 
 // ---------------------------------------------------------------------
 // REPOSITORY — the single seam a real data/API layer replaces later.
-// Every consumer reads baseline data through this object, never
-// through ESSENTIALS_BASELINE_USD_BY_ISO directly, so swapping
-// getBaselineUSD's body (e.g. for an async fetch + cache) is a local
-// change here and requires no change to computeEssentialsBaseline or
-// any UI component.
 // ---------------------------------------------------------------------
 var EssentialsBaselineRepository = {
   dataSource: ESSENTIALS_BASELINE_DATA_SOURCE,
-  getBaselineUSD(iso) {
-    const entry = ESSENTIALS_BASELINE_USD_BY_ISO[iso];
-    return isValidEssentialsBaselineEntry(entry) ? entry : ESSENTIALS_BASELINE_DEFAULT_USD;
+  getLocal(iso) {
+    const entry = ESSENTIALS_LOCAL_BY_ISO[String(iso || "").toUpperCase()];
+    return isValidEssentialsBaselineEntry(entry) ? entry : null;
   },
   hasCountry(iso) {
-    return isValidEssentialsBaselineEntry(ESSENTIALS_BASELINE_USD_BY_ISO[iso]);
+    return Boolean(this.getLocal(iso));
   }
 };
 
 // ---------------------------------------------------------------------
-// DOMAIN LAYER — currency conversion + totals. Takes an optional
-// repository so tests (and, later, a real data layer) can inject a
-// substitute without touching this function.
+// A country's day of essentials, as every screen reads it. No exchange
+// rate: the figures are the table's, in the country's own money. Where
+// there is no row the day is zero and `available` is false, so a screen
+// says "not available yet" instead of inventing a figure.
 // ---------------------------------------------------------------------
-// ── GLOOBAL'S SHARE OF A DAY ─────────────────────────────────────────
-//
-// The table above estimates what a day of food, water, shelter and
-// creativity costs. This is the fraction of that day Gloobal carries.
-//
-// A quarter, asked for in those words: "daily total 75% less then what we
-// have". It is applied HERE, in the one function both the Essentials
-// screen and the My Essentials category read, because the alternative is
-// two screens quoting different daily totals for the same thing — a
-// disagreement nobody reports and everybody notices.
-//
-// What the number is NOT is a cost of living. A quarter of an estimated
-// day is a quarter of an estimated day, and every screen that shows it
-// says "a quarter of" rather than letting the figure stand as the whole.
-// The full estimate stays reachable in `fullDailyTotal` below so the two
-// can be shown together without either being recomputed somewhere else
-// and drifting.
-var ESSENTIALS_GLOOBAL_SHARE = 0.25;
-
 function computeEssentialsBaseline(iso, repository) {
   const repo = repository || EssentialsBaselineRepository;
-  const currencyCode = COUNTRY_CURRENCY[iso] || "USD";
-  const usedFallback = !repo.hasCountry(iso);
-  const usd = repo.getBaselineUSD(iso);
-  const toLocal = (v) => currencyCode === "USD" ? v : convert(v, "USD", currencyCode);
-  // Scaled per component rather than only on the total, so the four bars
-  // and the headline are the same arithmetic. Scaling the total alone
-  // would leave four components that no longer add up to it.
-  const share = (v) => toLocal(v) * ESSENTIALS_GLOOBAL_SHARE;
+  const row = repo.getLocal(iso);
+  const available = Boolean(row);
+  const currencyCode = row ? row.currency : (COUNTRY_CURRENCY[iso] || "USD");
   const components = {
-    food: share(usd.food),
-    water: share(usd.water),
-    shelter: share(usd.shelter),
-    creativity: share(usd.creativity)
+    food: row ? row.food : 0,
+    water: row ? row.water : 0,
+    shelter: row ? row.shelter : 0,
+    creativity: row ? row.creativity : 0
   };
-  const fullDaily = toLocal(usd.food + usd.water + usd.shelter + usd.creativity);
-  const dailyTotal = Math.round((components.food + components.water + components.shelter + components.creativity) * 100) / 100;
+  const dailyTotal = row ? Math.round(row.daily * 100) / 100 : 0;
   return {
     currencyCode,
     components,
     dailyTotal,
     monthlyTotal: Math.round(dailyTotal * 30 * 100) / 100,
-    // The whole estimated day, before Gloobal's share is taken. Carried so
-    // a screen can say what the quarter is a quarter OF without working it
-    // back out from the share and arriving at a different rounding.
-    fullDailyTotal: Math.round(fullDaily * 100) / 100,
-    share: ESSENTIALS_GLOOBAL_SHARE,
+    // Kept for older readers: the whole day IS the amount now.
+    fullDailyTotal: dailyTotal,
+    share: 1,
+    available,
+    status: row ? row.status : "none",
     methodologyVersion: ESSENTIALS_BASELINE_METHODOLOGY_VERSION,
     dataSource: repo.dataSource,
-    usedFallback
+    usedFallback: !available
   };
 }
 

@@ -194,6 +194,7 @@ const pushService = require('./services/pushService');
 const { createHelloo, HELLOO_VOICE_PATH } = require('./lib/helloo');
 const { createSocial, SOCIAL_MEDIA_PATH } = require('./lib/social');
 const { createUsed } = require('./lib/used');
+const { createWork } = require('./lib/work');
 const adsLib = require('./lib/ads');
 const HoomanAnswer = require('./models/HoomanAnswer');
 const HoomanProfile = require('./models/HoomanProfile');
@@ -1462,6 +1463,9 @@ helloo.mount(app, requireAuth);
 
 // GLOOBAL Social — posts, follows, likes, comments (lib/social.js).
 createSocial({ User, rateLimit, windowMs: WINDOW_MS, people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
+// Social · Work (lib/work.js): Work cards, openings near you, applying by
+// chat. GLOOBAL only connects people and keeps 0%.
+createWork({ User, rateLimit, windowMs: WINDOW_MS, currencyOf: async (user) => (await localCurrencyFor(accountCountryIso(user))) || 'INR', people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
 
 // GLOOBAL बाज़ार · Used (lib/used.js): people selling their own second-hand
 // things nearby. GLOOBAL keeps 0%: nothing there moves or holds money.

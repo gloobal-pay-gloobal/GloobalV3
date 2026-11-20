@@ -27,6 +27,7 @@ const SocialLink = require('../models/SocialLink');
 const UsedItem = require('../models/UsedItem');
 const UsedPhoto = require('../models/UsedPhoto');
 const AdCampaign = require('../models/AdCampaign');
+const ContentView = require('../models/ContentView');
 
 const TYPES = ['helloo', 'post', 'used', 'ad'];
 const LIST_MAX = 300;
@@ -85,6 +86,17 @@ function createMyData({ User, rateLimit, windowMs, takeBackHelloo }) {
       });
     }
 
+    // Verified people who opened each picture or video (lib/viewPass.js):
+    // every view is a real, checked person. Distinct people, not you.
+    const usedPhotoIds = used.length ? (await UsedPhoto.find({ item: { $in: used.map((u) => u._id) } }).select('_id item').lean()) : [];
+    const mediaIds = [...posts.flatMap((p) => (p.media || []).map((x) => x.id)), ...usedPhotoIds.map((x) => x._id)];
+    const viewersBy = new Map();
+    if (mediaIds.length) {
+      const rows = await ContentView.aggregate([{ $match: { media: { $in: mediaIds }, viewer: { $ne: me } } }, { $group: { _id: '$media', viewers: { $addToSet: '$viewer' } } }]);
+      for (const r of rows) viewersBy.set(String(r._id), r.viewers.map(String));
+    }
+    const peopleOver = (ids) => new Set(ids.flatMap((x) => viewersBy.get(String(x)) || [])).size;
+
     // Social posts: public to anyone; reach is the people who follow you.
     const followers = posts.length ? await SocialLink.countDocuments({ kind: 'follow', to: me }) : 0;
     const postBytes = await sizes(SocialMedia, posts.flatMap((p) => (p.media || []).map((x) => x.id)));
@@ -95,7 +107,7 @@ function createMyData({ User, rateLimit, windowMs, takeBackHelloo }) {
         title: (p.caption || '').split('\n')[0].slice(0, 60) || (video ? 'Video post' : (p.media || []).length ? 'Photo post' : 'Post'),
         where: `Social ${p.story ? 'status' : 'post'} · ${p.side === 'shop' ? 'your shop' : 'public'}`,
         at: p.createdAt, bytes: (p.media || []).reduce((s, x) => s + (postBytes.get(String(x.id)) || 0), 0),
-        reach: { direct: [], chats: 0, forwards: 0, seen: (p.likeCount || 0), likes: p.likeCount || 0, comments: p.commentCount || 0, followers, audience: 'public' },
+        reach: { direct: [], chats: 0, forwards: 0, seen: (p.likeCount || 0), likes: p.likeCount || 0, comments: p.commentCount || 0, followers, verified: peopleOver((p.media || []).map((x) => x.id)), audience: 'public' },
         takenBack: Boolean(p.takenBackAt), canBringBack: Boolean(p.takenBackAt), hiddenByGloobal: Boolean(p.hiddenAt),
       });
     }
@@ -105,7 +117,7 @@ function createMyData({ User, rateLimit, windowMs, takeBackHelloo }) {
       items.push({
         type: 'used', id: String(u._id), kind: 'shop', title: `${u.title}`, where: `बाज़ार Used · ${u.status === 'sold' ? 'sold' : u.takenBackAt ? 'off the market' : 'for sale'}`,
         at: u.createdAt, bytes: usedBytes.get(String(u._id)) || 0,
-        reach: { direct: [], chats: 0, forwards: 0, seen: u.views || 0, audience: 'public' },
+        reach: { direct: [], chats: 0, forwards: 0, seen: u.views || 0, verified: peopleOver(usedPhotoIds.filter((x) => String(x.item) === String(u._id)).map((x) => x._id)), audience: 'public' },
         takenBack: Boolean(u.takenBackAt), canBringBack: Boolean(u.takenBackAt) && new Date(u.expiresAt).getTime() > Date.now(),
       });
     }

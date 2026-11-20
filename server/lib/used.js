@@ -20,6 +20,7 @@
 //   GET    /api/used/deals/:id
 //   POST   /api/used/deals/:id/answer    accept | counter | decline
 const mongoose = require('mongoose');
+const ContentView = require('../models/ContentView');
 const UsedItem = require('../models/UsedItem');
 const UsedPhoto = require('../models/UsedPhoto');
 const UsedDeal = require('../models/UsedDeal');
@@ -122,8 +123,11 @@ function createUsed({ User, rateLimit, windowMs, currencyOf, publicBase = '', vi
       try {
         const id = oid(req.params.id);
         const p = id ? await UsedPhoto.findById(id).lean() : null;
+        const m0id = p ? p._id : null;
         const it = p && p.item ? await UsedItem.findById(p.item).select('status').lean() : null;
         if (!p || !it || it.status === 'removed' || it.status === 'hidden') return res.status(404).json({ success: false, message: 'Not here any more.' });
+        // Written down: this verified person opened it (My data counts them).
+        if (req.viewerId && m0id) ContentView.updateOne({ media: m0id, viewer: req.viewerId }, { $inc: { count: 1 }, $set: { lastAt: new Date() }, $setOnInsert: { kind: 'used' } }, { upsert: true }).catch(() => {});
         res.set('Content-Type', p.mime);
         res.set('Cache-Control', 'private, max-age=300');
         res.set('X-Content-Type-Options', 'nosniff');

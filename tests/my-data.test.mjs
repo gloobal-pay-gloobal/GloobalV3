@@ -47,6 +47,8 @@ stub('./models/SocialLink', coll([{ kind: 'follow', to: me }, { kind: 'follow', 
 const listing = { _id: id(), seller: me, title: 'Old bicycle', status: 'live', takenBackAt: null, views: 40, expiresAt: new Date(Date.now() + 864e5), createdAt: new Date('2026-11-10') };
 const used = stub('./models/UsedItem', coll([listing]));
 stub('./models/UsedPhoto', coll([]));
+const viewer1 = id(), viewer2 = id();
+stub('./models/ContentView', { aggregate: async (pipe) => [{ _id: post.media[0].id, viewers: [viewer1, viewer2] }] });
 const ad = { _id: id(), owner: me, title: 'Chai ₹10', status: 'active', views: 4310, createdAt: new Date('2026-11-01') };
 const ads = stub('./models/AdCampaign', coll([ad]));
 
@@ -71,6 +73,7 @@ test('everything you put in, with how far each thing went', async () => {
   assert.equal(r.body.totals.people, 3, 'Anita, and everyone it was passed on to');
   assert.deepEqual(r.body.items.map((i) => i.type), ['post', 'helloo', 'used', 'ad'], 'newest first');
   assert.ok(r.body.kept.some((k) => /law requires payment records/.test(k.why)));
+  assert.equal(r.body.items.find((i) => i.type === 'post').reach.verified, 2, 'distinct verified people who opened it');
 });
 
 test('take one thing back, and bring a post back', async () => {

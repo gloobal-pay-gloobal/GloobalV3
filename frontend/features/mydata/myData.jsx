@@ -149,8 +149,10 @@ function MyDataScreen({ onClose }) {
   const rows = !it ? [] : it.type === "helloo"
     ? [["You sent it to", r.direct && r.direct.length ? r.direct.join(", ") : "—", MdChat], ["They passed it on", r.forwards ? `${r.forwards} time${r.forwards > 1 ? "s" : ""}, into ${r.chats - 1} more chat${r.chats - 1 === 1 ? "" : "s"}` : "Not passed on", MdForward], ["Opened", `${r.seen || 0} time${r.seen === 1 ? "" : "s"}`, MdSeen]]
     : it.type === "post"
-    ? [["Who can see it", `Anyone on GLOOBAL · ${r.followers || 0} follower${r.followers === 1 ? "" : "s"} see it first`, MdWorld], ["Liked", `${r.likes || 0} time${r.likes === 1 ? "" : "s"}`, MdLike], ["Comments", String(r.comments || 0), MdChat]]
-    : [["Who can see it", "Anyone on GLOOBAL", MdWorld], ["Viewed", `${(r.seen || 0).toLocaleString("en-IN")} time${r.seen === 1 ? "" : "s"}`, MdSeen]];
+    ? [["Who can see it", `Signed-in people on GLOOBAL · ${r.followers || 0} follower${r.followers === 1 ? "" : "s"} see it first`, MdWorld], ["Opened by", `${r.verified || 0} verified ${r.verified === 1 ? "person" : "people"}`, MdSeen], ["Liked", `${r.likes || 0} time${r.likes === 1 ? "" : "s"}`, MdLike], ["Comments", String(r.comments || 0), MdChat]]
+    : it.type === "used"
+    ? [["Who can see it", "Signed-in people on GLOOBAL", MdWorld], ["Opened by", `${r.verified || 0} verified ${r.verified === 1 ? "person" : "people"}`, MdSeen], ["Listing viewed", `${(r.seen || 0).toLocaleString("en-IN")} time${r.seen === 1 ? "" : "s"}`, MdSeen]]
+    : [["Who can see it", "Signed-in people on GLOOBAL", MdWorld], ["Viewed", `${(r.seen || 0).toLocaleString("en-IN")} time${r.seen === 1 ? "" : "s"}`, MdSeen]];
   const detail = it ? <>
     <UsedTop onBack={() => setAt("home")} title={(MY_DATA_KINDS[it.kind] || MY_DATA_KINDS.doc).label} subtitle={it.where} />
     <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 14px 28px" }}>

@@ -27,6 +27,7 @@
 //
 // `?as=` acts as a shop you run, the same way Helloo does.
 const mongoose = require('mongoose');
+const ContentView = require('../models/ContentView');
 const SocialPost = require('../models/SocialPost');
 const SocialMedia = require('../models/SocialMedia');
 const SocialLink = require('../models/SocialLink');
@@ -179,11 +180,14 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       try {
         const id = oid(req.params.id);
         const m = id ? await SocialMedia.findById(id).lean() : null;
+        const m0id = m ? m._id : null;
         const post = m && m.post ? await SocialPost.findById(m.post).select('removedAt takenBackAt story expiresAt').lean() : null;
         if (post && post.story && post.expiresAt && new Date(post.expiresAt).getTime() < Date.now()) return res.status(404).json({ success: false, message: 'Not here any more.' });
         // Served while it belongs to a live post, or to an ad.
         if (!m || !((post && !post.removedAt && !post.takenBackAt) || m.ad)) return res.status(post && post.takenBackAt ? 410 : 404).json({ success: false, code: post && post.takenBackAt ? 'taken_back' : 'gone', message: post && post.takenBackAt ? 'Taken back by its owner.' : 'Not here any more.' });
         const buf = Buffer.from(m.data.buffer || m.data);
+        // Written down: this verified person opened it (My data counts them).
+        if (req.viewerId && m0id) ContentView.updateOne({ media: m0id, viewer: req.viewerId }, { $inc: { count: 1 }, $set: { lastAt: new Date() }, $setOnInsert: { kind: 'social' } }, { upsert: true }).catch(() => {});
         res.set('Content-Type', m.mime);
         // Kept only by the viewer's own phone, for minutes, not a year: no
         // shared cache holds it (no open links), and taking a post back

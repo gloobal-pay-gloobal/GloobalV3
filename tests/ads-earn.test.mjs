@@ -14,7 +14,7 @@ const val = (doc, e) => (typeof e === 'string' && e[0] === '$' ? get(doc, e.slic
 function match(doc, q) {
   return Object.entries(q).every(([k, c]) => {
     if (k === '$or') return c.some((s) => match(doc, s));
-    if (k === '$expr') { const [[op, [a, b]]] = Object.entries(c); return op === '$gte' ? val(doc, a) >= val(doc, b) : val(doc, a) <= val(doc, b); }
+    if (k === '$expr') { const one = (e) => { const [[op, x]] = Object.entries(e); if (op === '$and') return x.every(one); const [a, b] = x; return op === '$gte' ? val(doc, a) >= val(doc, b) : val(doc, a) <= val(doc, b); }; return one(c); }
     const v = get(doc, k);
     if (c && typeof c === 'object' && !(c instanceof Date) && !(c instanceof mongoose.Types.ObjectId)) {
       return Object.entries(c).every(([op, x]) => {
@@ -22,6 +22,8 @@ function match(doc, q) {
         if (op === '$nin') return !x.some((y) => eq(v, y));
         if (op === '$lt') return v < x;
         if (op === '$gte') return v >= x;
+        if (op === '$gt') return v > x;
+        if (op === '$lte') return v != null && v <= x;
         if (op === '$ne') return !eq(v, x);
         throw new Error('op ' + op);
       });
@@ -41,6 +43,7 @@ function model(defaults = {}) {
     findById: (id) => q(rows.filter((r) => eq(r._id, id)), true),
     exists: async (f) => (rows.some((r) => match(r, f)) ? { _id: 1 } : null),
     create: async (d) => { if (d.campaign && rows.some((r) => eq(r.campaign, d.campaign) && eq(r.viewer, d.viewer))) { const e = new Error('dup'); e.code = 11000; throw e; } const r = wrap({ _id: new mongoose.Types.ObjectId(), createdAt: new Date(), updatedAt: new Date(), ...JSON.parse(JSON.stringify(defaults)), ...d }); rows.push(r); return r; },
+    updateMany: async (f, u) => { rows.filter((x) => match(x, f)).forEach((r) => apply(r, u)); return {}; },
     updateOne: async (f, u, o = {}) => { let r = rows.find((x) => match(x, f)); if (!r && o.upsert) { r = wrap({ _id: new mongoose.Types.ObjectId(), ...(u.$setOnInsert || {}) }); rows.push(r); } if (r) apply(r, u); return {}; },
     findOneAndUpdate: (f, u) => { const r = rows.find((x) => match(x, f)); if (r) apply(r, u); return q(r ? [r] : [], true); },
     aggregate: async () => [],
@@ -306,4 +309,51 @@ test('an advertiser sees the crowd an ad would reach and what it asks — never 
   assert.equal((await call('get /api/ads/audience', stall, { query: { km: '40', lat: '27.5', lng: '76.6' } })).body.code, 'bad_place');
   // Wider distances are allowed now.
   assert.equal((await newAd(stall, { title: 'Chai for the district', near: { ...near, km: 100 } })).body.campaign.nearKm, 100);
+});
+
+test('hashtags: an ad carries up to five, and browsing by one shows only ads that carry it', async () => {
+  assert.deepEqual(ads.cleanTags(['#Chai', 'chai', ' #कुल्हड़ ', 'a', 'two words', '#ok_2', 'x1', 'x2', 'x3']), ['chai', 'कुल्हड़', 'ok_2', 'x1', 'x2']);
+  const cafe = { _id: id(), symbolId: 'CAFE1', countryIso: 'IN' }; const tara = { _id: id(), symbolId: 'TARA1', countryIso: 'IN' }; User.rows.push(cafe, tara);
+  await call('put /api/ads/prefs', tara, { body: { price: 0.1 } });
+  const made = await newAd(cafe, { title: 'Filter coffee', topics: ['food'], hashtags: ['#FilterCoffee', 'southindian'] });
+  assert.deepEqual(made.body.campaign.hashtags, ['filtercoffee', 'southindian']);
+  const byTag = await call('get /api/ads/next', tara, { query: { tag: '#filterCoffee' } });
+  assert.equal(byTag.body.ad.id, made.body.campaign.id);
+  assert.deepEqual(byTag.body.ad.hashtags, ['filtercoffee', 'southindian']);
+  assert.equal((await call('get /api/ads/next', tara, { query: { tag: 'nothinglikeit' } })).body.ad, null);
+  const tags = await call('get /api/ads/hashtags', tara);
+  assert.ok(tags.body.tags.some((t) => t.tag === 'filtercoffee' && t.ads === 1));
+  assert.ok(!(await call('get /api/ads/hashtags', cafe)).body.tags.some((t) => t.tag === 'filtercoffee'), 'not your own ads');
+});
+
+test('a budget spread over days: no more than a day\'s share in a day, and it ends when its days are over', async () => {
+  const gym = { _id: id(), symbolId: 'GYM01', countryIso: 'IN' }; User.rows.push(gym);
+  assert.equal((await newAd(gym, { days: 31 })).body.code, 'bad_days');
+  assert.equal((await newAd(gym, { days: 2.5 })).body.code, 'bad_days');
+  assert.equal((await newAd(gym, { budget: 10, maxPerView: 2, days: 10 })).body.code, 'bad_days', 'less than one view a day');
+  // 10 over 10 days: 1 a day. Viewers ask 0.5, so two a day.
+  const made = await newAd(gym, { title: 'Join this week', budget: 10, maxPerView: 0.5, days: 10, hashtags: ['gymweek'] });
+  const c = made.body.campaign; assert.equal(c.days, 10); assert.equal(c.perDay, 1);
+  assert.ok(new Date(c.endsAt).getTime() > Date.now() + 9.9 * 864e5);
+  const viewers = [];
+  for (let i = 0; i < 3; i += 1) { const u = { _id: id(), symbolId: `GV${i}`, countryIso: 'IN' }; User.rows.push(u); await call('put /api/ads/prefs', u, { body: { price: 0.5 } }); viewers.push(u); }
+  const see = async (u) => (await call('get /api/ads/next', u, { query: { tag: 'gymweek' } })).body.ad;
+  for (const u of viewers.slice(0, 2)) {
+    assert.equal((await see(u)).id, c.id);
+    await call('post /api/ads/:id/start', u, { params: { id: c.id } }); watched(c.id, u, 20);
+    assert.equal((await call('post /api/ads/:id/claim', u, { params: { id: c.id } })).body.paid, true);
+  }
+  assert.equal(await see(viewers[2]), null, 'today\'s share is used: nobody else is shown it today');
+  assert.equal((await call('post /api/ads/:id/start', viewers[2], { params: { id: c.id } })).body.code, 'gone');
+  const mineNow = (await call('get /api/ads/campaigns', gym)).body.campaigns.find((x) => x.id === c.id);
+  assert.equal(mineNow.spentToday, 1); assert.equal(mineNow.status, 'active');
+  // Tomorrow it has room again.
+  const row = Campaign.rows.find((x) => eq(x._id, c.id)); row.dayKey = 'yesterday';
+  assert.equal((await see(viewers[2])).id, c.id);
+  // When its days are over it stops, and what is left was never taken.
+  row.endsAt = new Date(Date.now() - 1000);
+  assert.equal(await see(viewers[2]), null);
+  assert.equal((await call('post /api/ads/campaigns/:id', gym, { params: { id: c.id }, body: { action: 'pause' } })).body.code, 'time');
+  const ended = (await call('get /api/ads/campaigns', gym)).body.campaigns.find((x) => x.id === c.id);
+  assert.equal(ended.status, 'ended'); assert.equal(ended.stopReason, 'time'); assert.equal(ended.spent, 1);
 });

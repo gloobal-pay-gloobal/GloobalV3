@@ -17,6 +17,18 @@ const adCampaignSchema = new mongoose.Schema(
     // Only for people within `km` of this point (a tea stall wants the
     // street, not the country). Empty: everyone in the currency.
     near: { lat: { type: Number, default: null }, lng: { type: Number, default: null }, km: { type: Number, default: 0 } },
+    // Hashtags the advertiser chose (lower-case, no #): a person browsing
+    // Ads by one of them is shown only ads that carry it.
+    hashtags: { type: [String], default: [] },
+    // Spread over a number of days: 0 is "until the budget is used". With
+    // days, no more than budget / days is paid in one day (the advertiser's
+    // day, by `tz` minutes), and the ad ends at `endsAt` with whatever is
+    // left never taken.
+    days: { type: Number, default: 0, min: 0, max: 30 },
+    endsAt: { type: Date, default: null },
+    tz: { type: Number, default: 0 },
+    dayKey: { type: String, default: '' },
+    daySpent: { type: Number, default: 0, min: 0 },
     currency: { type: String, required: true, uppercase: true },
     maxPerView: { type: Number, required: true, min: 0.1, max: 7 },
     budget: { type: Number, required: true, min: 1 },
@@ -26,7 +38,8 @@ const adCampaignSchema = new mongoose.Schema(
     fullViews: { type: Number, default: 0, min: 0 },
     status: { type: String, enum: ['active', 'paused', 'ended'], default: 'active', index: true },
     // Why it stopped by itself: 'short' (the balance could not cover a
-    // view), 'done' (budget used). Empty when the advertiser did it.
+    // view), 'done' (budget used), 'time' (its days are over). Empty when
+    // the advertiser did it.
     stopReason: { type: String, default: '' },
     // When the PIN approved it. No payment is ever made without this.
     mandateAt: { type: Date, required: true },

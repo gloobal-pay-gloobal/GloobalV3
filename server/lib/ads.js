@@ -36,7 +36,8 @@
 //   GET  /api/ads/me?tz=                     my price, topics, today, this month
 //   PUT  /api/ads/prefs                      { price, topics }
 //   GET  /api/ads/audience?km=&lat=&lng=&topics=  how many people an ad would reach, and what they ask
-//   GET  /api/ads/next?tz=&topic=&lat=&lng=  the next ad for me (in one category, near me, if asked), or none
+//   GET  /api/ads/hashtags                   hashtags on the ads running now
+//   GET  /api/ads/next?tz=&topic=&tag=&lat=&lng=  the next ad for me (in one category, near me, if asked), or none
 //   POST /api/ads/:id/start                  begin watching
 //   POST /api/ads/:id/claim                  { skip? } watched in full → paid; skipped → paid for the time watched
 //   POST /api/ads/:id/feel                   { liked: true | false }
@@ -64,6 +65,7 @@ const STUCK_MS = 60 * 1000;
 const NEAR_KM = [1, 2, 3, 5, 10, 25, 50, 100];
 // An advertiser is told about the people an ad would reach only as a crowd:
 // below this many, no prices are shown.
+const DAYS_MAX = 30;
 const AUDIENCE_MIN = 5;
 const AUDIENCE_DAYS = 30;
 
@@ -89,6 +91,24 @@ function inReach(campaign, where) {
 
 const oid = (v) => (mongoose.isValidObjectId(v) ? new mongoose.Types.ObjectId(String(v)) : null);
 const sameId = (a, b) => String(a) === String(b);
+// Up to five hashtags, as people would type them: any script, 2 to 30 long.
+function cleanTags(list) {
+  const out = [];
+  for (const raw of Array.isArray(list) ? list : []) {
+    const m = String(raw || '').trim().replace(/^#+/, '').toLowerCase().match(/^[\p{L}\p{M}\p{N}_]{2,30}$/u);
+    if (m && !out.includes(m[0])) out.push(m[0]);
+    if (out.length >= 5) break;
+  }
+  return out;
+}
+// An ad spread over days: the most it pays in one day, which day it is for
+// the advertiser, and what is still free today.
+const perDay = (c) => (c.days > 0 ? Math.round((c.budget / c.days) * 100) / 100 : Infinity);
+const dayKeyOf = (c, now = new Date()) => dayStart(c.tz || 0, now).toISOString().slice(0, 13);
+const leftToday = (c, now = new Date()) => (c.days > 0 ? Math.max(0, perDay(c) - (c.dayKey === dayKeyOf(c, now) ? c.daySpent || 0 : 0)) : Infinity);
+const over = (c, now = new Date()) => Boolean(c.endsAt) && new Date(c.endsAt).getTime() <= now.getTime();
+// Running for this price right now: its days are not over and today has room.
+const openFor = (c, price) => !over(c) && leftToday(c) + 1e-9 >= price;
 const tenths = (v) => Math.round(Number(v) * 10) / 10;
 const cents = (v) => Math.round(Number(v) * 100) / 100;
 const isPrice = (v) => typeof v === 'number' && Number.isFinite(v) && v >= PRICE_MIN && v <= PRICE_MAX && Math.abs(v * 10 - Math.round(v * 10)) < 1e-6;
@@ -164,12 +184,13 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
   }
   const campaignOut = (c, extra) => Object.assign({
     id: String(c._id), title: c.title, media: { kind: c.media.kind, url: mediaUrl(c.media.id) }, seconds: c.seconds, topics: c.topics || [], currency: c.currency,
+    hashtags: c.hashtags || [], days: c.days || 0, endsAt: c.endsAt || null, perDay: c.days > 0 ? perDay(c) : 0, spentToday: c.days > 0 ? cents(perDay(c) - leftToday(c)) : 0,
     nearKm: (c.near && c.near.km) || 0, maxPerView: c.maxPerView, budget: c.budget, spent: cents(c.spent), left: Math.max(0, cents(c.budget - c.spent)), views: c.views, fullViews: c.fullViews || 0, status: c.status, stopReason: c.stopReason || '', at: c.createdAt,
   }, extra || {});
 
   // The next ad this person may be paid for, or null.
   // `only`: one category the person is browsing right now, over their saved ones.
-  async function pickFor(me, prefs, currency, only, where) {
+  async function pickFor(me, prefs, currency, only, where, tag) {
     const seen = await AdView.find({ viewer: me._id, status: { $in: ['paying', 'paid', 'skipped', 'failed'] } }).select('campaign').lean();
     // Never your own ad, nor one from a shop you run, nor from its owner.
     const mine = [me._id];
@@ -179,8 +200,10 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
       status: 'active', currency, owner: { $nin: mine }, maxPerView: { $gte: prefs.price - 1e-9 }, _id: { $nin: seen.map((v) => v.campaign) },
       $expr: { $gte: [{ $subtract: ['$budget', '$spent'] }, prefs.price - 1e-9] },
     }).sort({ maxPerView: -1, createdAt: 1 }).limit(200).lean();
-    const fits = (c) => (only ? (c.topics || []).includes(only) : !prefs.topics.length || !(c.topics || []).length || c.topics.some((t) => prefs.topics.includes(t)));
-    return list.find((c) => fits(c) && inReach(c, where)) || null;
+    // Browsing by a hashtag: only ads that carry it. By a category: only that
+    // category. Otherwise the person's saved categories.
+    const fits = (c) => (tag ? (c.hashtags || []).includes(tag) : only ? (c.topics || []).includes(only) : !prefs.topics.length || !(c.topics || []).length || c.topics.some((t) => prefs.topics.includes(t)));
+    return list.find((c) => fits(c) && inReach(c, where) && openFor(c, prefs.price)) || null;
   }
 
   // Kept each time a person opens Ads, for the advertiser's crowd figures:
@@ -254,9 +277,10 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
         const only = TOPICS.includes(String(req.query.topic || '')) ? String(req.query.topic) : '';
         const where = placeOf(req.query.lat, req.query.lng);
         await noteViewer(me, currency, where);
-        const c = await pickFor(me, prefs, currency, only, where);
+        const tag = cleanTags([req.query.tag])[0] || '';
+        const c = await pickFor(me, prefs, currency, only, where, tag);
         if (!c) return res.json({ success: true, ad: null, why: 'none', today: { count: t.count, cap: t.cap, earned: t.earned } });
-        return res.json({ success: true, ad: { id: String(c._id), title: c.title, topics: c.topics || [], nearKm: (c.near && c.near.km) || 0, media: { kind: c.media.kind, url: mediaUrl(c.media.id) }, seconds: c.seconds, price: prefs.price, currency, advertiser: await cardOf(c.owner) }, today: { count: t.count, cap: t.cap, earned: t.earned } });
+        return res.json({ success: true, ad: { id: String(c._id), title: c.title, topics: c.topics || [], hashtags: c.hashtags || [], nearKm: (c.near && c.near.km) || 0, media: { kind: c.media.kind, url: mediaUrl(c.media.id) }, seconds: c.seconds, price: prefs.price, currency, advertiser: await cardOf(c.owner) }, today: { count: t.count, cap: t.cap, earned: t.earned } });
       } catch (error) { return fail(res, 'next', error); }
     });
     // Starting fixes the price (the viewer's own, today) and the clock.
@@ -268,7 +292,7 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
         if (t.count >= DAILY_CAP) return res.status(429).json({ success: false, code: 'cap', message: `That is today's ${DAILY_CAP} ads. More tomorrow.` });
         const c = id ? await AdCampaign.findOne({ _id: id, status: 'active', currency }).lean() : null;
         const mineToo = c && (sameId(c.owner, me._id) || (me.shopOwnerId && sameId(c.owner, me.shopOwnerId)) || Boolean(await User.exists({ _id: c.owner, shopOwnerId: me._id })));
-        if (!c || mineToo || c.maxPerView + 1e-9 < prefs.price || c.budget - c.spent + 1e-9 < prefs.price || !inReach(c, placeOf(req.query.lat, req.query.lng))) return res.status(404).json({ success: false, code: 'gone', message: 'That ad is not running any more.' });
+        if (!c || mineToo || c.maxPerView + 1e-9 < prefs.price || c.budget - c.spent + 1e-9 < prefs.price || !openFor(c, prefs.price) || !inReach(c, placeOf(req.query.lat, req.query.lng))) return res.status(404).json({ success: false, code: 'gone', message: 'That ad is not running any more.' });
         const now = new Date();
         const existing = await AdView.findOne({ campaign: c._id, viewer: me._id }).lean();
         if (existing && existing.status !== 'started') return res.status(409).json({ success: false, code: 'seen', message: 'You have already watched this ad.' });
@@ -317,9 +341,16 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
         ).lean();
         if (!mine) return res.status(409).json({ success: false, code: 'busy', message: 'This one is being paid. Give it a moment.' });
         if (!mine.reserved) {
-          const reserved = await AdCampaign.findOneAndUpdate(
-            { _id: c._id, status: 'active', $expr: { $lte: [{ $add: ['$spent', mine.amount] }, { $add: ['$budget', 0.001] }] } },
-            { $inc: { spent: mine.amount, views: 1, fullViews: mine.full ? 1 : 0 } },
+          // Spread over days: a new day starts its count again, and today's
+          // share is reserved with the budget in the same step.
+          const daily = c.days > 0;
+          const key = daily ? dayKeyOf(c) : '';
+          if (daily && c.dayKey !== key) await AdCampaign.updateOne({ _id: c._id, dayKey: { $ne: key } }, { $set: { dayKey: key, daySpent: 0 } });
+          const room = [{ $lte: [{ $add: ['$spent', mine.amount] }, { $add: ['$budget', 0.001] }] }];
+          if (daily) room.push({ $lte: [{ $add: ['$daySpent', mine.amount] }, perDay(c) + 0.001] });
+          const reserved = over(c) ? null : await AdCampaign.findOneAndUpdate(
+            { _id: c._id, status: 'active', $expr: room.length > 1 ? { $and: room } : room[0] },
+            { $inc: Object.assign({ spent: mine.amount, views: 1, fullViews: mine.full ? 1 : 0 }, daily ? { daySpent: mine.amount } : {}) },
             { returnDocument: 'after' }
           ).lean();
           if (!reserved) {
@@ -329,7 +360,7 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
           await AdView.updateOne({ _id: mine._id }, { $set: { reserved: true } });
         }
         const giveBack = async (status) => {
-          await AdCampaign.updateOne({ _id: c._id }, { $inc: { spent: -mine.amount, views: -1, fullViews: mine.full ? -1 : 0 } });
+          await AdCampaign.updateOne({ _id: c._id }, { $inc: Object.assign({ spent: -mine.amount, views: -1, fullViews: mine.full ? -1 : 0 }, c.days > 0 ? { daySpent: -mine.amount } : {}) });
           await AdView.updateOne({ _id: mine._id }, { $set: { status, reserved: false } });
         };
         const owner = await User.findById(c.owner).lean();
@@ -377,11 +408,23 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
     // ── THE ADVERTISER ────────────────────────────────────────────────
     app.get('/api/ads/campaigns', adsRead, requireAuth, async (req, res) => {
       try {
+        // An ad whose days are over has ended; what it did not spend was never taken.
+        await AdCampaign.updateMany({ owner: req.authUser._id, status: { $in: ['active', 'paused'] }, days: { $gt: 0 }, endsAt: { $lte: new Date() } }, { $set: { status: 'ended', stopReason: 'time', endedAt: new Date() } });
         const list = await AdCampaign.find({ owner: req.authUser._id }).sort({ createdAt: -1 }).limit(50).lean();
         const feel = list.length ? await AdView.aggregate([{ $match: { campaign: { $in: list.map((c) => c._id) }, status: 'paid', liked: { $ne: null } } }, { $group: { _id: { c: '$campaign', l: '$liked' }, n: { $sum: 1 } } }]) : [];
         const count = (c, l) => (feel.find((f) => sameId(f._id.c, c._id) && f._id.l === l) || { n: 0 }).n;
-        return res.json({ success: true, currency: await currencyOf(req.authUser), campaigns: list.map((c) => campaignOut(c, { interested: count(c, true), notForMe: count(c, false) })), allTopics: TOPICS, nearKm: NEAR_KM, priceMin: PRICE_MIN, priceMax: PRICE_MAX, budgetMin: BUDGET_MIN, budgetMax: BUDGET_MAX });
+        return res.json({ success: true, currency: await currencyOf(req.authUser), campaigns: list.map((c) => campaignOut(c, { interested: count(c, true), notForMe: count(c, false) })), allTopics: TOPICS, nearKm: NEAR_KM, daysMax: DAYS_MAX, priceMin: PRICE_MIN, priceMax: PRICE_MAX, budgetMin: BUDGET_MIN, budgetMax: BUDGET_MAX });
       } catch (error) { return fail(res, 'campaigns', error); }
+    });
+    // The hashtags on ads that are running now, most used first: what a
+    // person can browse by.
+    app.get('/api/ads/hashtags', adsRead, requireAuth, async (req, res) => {
+      try {
+        const rows = await AdCampaign.find({ status: 'active', currency: await currencyOf(req.authUser) }).select('hashtags endsAt owner').limit(1000).lean();
+        const n = new Map();
+        for (const c of rows) if (!over(c) && !sameId(c.owner, req.authUser._id)) for (const t of c.hashtags || []) n.set(t, (n.get(t) || 0) + 1);
+        return res.json({ success: true, tags: [...n.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 20).map(([tag, ads]) => ({ tag, ads })) });
+      } catch (error) { return fail(res, 'hashtags', error); }
     });
     // Before an ad is made: how many people it would reach and what they ask,
     // so the price is set from what is there and not from a guess.
@@ -414,6 +457,10 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
           if (!at || !NEAR_KM.includes(km)) return res.status(400).json({ success: false, code: 'bad_place', message: 'Pick a distance, and let the app see where you are.' });
           near = { lat: at.lat, lng: at.lng, km };
         }
+        // Over how many days: none (until the budget is used) or 1 to 30.
+        const days = body.days === undefined || body.days === null || body.days === '' ? 0 : Number(body.days);
+        if (!Number.isInteger(days) || days < 0 || days > DAYS_MAX) return res.status(400).json({ success: false, code: 'bad_days', message: `Pick up to ${DAYS_MAX} days.` });
+        if (days && budget / days + 1e-9 < maxPerView) return res.status(400).json({ success: false, code: 'bad_days', message: 'That is less than one view a day. Pick fewer days or a bigger budget.' });
         const mediaId = oid(body.media);
         const media = mediaId ? await SocialMedia.findOne({ _id: mediaId, owner: me._id, post: null, ad: null }).select('_id kind').lean() : null;
         if (!media) return res.status(400).json({ success: false, code: 'bad_media', message: 'Add the picture or video for the ad.' });
@@ -424,7 +471,7 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
         if (typeof checkPin !== 'function') return res.status(503).json({ success: false, message: 'Not available right now.' });
         const pin = await checkPin(me, String(body.pin || ''));
         if (!pin.ok) return res.status(pin.status || 401).json({ success: false, code: 'bad_pin', message: pin.message || 'That PIN is not right.', retryAfterSeconds: pin.retryAfterSeconds });
-        const c = await AdCampaign.create({ owner: me._id, title, media: { id: media._id, kind: media.kind }, seconds, topics: cleanTopics(body.topics), near, currency: await currencyOf(me), maxPerView: tenths(maxPerView), budget, mandateAt: new Date() });
+        const c = await AdCampaign.create({ owner: me._id, title, media: { id: media._id, kind: media.kind }, seconds, topics: cleanTopics(body.topics), near, currency: await currencyOf(me), maxPerView: tenths(maxPerView), budget, mandateAt: new Date(), hashtags: cleanTags(body.hashtags), days, endsAt: days ? new Date(Date.now() + days * 864e5) : null, tz: Number.isFinite(Number(req.query.tz)) ? Math.max(-840, Math.min(840, Math.round(Number(req.query.tz)))) : 0, dayKey: '', daySpent: 0 });
         await SocialMedia.updateOne({ _id: media._id }, { $set: { ad: c._id } });
         return res.json({ success: true, campaign: campaignOut(c.toObject(), { interested: 0, notForMe: 0 }) });
       } catch (error) { return fail(res, 'create', error); }
@@ -438,6 +485,7 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
         if (!c) return res.status(404).json({ success: false, message: 'That ad is not yours.' });
         const action = String((req.body || {}).action || '');
         if (c.status === 'ended') return res.status(409).json({ success: false, message: 'That ad has ended.' });
+        if (over(c) && action !== 'end') { c.status = 'ended'; c.stopReason = 'time'; c.endedAt = new Date(); await c.save(); return res.status(409).json({ success: false, code: 'time', message: 'Its days are over. Start a new ad.' }); }
         if (action === 'pause' && c.status === 'active') { c.status = 'paused'; c.stopReason = ''; }
         else if (action === 'resume' && c.status === 'paused') {
           if (c.budget - c.spent < PRICE_MIN) return res.status(409).json({ success: false, message: 'Its budget is used up.' });
@@ -453,4 +501,4 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
   return { mount, pickFor };
 }
 
-module.exports = { kmBetween, inReach, createAds, configureAds, readAdMandate, adMandateCovers, MANDATE_HEADER, dayStart, DAILY_CAP };
+module.exports = { cleanTags, kmBetween, inReach, createAds, configureAds, readAdMandate, adMandateCovers, MANDATE_HEADER, dayStart, DAILY_CAP };

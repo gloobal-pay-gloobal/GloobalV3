@@ -60,7 +60,7 @@ function model(name) {
       // An upsert writes the filter's fields, $setOnInsert and $set, as Mongo does.
       if (!r && o.upsert) { r = wrap({ _id: new mongoose.Types.ObjectId(), createdAt: new Date(), ...Object.fromEntries(Object.entries(f).filter(([, v]) => v === null || typeof v !== 'object' || v instanceof mongoose.Types.ObjectId)), ...(u.$setOnInsert || {}), ...(u.$set || {}) }); rows.push(r); return { upsertedCount: 1 }; }
       if (!r) return { matchedCount: 0 };
-      Object.assign(r, u.$set || {});
+      for (const [k, v] of Object.entries(u.$set || {})) { const ks = k.split('.'); let o = r; ks.slice(0, -1).forEach((x) => { o = o[x] = o[x] || {}; }); o[ks[ks.length - 1]] = v; }
       for (const [k, n] of Object.entries(u.$inc || {})) r[k] = (r[k] || 0) + n;
       return { matchedCount: 1, upsertedCount: 0 };
     },
@@ -84,6 +84,8 @@ const asha = { _id: id(), symbolId: 'ASHA1', fullName: 'Asha Rao', countryIso: '
 const ravi = { _id: id(), symbolId: 'RAVI1', fullName: 'Ravi Kumar', countryIso: 'IN', creatorProfile: {} };
 const meera = { _id: id(), symbolId: 'MEERA', fullName: 'Meera N', countryIso: 'IN', creatorProfile: {} };
 const ashaShop = { _id: id(), symbolId: 'CHAI1', fullName: 'Asha Rao', countryIso: 'IN', shopOwnerId: asha._id, creatorProfile: { handle: 'ashachai', handleFirst: 'Asha', handleLast: 'Chai' } };
+// Everyone here has turned their social profiles on (see the last test for off).
+for (const u of [asha, ravi, meera, ashaShop]) u.socialOn = { self: true, shop: true };
 User.rows.push(asha, ravi, meera, ashaShop);
 const ownItem = (await Item.create({ ownerSymbolId: 'CHAI1', title: 'Masala chai', price: 30, currency: 'INR', position: 0 }));
 const raviItem = (await Item.create({ ownerSymbolId: 'RAVI1', title: 'Not hers', price: 9, currency: 'INR', position: 0 }));
@@ -181,7 +183,7 @@ test('acting as a shop you do not run is refused; your own shop posts as the sho
 });
 
 test('three different people reporting a post hides it from others, not its author', async () => {
-  const extra = { _id: id(), symbolId: 'X1', fullName: 'X', creatorProfile: {} };
+  const extra = { _id: id(), symbolId: 'X1', fullName: 'X', creatorProfile: {}, socialOn: { self: true } };
   User.rows.push(extra);
   for (const who of [ravi, meera, ravi, extra]) await call('post /api/social/posts/:id/report', who, { params: { id: post.id }, body: { reason: 'spam' } });
   const seen = await call('get /api/social/posts/:id/comments', ravi, { params: { id: post.id } });
@@ -262,4 +264,36 @@ test('the heart: likes, comments and new followers for you â€” never your own â€
   assert.ok(list.body.items.find((i) => i.type === 'like').post.media.url.includes('/api/social/media/'));
   await call('post /api/social/activity/seen', meera);
   assert.equal((await call('get /api/social/activity', meera, { query: { count: '1' } })).body.unread, 0, 'opened: nothing new');
+});
+
+test('a social profile is off until its owner turns it on, one at a time', async () => {
+  const nisha = { _id: id(), symbolId: 'NISHA', fullName: 'Nisha P', countryIso: 'IN', creatorProfile: { handle: 'nishabakes', handleFirst: 'Nisha', handleLast: 'Bakes' } };
+  User.rows.push(nisha);
+  let acc = await call('get /api/social/accounts', nisha);
+  assert.deepEqual(Object.keys(acc.body.accounts).sort(), ['self', String(nisha._id)].sort());
+  assert.equal(acc.body.accounts.self.on, false);
+  assert.equal(acc.body.accounts[String(nisha._id)].on, false);
+  assert.equal((await upload(nisha, JPEG, { as: 'self' })).body.code, 'social_off', 'cannot post while off');
+  assert.equal((await call('post /api/social/follow', nisha, { query: { as: 'self' }, body: { to: String(ravi._id) } })).body.code, 'social_off');
+  assert.equal((await call('get /api/social/profile/:gloobalId', ravi, { params: { gloobalId: 'NISHA' }, query: { side: 'self' } })).status, 404, 'others cannot open an off profile');
+  // Turn on yourself only; the shop stays off.
+  await call('post /api/social/on', nisha, { query: { as: 'self' }, body: { on: true } });
+  acc = await call('get /api/social/accounts', nisha);
+  assert.equal(acc.body.accounts.self.on, true);
+  assert.equal(acc.body.accounts[String(nisha._id)].on, false);
+  const m = await upload(nisha, JPEG, { as: 'self' });
+  const made = await call('post /api/social/posts', nisha, { query: { as: 'self' }, body: { media: [m.body.id], caption: 'Hello' } });
+  assert.equal(made.status, 200);
+  assert.equal((await upload(nisha, JPEG, { as: String(nisha._id) })).body.code, 'social_off', 'the shop side is still off');
+  const seen = await call('get /api/social/profile/:gloobalId', ravi, { params: { gloobalId: 'NISHA' }, query: { side: 'self' } });
+  assert.equal(seen.status, 200);
+  assert.equal(seen.body.profile.on, true);
+  // Off again: her posts leave the feed and her profile closes; she still sees her own.
+  await call('post /api/social/on', nisha, { query: { as: 'self' }, body: { on: false } });
+  const ex = await call('get /api/social/explore', ravi, { query: { plain: '1' } });
+  assert.ok(!ex.body.grid.some((p) => p.id === made.body.post.id));
+  assert.equal((await call('get /api/social/profile/:gloobalId', ravi, { params: { gloobalId: 'NISHA' }, query: { side: 'self' } })).status, 404);
+  const own = await call('get /api/social/profile/:gloobalId', nisha, { params: { gloobalId: 'NISHA' }, query: { side: 'self' } });
+  assert.equal(own.status, 200);
+  assert.equal(own.body.profile.on, false);
 });

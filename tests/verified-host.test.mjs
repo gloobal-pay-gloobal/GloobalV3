@@ -35,7 +35,7 @@ test('the upload gate refuses an unverified ID', async () => {
 });
 
 test('every place people\'s files are stored asks for it', () => {
-  assert.match(read('server/lib/social.js'), /app\.post\('\/api\/social\/media', socialUpload, requireAuth, verifiedHost,/);
+  assert.match(read('server/lib/social.js'), /app\.post\('\/api\/social\/media', socialUpload, requireAuth, requireOn, verifiedHost,/);
   assert.match(read('server/lib/used.js'), /app\.post\('\/api\/used\/photos', usedUpload, requireAuth, verifiedHost,/);
   const h = read('server/lib/helloo.js');
   assert.match(h, /if \(!body\.forwardOf && \['photo', 'video', 'voice'\]\.includes\(kind\)\) \{\s*const problem = await hostProblem\(me\);/);

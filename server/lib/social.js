@@ -11,6 +11,8 @@
 //   GET    /api/social/pass                 a 15-minute view pass for the signed-in account
 //   GET    /api/social/activity             likes, comments and new followers for you, newest first (?count=1: just how many are new)
 //   POST   /api/social/activity/seen        you opened it: what came before is no longer new
+//   GET    /api/social/accounts             your social profiles (yourself, your shop side, each shop): on, posts, followers
+//   POST   /api/social/on?as=               { on } turn the profile you act as on or off (each starts off)
 //   POST   /api/social/posts                { media:[id], caption, topic, tags:[itemId] }
 //   DELETE /api/social/posts/:id            your own post
 //   GET    /api/social/feed?before=         people you follow, then more from everyone
@@ -78,7 +80,18 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
   const socialRead = rateLimit({ name: 'social-read', max: 600, windowMs });
   const socialWrite = rateLimit({ name: 'social-write', max: 120, windowMs });
   const socialUpload = rateLimit({ name: 'social-upload', max: 40, windowMs });
-  const CARD = '_id symbolId fullName countryIso shopOwnerId creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast';
+  const CARD = '_id symbolId fullName countryIso shopOwnerId socialOn creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast';
+
+  // Is this social profile on? Chosen → as chosen. Never chosen → on only
+  // when it already has posts (from before profiles had to be turned on).
+  const sideOf = (u, side) => (u && u.shopOwnerId ? 'shop' : side === 'shop' ? 'shop' : 'self');
+  async function isOn(u, side) {
+    const k = sideOf(u, side);
+    const v = u && u.socialOn && u.socialOn[k];
+    if (typeof v === 'boolean') return v;
+    if (!u) return false;
+    return Boolean(await SocialPost.exists(Object.assign({ author: u._id, removedAt: null }, u.shopOwnerId ? {} : { side: k })));
+  }
 
   const shopNameOf = (u) => { const cp = (u && u.creatorProfile) || {}; return [cp.handleFirst, cp.handleLast].filter(Boolean).join(' ') || cp.handle || ''; };
   // A person is their own name; a shop is its shop name and handle, never
@@ -101,9 +114,13 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     const users = uniq.length ? await User.find({ _id: { $in: uniq } }).select(CARD).lean() : [];
     return new Map(users.map((u) => [String(u._id), u]));
   }
-  async function postsOut(posts, meId) {
+  async function postsOut(postsIn, meId) {
+    let posts = postsIn;
     if (!posts.length) return [];
     const byId = await cards(posts.map((p) => p.author));
+    const offRows = await User.find({ _id: { $in: [...new Set(posts.map((p) => String(p.author)))] }, $or: [{ 'socialOn.self': false }, { 'socialOn.shop': false }] }).select('_id shopOwnerId socialOn').lean();
+    const off = new Map(offRows.map((u) => [String(u._id), u]));
+    posts = posts.filter((p) => { const u = off.get(String(p.author)); return !u || u.socialOn[sideOf(u, p.side)] !== false || sameId(p.author, meId); });
     const liked = await SocialLink.find({ kind: 'like', from: meId, to: { $in: posts.map((p) => p._id) } }).select('to').lean();
     const likedSet = new Set(liked.map((l) => String(l.to)));
     return posts.map((p) => ({
@@ -150,11 +167,47 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       }
     });
     const fail = (res, where, error) => { console.error(`Social ${where} error:`, error); return res.status(500).json({ success: false, message: 'Something went wrong. Try again.' }); };
+    // Posting, following, liking and commenting need this social profile on.
+    const requireOn = async (req, res, next) => {
+      try {
+        if (await isOn(req.authUser, req.socialSide)) return next();
+        return res.status(403).json({ success: false, code: 'social_off', message: 'Turn on this social profile first.' });
+      } catch (error) { return next(error); }
+    };
+
+    // ── YOUR SOCIAL PROFILES ─────────────────────────────────────────
+    // Each one (yourself, your shop side, each shop you run) with on/off,
+    // posts and followers. Turned on one at a time, by choice.
+    app.get('/api/social/accounts', socialRead, requireAuth, async (req, res) => {
+      try {
+        const owner = await User.findById(req.socialOwner._id).select(CARD).lean();
+        const shops = await User.find({ shopOwnerId: owner._id }).select(CARD).lean();
+        const rows = [['self', owner, 'self']];
+        if (owner.creatorProfile && owner.creatorProfile.handle) rows.push([String(owner._id), owner, 'shop']);
+        for (const sh of shops) rows.push([String(sh._id), sh, 'shop']);
+        const accounts = {};
+        await Promise.all(rows.map(async ([as, u, side]) => {
+          const match = Object.assign({ author: u._id, removedAt: null, story: { $ne: true } }, u.shopOwnerId ? {} : { side });
+          const [on, posts, followers] = await Promise.all([isOn(u, side), SocialPost.countDocuments(match), SocialLink.countDocuments({ kind: 'follow', to: u._id })]);
+          accounts[as] = { on, posts, followers };
+        }));
+        return res.json({ success: true, accounts });
+      } catch (error) { return fail(res, 'accounts', error); }
+    });
+    // Turn the profile you are acting as (?as=) on or off.
+    app.post('/api/social/on', socialWrite, requireAuth, async (req, res) => {
+      try {
+        const on = (req.body || {}).on === true;
+        const k = sideOf(req.authUser, req.socialSide);
+        await User.updateOne({ _id: req.authUser._id }, { $set: { [`socialOn.${k}`]: on } });
+        return res.json({ success: true, on });
+      } catch (error) { return fail(res, 'on', error); }
+    });
 
     // ── MEDIA ─────────────────────────────────────────────────────────
     const mediaParser = require('express').json({ limit: '12mb' });
     // Hosted only under a verified GLOOBAL ID (lib/verifiedId.js).
-    app.post('/api/social/media', socialUpload, requireAuth, verifiedHost, mediaParser, async (req, res) => {
+    app.post('/api/social/media', socialUpload, requireAuth, requireOn, verifiedHost, mediaParser, async (req, res) => {
       try {
         const raw = String((req.body && req.body.data) || '').replace(/^data:[^;]+;base64,/, '');
         const buf = raw ? Buffer.from(raw, 'base64') : null;
@@ -270,7 +323,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     });
 
     // ── POSTS ─────────────────────────────────────────────────────────
-    app.post('/api/social/posts', socialWrite, requireAuth, async (req, res) => {
+    app.post('/api/social/posts', socialWrite, requireAuth, requireOn, async (req, res) => {
       try {
         const me = req.authUser;
         const body = req.body || {};
@@ -425,6 +478,9 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         // "#chai" finds by the hashtag itself; plain words look in captions.
         const asTag = q[0] === '#' ? cleanTag(q) : '';
         const posts = await SocialPost.find(visible(asTag ? { hashtags: asTag } : { caption: re })).sort({ likeCount: -1, createdAt: -1 }).limit(18).lean();
+        const shopsOn = []; for (const u of shops) if (await isOn(u, 'shop')) shopsOn.push(u);
+        const personsOn = persons.filter((u) => !(u.socialOn && u.socialOn.self === false));
+        shops.length = 0; shops.push(...shopsOn); persons.length = 0; persons.push(...personsOn);
         const found = await cards([...shops, ...persons].map((u) => u._id));
         return res.json({ success: true, people: [...shops.map((u) => cardOf(found.get(String(u._id)), 'shop')), ...persons.map((u) => cardOf(found.get(String(u._id)), 'self'))], posts: await postsOut(posts, req.authUser._id) });
       } catch (error) { return fail(res, 'search', error); }
@@ -441,24 +497,28 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const sideMatch = u.shopOwnerId ? {} : (hasShop ? (side === 'shop' ? { side: 'shop' } : { side: 'self' }) : {});
         const before = beforeOf(req);
         const own = sameId(u._id, me._id);
+        const on = await isOn(u, side);
+        if (!on && !own) return res.status(404).json({ success: false, code: 'social_off', message: 'This profile is not on Social.' });
         const base = Object.assign({ author: u._id, removedAt: null, story: { $ne: true } }, own ? {} : { hiddenAt: null, takenBackAt: null }, sideMatch);
         const posts = await SocialPost.find(Object.assign({}, base, before ? { createdAt: { $lt: before } } : {})).sort({ createdAt: -1 }).limit(30).lean();
         const [postCount, followers, following, isFollowing] = await Promise.all([
           SocialPost.countDocuments(base), SocialLink.countDocuments({ kind: 'follow', to: u._id }), SocialLink.countDocuments({ kind: 'follow', from: u._id }),
           SocialLink.exists({ kind: 'follow', from: me._id, to: u._id }),
         ]);
-        return res.json({ success: true, profile: Object.assign(cardOf((await cards([u._id])).get(String(u._id)), side), { posts: postCount, followers, following, isFollowing: Boolean(isFollowing), isMe: own }), grid: await postsOut(posts, me._id), before: posts.length ? posts[posts.length - 1].createdAt : null });
+        return res.json({ success: true, profile: Object.assign(cardOf((await cards([u._id])).get(String(u._id)), side), { posts: postCount, followers, following, isFollowing: Boolean(isFollowing), isMe: own, on }), grid: await postsOut(posts, me._id), before: posts.length ? posts[posts.length - 1].createdAt : null });
       } catch (error) { return fail(res, 'profile', error); }
     });
 
     // ── FOLLOW, LIKE ──────────────────────────────────────────────────
-    app.post('/api/social/follow', socialWrite, requireAuth, async (req, res) => {
+    app.post('/api/social/follow', socialWrite, requireAuth, requireOn, async (req, res) => {
       try {
         const me = req.authUser;
         const to = oid((req.body || {}).to);
         if (!to || sameId(to, me._id)) return res.status(400).json({ success: false, message: 'Pick someone else to follow.' });
-        if (!(await User.exists({ _id: to }))) return res.status(404).json({ success: false, message: 'No such account.' });
+        const target = await User.findById(to).select('_id shopOwnerId socialOn creatorProfile.handle').lean();
+        if (!target) return res.status(404).json({ success: false, message: 'No such account.' });
         const on = (req.body || {}).on !== false;
+        if (on && !(await isOn(target, 'self')) && !(await isOn(target, 'shop'))) return res.status(404).json({ success: false, code: 'social_off', message: 'This profile is not on Social.' });
         if (on) await SocialLink.updateOne({ kind: 'follow', from: me._id, to }, { $setOnInsert: { kind: 'follow', from: me._id, to } }, { upsert: true });
         else await SocialLink.deleteOne({ kind: 'follow', from: me._id, to });
         return res.json({ success: true, following: on, followers: await SocialLink.countDocuments({ kind: 'follow', to }) });
@@ -470,7 +530,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       if (!post || ((post.hiddenAt || post.takenBackAt) && !sameId(post.author, req.authUser._id))) { res.status(404).json({ success: false, message: 'That post is gone.' }); return null; }
       return post;
     };
-    app.post('/api/social/posts/:id/like', socialWrite, requireAuth, async (req, res) => {
+    app.post('/api/social/posts/:id/like', socialWrite, requireAuth, requireOn, async (req, res) => {
       try {
         const post = await livePost(req, res);
         if (!post) return undefined;
@@ -499,7 +559,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         return res.json({ success: true, comments: list.map((c) => commentOut(c, byId.get(String(c.author)), req.authUser._id, post.author)).filter((c) => c.author) });
       } catch (error) { return fail(res, 'comments', error); }
     });
-    app.post('/api/social/posts/:id/comments', socialWrite, requireAuth, async (req, res) => {
+    app.post('/api/social/posts/:id/comments', socialWrite, requireAuth, requireOn, async (req, res) => {
       try {
         const post = await livePost(req, res);
         if (!post) return undefined;

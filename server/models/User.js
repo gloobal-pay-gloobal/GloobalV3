@@ -57,6 +57,13 @@ const userSchema = new mongoose.Schema({
   // balance), and the payment stays recorded against the shop, which is
   // what the per-shop totals are read from. See lib/shops.js.
   shopOwnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+  // Helloo Social: each social profile (yourself, your shop side, each
+  // shop) is off until its owner turns it on. Unset = never chosen: on
+  // only if it already has posts from before this switch existed.
+  socialOn: {
+    self: { type: Boolean, default: undefined },
+    shop: { type: Boolean, default: undefined },
+  },
   symbolIdHistory: [{
     symbolId: {
       type: String,

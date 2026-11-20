@@ -200,6 +200,7 @@ const { createViewPass } = require('./lib/viewPass');
 const { createViewCheck } = require('./lib/viewCheck');
 const { createVerifiedId } = require('./lib/verifiedId');
 const { createBadges } = require('./lib/badges');
+const { createBadgeRules } = require('./lib/badgeRules');
 const adsLib = require('./lib/ads');
 const HoomanAnswer = require('./models/HoomanAnswer');
 const HoomanProfile = require('./models/HoomanProfile');
@@ -1493,6 +1494,10 @@ createUsed({ User, rateLimit, windowMs: WINDOW_MS, viewPass, verifiedHost: verif
 // My data (lib/mydata.js): everything you put into GLOOBAL, how far each
 // thing went, and taking it back — one thing or everything at once.
 createMyData({ User, rateLimit, windowMs: WINDOW_MS, takeBackHelloo: (id, me) => helloo.media.takeBack(id, me) }).mount(app, requireAuth);
+
+// My badges (lib/badgeRules.js): every badge, your level, and what the next
+// level needs — Social reach, GLOOBAL payments, give back, Work.
+createBadgeRules({ User, Transaction, SocialPost: require('./models/SocialPost'), WorkCard: require('./models/WorkCard'), badges, getRate, accountCountryIso }).mount(app, requireAuth, rateLimit, WINDOW_MS);
 
 // GLOOBAL Ads & Earn (lib/ads.js): each full view is one ordinary payment,
 // advertiser → viewer, through the send route below, under a standing

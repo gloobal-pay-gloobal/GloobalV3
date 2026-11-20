@@ -372,6 +372,7 @@ const FRONTEND_MODULES = [
   // बाज़ार · Used: neighbours selling second-hand things; opened from
   // BazaarSection, so it must come before it only for reading order.
   "features/viewpass/viewPass.jsx",
+  "features/badges/badges.jsx",
   "features/used/used.jsx",
   "features/mydata/myData.jsx",
   "features/bazaar/bazaar.jsx",

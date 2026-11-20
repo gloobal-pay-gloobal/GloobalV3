@@ -23,8 +23,9 @@ function createViewPass({ secret, now = () => Date.now() }) {
   return {
     PASS_MS,
     // A pass for this account, valid until expiresAt.
-    issue(userId) {
-      const exp = now() + PASS_MS;
+    // Never past `until` (the end of the person's fingerprint / face check).
+    issue(userId, until = null) {
+      const exp = Math.min(now() + PASS_MS, until ? new Date(until).getTime() : Infinity);
       const body = b64u(JSON.stringify({ u: String(userId), e: exp }));
       return { pass: `${body}.${sign(body)}`, expiresAt: new Date(exp).toISOString() };
     },

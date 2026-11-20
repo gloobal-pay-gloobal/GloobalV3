@@ -171,6 +171,9 @@ const userSchema = new mongoose.Schema({
     default: null,
     trim: true
   },
+  // The end of the five minutes after the phone's fingerprint / face check
+  // that lets this account open people's pictures and videos (lib/viewCheck.js).
+  viewCheckedUntil: { type: Date, default: null },
   passkeys: [{
     id: {
       type: String,

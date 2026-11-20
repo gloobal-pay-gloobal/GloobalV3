@@ -197,6 +197,7 @@ const { createUsed } = require('./lib/used');
 const { createWork } = require('./lib/work');
 const { createMyData } = require('./lib/mydata');
 const { createViewPass } = require('./lib/viewPass');
+const { createViewCheck } = require('./lib/viewCheck');
 const adsLib = require('./lib/ads');
 const HoomanAnswer = require('./models/HoomanAnswer');
 const HoomanProfile = require('./models/HoomanProfile');
@@ -1467,7 +1468,9 @@ helloo.mount(app, requireAuth);
 // No open links: people's pictures and videos open only with a signed-in
 // account's 15-minute view pass (lib/viewPass.js).
 const viewPass = createViewPass({ secret: AUTH_TOKEN_SECRET });
-createSocial({ User, rateLimit, windowMs: WINDOW_MS, viewPass, people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
+// Set below, once the passkey helpers exist (lib/viewCheck.js).
+let viewCheckUntil = async () => null;
+createSocial({ User, rateLimit, windowMs: WINDOW_MS, viewPass, personCheckedUntil: (id) => viewCheckUntil(id), people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
 // Social · Work (lib/work.js): Work cards, openings near you, applying by
 // chat. GLOOBAL only connects people and keeps 0%.
 createWork({ User, rateLimit, windowMs: WINDOW_MS, currencyOf: async (user) => (await localCurrencyFor(accountCountryIso(user))) || 'INR', people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
@@ -7259,6 +7262,19 @@ const consumeWebAuthnChallenge = async (user) => {
 };
 
 // Passkey Status
+// The person check before people's pictures and videos open (lib/viewCheck.js):
+// fingerprint / face on the phone, good for five minutes. GLOOBAL's own apps
+// only; both use GLOOBAL's passkey (rpID), Helloo as a related origin.
+const GLOOBAL_APP_ORIGINS = [...new Set([...ALLOWED_ORIGINS, 'https://gloobalv3.netlify.app', 'https://gloobalhelloo.netlify.app'])];
+const GLOOBAL_RP_ID = String(process.env.WEBAUTHN_RP_ID || 'gloobalv3.netlify.app');
+const viewCheck = createViewCheck({
+  User, getWebAuthnServer, stashChallenge: stashWebAuthnChallenge, consumeChallenge: consumeWebAuthnChallenge,
+  rpIdFor: (origin) => { try { const host = new URL(origin).hostname; return host.endsWith('.netlify.app') ? GLOOBAL_RP_ID : host; } catch (e) { return GLOOBAL_RP_ID; } },
+  appOrigins: GLOOBAL_APP_ORIGINS, rateLimit, windowMs: WINDOW_MS,
+});
+viewCheck.mount(app, requireAuth);
+viewCheckUntil = (id) => viewCheck.checkedUntil(id);
+
 app.post('/api/passkey/status', lookupLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
     const { symbolId } = req.body;

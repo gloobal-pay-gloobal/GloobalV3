@@ -80,6 +80,14 @@
 
 # Everything Vite emits into /assets is content-hashed, so a new build
 # produces new filenames and these can never go stale.
+# Helloo may use GLOOBAL's passkey (fingerprint / Face ID) as a related
+# origin: the phone reads this list (server/lib/viewCheck.js).
+[[headers]]
+  for = "/.well-known/webauthn"
+  [headers.values]
+    Content-Type = "application/json"
+    Access-Control-Allow-Origin = "*"
+
 [[headers]]
   for = "/assets/*"
   [headers.values]

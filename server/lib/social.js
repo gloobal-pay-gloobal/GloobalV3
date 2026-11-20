@@ -65,7 +65,7 @@ function sniff(buf) {
   return null;
 }
 
-function createSocial({ User, rateLimit, windowMs, publicBase = '', people = null, viewPass = null }) {
+function createSocial({ User, rateLimit, windowMs, publicBase = '', people = null, viewPass = null, personCheckedUntil = null }) {
   // No open links (lib/viewPass.js): post and ad media opens only with a
   // signed-in account's pass.
   const sealed = viewPass ? require('./viewPass').requireViewPass(viewPass, User) : (req, res, next) => next();
@@ -169,7 +169,11 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     app.get('/api/social/pass', socialRead, requireAuth, async (req, res) => {
       if (!viewPass) return res.status(503).json({ success: false, message: 'Not available.' });
       res.set('Cache-Control', 'no-store');
-      return res.json({ success: true, ...viewPass.issue(req.authUser._id) });
+      // Only within five minutes of the phone's fingerprint / face check
+      // (lib/viewCheck.js): every view belongs to a real, checked person.
+      const until = personCheckedUntil ? await personCheckedUntil(req.authUser._id) : null;
+      if (personCheckedUntil && !until) return res.status(403).json({ success: false, code: 'person_check', message: "Confirm it's you with fingerprint / Face ID to see photos and videos." });
+      return res.json({ success: true, ...viewPass.issue(req.authUser._id, until) });
     });
     app.get('/api/social/media/:id', socialRead, sealed, async (req, res) => {
       try {

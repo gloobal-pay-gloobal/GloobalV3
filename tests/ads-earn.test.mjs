@@ -270,3 +270,40 @@ test('skipping pays for the time watched, timed by the server; too early pays no
   assert.equal(c.spent, 0.03);
   assert.equal((await call('post /api/ads/:id/start', fay, { params: { id: long.id } })).body.code, 'seen');
 });
+
+test('an advertiser sees the crowd an ad would reach and what it asks — never fewer than five, never a person', async () => {
+  const stall = User.rows.find((u) => u.symbolId === 'STALL');
+  const near = { lat: 27.5530, lng: 76.6346 };
+  const mk = async (sym, price, topics, at) => {
+    const u = { _id: id(), symbolId: sym, countryIso: 'IN' }; User.rows.push(u);
+    await call('put /api/ads/prefs', u, { body: { price, topics } });
+    await call('get /api/ads/next', u, { query: at ? { lat: String(at.lat), lng: String(at.lng) } : {} });
+    return u;
+  };
+  const before = (await call('get /api/ads/audience', stall, { query: {} })).body.people;
+  // Six people within about a kilometre of the stall; most ask 0.10.
+  for (const [i, price] of [0.1, 0.1, 0.1, 0.1, 0.5, 1].entries()) await mk(`NEAR${i}`, price, i === 5 ? ['travel'] : [], { lat: 27.5571 + i * 0.0001, lng: 76.6389 });
+  // Two far away, one who never said where.
+  await mk('FAR1', 0.1, [], { lat: 27.9, lng: 76.6 }); await mk('FAR2', 2, [], { lat: 28.6, lng: 77.2 }); await mk('NOWHERE', 0.1, [], null);
+
+  const local = (await call('get /api/ads/audience', stall, { query: { km: '2', lat: String(near.lat), lng: String(near.lng), topics: 'food' } })).body;
+  assert.equal(local.people, 5, 'the travel-only person is not in a food ad\'s crowd');
+  assert.equal(local.enough, true);
+  assert.deepEqual(local.most, { price: 0.1, people: 4 });
+  assert.equal(local.suggest, 0.1, 'four in five are reached at 0.10');
+  assert.deepEqual(local.steps, [{ price: 0.1, people: 4 }, { price: 0.5, people: 5 }]);
+  assert.equal(local.average, 0.18);
+  assert.ok(!JSON.stringify(local).includes('27.5') && !JSON.stringify(local).includes('NEAR'), 'no place and no person in the answer');
+
+  const all = (await call('get /api/ads/audience', stall, { query: {} })).body;
+  assert.equal(all.people, before + 9, 'everywhere counts all nine new people');
+  assert.equal(all.highest, 2);
+
+  const few = (await call('get /api/ads/audience', stall, { query: { km: '1', lat: '28.6', lng: '77.2' } })).body;
+  assert.equal(few.people, 1); assert.equal(few.enough, false);
+  assert.equal(few.average, undefined, 'too few people: no prices');
+  assert.equal((await call('get /api/ads/audience', stall, { query: { km: '2' } })).body.code, 'bad_place');
+  assert.equal((await call('get /api/ads/audience', stall, { query: { km: '40', lat: '27.5', lng: '76.6' } })).body.code, 'bad_place');
+  // Wider distances are allowed now.
+  assert.equal((await newAd(stall, { title: 'Chai for the district', near: { ...near, km: 100 } })).body.campaign.nearKm, 100);
+});

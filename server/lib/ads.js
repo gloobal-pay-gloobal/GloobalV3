@@ -35,6 +35,7 @@
 // Routes (JSON, signed in):
 //   GET  /api/ads/me?tz=                     my price, topics, today, this month
 //   PUT  /api/ads/prefs                      { price, topics }
+//   GET  /api/ads/audience?km=&lat=&lng=&topics=  how many people an ad would reach, and what they ask
 //   GET  /api/ads/next?tz=&topic=&lat=&lng=  the next ad for me (in one category, near me, if asked), or none
 //   POST /api/ads/:id/start                  begin watching
 //   POST /api/ads/:id/claim                  { skip? } watched in full → paid; skipped → paid for the time watched
@@ -60,7 +61,11 @@ const BUDGET_MIN = 10;
 const BUDGET_MAX = 100000;
 const TOPICS = ['food', 'travel', 'transport', 'phones', 'classes', 'fashion', 'sports', 'money', 'games', 'home', 'health'];
 const STUCK_MS = 60 * 1000;
-const NEAR_KM = [1, 2, 3, 4, 5, 10, 25];
+const NEAR_KM = [1, 2, 3, 5, 10, 25, 50, 100];
+// An advertiser is told about the people an ad would reach only as a crowd:
+// below this many, no prices are shown.
+const AUDIENCE_MIN = 5;
+const AUDIENCE_DAYS = 30;
 
 // A place sent with a request: { lat, lng }, or null when none or not real.
 function placeOf(lat, lng) {
@@ -178,6 +183,38 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
     return list.find((c) => fits(c) && inReach(c, where)) || null;
   }
 
+  // Kept each time a person opens Ads, for the advertiser's crowd figures:
+  // their money, that they were here, and (near me only) roughly where.
+  function noteViewer(me, currency, where) {
+    const set = { currency, seenAt: new Date() };
+    if (where) set.place = { lat: Math.round(where.lat * 100) / 100, lng: Math.round(where.lng * 100) / 100 };
+    return AdPrefs.updateOne({ userId: me._id }, { $set: set, $setOnInsert: { userId: me._id } }, { upsert: true }).catch(() => {});
+  }
+  // Who an ad would reach, and what they ask — a count and prices over the
+  // crowd, never a person. `where`+`km` narrows to people last seen that near.
+  async function audience(me, currency, topics, where, km) {
+    const since = new Date(Date.now() - AUDIENCE_DAYS * 864e5);
+    const rows = await AdPrefs.find({ currency, userId: { $ne: me._id }, seenAt: { $gte: since } }).select('price topics place').limit(20000).lean();
+    const fit = rows.filter((p) => {
+      const t = cleanTopics(p.topics);
+      if (topics.length && t.length && !t.some((x) => topics.includes(x))) return false;
+      if (!km) return true;
+      return Boolean(p.place) && p.place.lat !== null && p.place.lat !== undefined && kmBetween(where, p.place) <= km;
+    });
+    const out = { people: fit.length, enough: fit.length >= AUDIENCE_MIN, min: AUDIENCE_MIN, days: AUDIENCE_DAYS };
+    if (!out.enough) return out;
+    const prices = fit.map((p) => tenths(p.price)).sort((a, b) => a - b);
+    const tally = new Map();
+    for (const v of prices) tally.set(v, (tally.get(v) || 0) + 1);
+    const most = [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+    // At each price asked by someone: how many people that price or less reaches.
+    let run = 0;
+    const steps = [...tally.entries()].sort((a, b) => a[0] - b[0]).map(([price, n]) => { run += n; return { price, people: run }; });
+    // The lowest price that reaches four in five of them.
+    const enoughFor = steps.find((x) => x.people >= Math.ceil(fit.length * 0.8)) || steps[steps.length - 1];
+    return Object.assign(out, { average: cents(prices.reduce((a, b) => a + b, 0) / prices.length), most: { price: most[0], people: most[1] }, lowest: prices[0], highest: prices[prices.length - 1], suggest: enoughFor.price, steps: steps.length > 8 ? steps.filter((x, i) => i % Math.ceil(steps.length / 8) === 0 || i === steps.length - 1) : steps });
+  }
+
   function mount(app, requireAuth) {
     const tzOf = (req) => Number(req.query.tz);
 
@@ -186,6 +223,7 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
       try {
         const me = req.authUser;
         const [prefs, t, currency] = await Promise.all([prefsOf(me._id), today(me._id, tzOf(req)), currencyOf(me)]);
+        await noteViewer(me, currency, null);
         const ids = [...new Set(t.rows.map((v) => String(v.campaign)))];
         const camps = ids.length ? await AdCampaign.find({ _id: { $in: ids } }).select('title owner').lean() : [];
         const byId = new Map(camps.map((c) => [String(c._id), c]));
@@ -215,6 +253,7 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
         if (t.count >= DAILY_CAP) return res.json({ success: true, ad: null, why: 'cap', today: { count: t.count, cap: t.cap, earned: t.earned } });
         const only = TOPICS.includes(String(req.query.topic || '')) ? String(req.query.topic) : '';
         const where = placeOf(req.query.lat, req.query.lng);
+        await noteViewer(me, currency, where);
         const c = await pickFor(me, prefs, currency, only, where);
         if (!c) return res.json({ success: true, ad: null, why: 'none', today: { count: t.count, cap: t.cap, earned: t.earned } });
         return res.json({ success: true, ad: { id: String(c._id), title: c.title, topics: c.topics || [], nearKm: (c.near && c.near.km) || 0, media: { kind: c.media.kind, url: mediaUrl(c.media.id) }, seconds: c.seconds, price: prefs.price, currency, advertiser: await cardOf(c.owner) }, today: { count: t.count, cap: t.cap, earned: t.earned } });
@@ -343,6 +382,19 @@ function createAds({ User, rateLimit, windowMs, currencyOf, checkPin, people = n
         const count = (c, l) => (feel.find((f) => sameId(f._id.c, c._id) && f._id.l === l) || { n: 0 }).n;
         return res.json({ success: true, currency: await currencyOf(req.authUser), campaigns: list.map((c) => campaignOut(c, { interested: count(c, true), notForMe: count(c, false) })), allTopics: TOPICS, nearKm: NEAR_KM, priceMin: PRICE_MIN, priceMax: PRICE_MAX, budgetMin: BUDGET_MIN, budgetMax: BUDGET_MAX });
       } catch (error) { return fail(res, 'campaigns', error); }
+    });
+    // Before an ad is made: how many people it would reach and what they ask,
+    // so the price is set from what is there and not from a guess.
+    app.get('/api/ads/audience', adsRead, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser;
+        const km = Number(req.query.km) || 0;
+        const where = placeOf(req.query.lat, req.query.lng);
+        if (km && (!where || !NEAR_KM.includes(km))) return res.status(400).json({ success: false, code: 'bad_place', message: 'Pick a distance, and let the app see where you are.' });
+        const currency = await currencyOf(me);
+        const topics = cleanTopics(String(req.query.topics || '').split(','));
+        return res.json(Object.assign({ success: true, currency, km }, await audience(me, currency, topics, where, km)));
+      } catch (error) { return fail(res, 'audience', error); }
     });
     app.post('/api/ads/campaigns', adsWrite, requireAuth, async (req, res) => {
       try {

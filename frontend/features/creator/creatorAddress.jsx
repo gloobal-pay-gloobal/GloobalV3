@@ -140,6 +140,9 @@ function CreatorAddressFields({ value, onChange, countryIso = "" }) {
       setNote({ tone: "good", text: "Pinned. Check each line and add a landmark." });
     } else setNote({ tone: "warn", text: "Pinned, but couldn't read a street name. Type the address below." });
     setAccuracy(null);
+    // The PIN now comes from the map: a warning about an earlier PIN no
+    // longer applies, and its area picks belonged to that PIN.
+    setPinState(""); setAreas([]);
     lastPin.current = next.pin || "";
     onChange(next);
   };
@@ -168,7 +171,7 @@ function CreatorAddressFields({ value, onChange, countryIso = "" }) {
     display: "block", fontSize: 13.5, fontWeight: 800, color: T.accent
   }}>{pinned ? "Move my store's pin" : "Place my store on the map"}</span><span style={{
     display: "block", fontSize: 11, fontWeight: 600, color: T.inkSoft, marginTop: 1
-  }}>Starts at your location. Fills the address and gives customers Directions</span></span></button>{
+  }}>{pinned ? "Opens at your pin. Drag the map to correct it" : "Starts at your location. Fills the address and gives customers Directions"}</span></span></button>{
     note.text ? <div role="status" style={{ fontSize: 11.5, fontWeight: 700, color: noteColor, lineHeight: 1.45, margin: "-3px 2px 0" }}>{note.text}</div> : null
   }{pinned ? <GloobalPinPreview lat={Number(v.lat)} lng={Number(v.lng)} onMove={() => setPlacing(true)} /> : null}{pinned ? <div style={{
     display: "flex", alignItems: "center", gap: 9, padding: "9px 11px", borderRadius: 13,

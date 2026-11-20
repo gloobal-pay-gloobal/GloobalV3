@@ -112,6 +112,10 @@ function BazaarMap({ center, placeName = "", radiusKm, shops = [], query = "", o
     const ring = data.geometry.coordinates[0];
     const lngs = ring.map((p) => p[0]);
     const lats = ring.map((p) => p[1]);
+    // A tapped shop leaves room at the foot for its details (pick); that
+    // room stays on the map until cleared, and would squeeze the circle
+    // into the top corner. Clear it, then fit.
+    map.jumpTo({ padding: { top: 0, bottom: 0, left: 0, right: 0 } });
     map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: { top: 170, bottom: 190, left: 24, right: 24 }, duration: 400 });
   }, [map, center.lat, center.lng, radiusKm]);
   useEffect63(() => {

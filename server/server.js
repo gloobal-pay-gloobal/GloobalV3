@@ -195,6 +195,7 @@ const { createHelloo, HELLOO_VOICE_PATH } = require('./lib/helloo');
 const { createSocial, SOCIAL_MEDIA_PATH } = require('./lib/social');
 const { createUsed } = require('./lib/used');
 const { createWork } = require('./lib/work');
+const { createMyData } = require('./lib/mydata');
 const adsLib = require('./lib/ads');
 const HoomanAnswer = require('./models/HoomanAnswer');
 const HoomanProfile = require('./models/HoomanProfile');
@@ -1470,6 +1471,10 @@ createWork({ User, rateLimit, windowMs: WINDOW_MS, currencyOf: async (user) => (
 // GLOOBAL बाज़ार · Used (lib/used.js): people selling their own second-hand
 // things nearby. GLOOBAL keeps 0%: nothing there moves or holds money.
 createUsed({ User, rateLimit, windowMs: WINDOW_MS, currencyOf: async (user) => (await localCurrencyFor(accountCountryIso(user))) || 'INR' }).mount(app, requireAuth);
+
+// My data (lib/mydata.js): everything you put into GLOOBAL, how far each
+// thing went, and taking it back — one thing or everything at once.
+createMyData({ User, rateLimit, windowMs: WINDOW_MS, takeBackHelloo: (id, me) => helloo.media.takeBack(id, me) }).mount(app, requireAuth);
 
 // GLOOBAL Ads & Earn (lib/ads.js): each full view is one ordinary payment,
 // advertiser → viewer, through the send route below, under a standing

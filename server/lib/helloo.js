@@ -395,10 +395,12 @@ function createHelloo(deps) {
       out.opens = m.openCount || 0;
       out.lastOpenAt = (m.opens || []).length ? m.opens[m.opens.length - 1].at : null;
       out.takenBack = Boolean(m.takenBackAt);
+      out.forwarded = Boolean(m.forwarded);
+      out.noForward = Boolean(m.noForward);
       out.fx = m.fx || '';
       out.saved = (m.savedBy || []).length > 0;
     }
-    if (m.kind === 'voice') out.voice = { seconds: m.voice?.seconds || 0, mime: m.voice?.mime || '' };
+    if (m.kind === 'voice') { out.voice = { seconds: m.voice?.seconds || 0, mime: m.voice?.mime || '' }; out.forwarded = Boolean(m.forwarded); out.takenBack = Boolean(m.takenBackAt); }
     if (m.kind === 'order') {
       out.order = {
         items: (m.order?.items || []).map((l) => ({ id: l.itemId, title: l.title, qty: l.qty, price: l.price })),
@@ -845,6 +847,8 @@ function createHelloo(deps) {
   }
 
   // ── Routes ────────────────────────────────────────────────────────────
+  // Set when mounted: lets My data (lib/mydata.js) take a chat's media back.
+  let takeBackMediaNow = null;
   function mount(app, baseAuth) {
     // ── ACTING AS A SHOP ───────────────────────────────────────────────
     // `?as=` names the side the owner is on: "self" (personal), their own
@@ -1218,7 +1222,7 @@ function createHelloo(deps) {
         const kinds = ['photo', 'video', 'voice'];
         const kind = kinds.includes(String(req.query.kind || '')) ? [String(req.query.kind)] : kinds;
         const filter = Object.assign(visibleFilter(conversation, req.authUser._id), { kind: { $in: kind }, deletedAt: null, takenBackAt: null, 'view.mode': { $ne: 'once' } });
-        const rows = await HellooMessage.find(filter).sort({ createdAt: -1, _id: -1 }).limit(120).lean();
+        const rows = (await withOriginals(await HellooMessage.find(filter).sort({ createdAt: -1, _id: -1 }).limit(120).lean())).filter((m) => !m.takenBackAt);
         const now = Date.now();
         const live = rows.filter((m) => !(m.view && m.view.mode === 'day' && m.view.expiresAt && new Date(m.view.expiresAt).getTime() < now));
         const count = (k) => live.filter((m) => m.kind === k).length;
@@ -1229,6 +1233,21 @@ function createHelloo(deps) {
       }
     });
 
+    // A forward is as alive as its original: taken back or deleted there,
+    // it is taken back here too. Copies the original's state onto the rows.
+    async function withOriginals(rows) {
+      const ids = [...new Set(rows.filter((m) => m.mediaFrom).map((m) => String(m.mediaFrom)))];
+      if (!ids.length) return rows;
+      const originals = new Map((await HellooMessage.find({ _id: { $in: ids } }).select('takenBackAt deletedAt noForward').lean()).map((o) => [String(o._id), o]));
+      for (const m of rows) {
+        if (!m.mediaFrom) continue;
+        const o = originals.get(String(m.mediaFrom));
+        if (!o || o.deletedAt || o.takenBackAt) m.takenBackAt = m.takenBackAt || (o && o.takenBackAt) || new Date(0);
+        if (o && o.noForward) m.noForward = true;
+      }
+      return rows;
+    }
+
     app.get('/api/helloo/chats/:id/messages', hellooRead, requireAuth, async (req, res) => {
       try {
         const conversation = await memberChat(req, res);
@@ -1237,7 +1256,7 @@ function createHelloo(deps) {
         const filter = visibleFilter(conversation, req.authUser._id);
         const before = req.query.before ? new Date(String(req.query.before)) : null;
         if (before && !Number.isNaN(before.getTime())) filter.createdAt = Object.assign({}, filter.createdAt, { $lt: before });
-        const rows = await HellooMessage.find(filter).sort({ createdAt: -1, _id: -1 }).limit(limit).lean();
+        const rows = await withOriginals(await HellooMessage.find(filter).sort({ createdAt: -1, _id: -1 }).limit(limit).lean());
         const people = await cardsFor(conversation.members);
         return res.json({
           success: true,
@@ -1263,7 +1282,7 @@ function createHelloo(deps) {
         const me = req.authUser;
         const otherId = conversation.members.find((m) => !sameId(m, me._id));
         const body = req.body || {};
-        const kind = String(body.kind || 'text');
+        let kind = String(body.kind || 'text');
         const clientId = String(body.clientId || '').trim().slice(0, 80);
         if (!clientId) return res.status(400).json({ success: false, message: 'clientId is required.' });
 
@@ -1301,7 +1320,32 @@ function createHelloo(deps) {
           if (quoted && !quoted.deletedAt) doc.replyTo = { id: quoted._id, from: quoted.from, kind: quoted.kind, preview: previewOf(quoted).slice(0, 120) };
         }
 
-        if (kind === 'text') {
+        if (body.forwardOf) {
+          // Passing on a photo, clip or voice note: no bytes are sent or
+          // stored. The new message points at the original's single copy.
+          const src = oid(body.forwardOf) ? await HellooMessage.findById(oid(body.forwardOf)).lean() : null;
+          const srcChat = src ? await HellooConversation.findById(src.conversationId).select('members').lean() : null;
+          const canSee = src && !src.deletedAt && srcChat && srcChat.members.some((m) => sameId(m, me._id)) && !(src.hiddenFor || []).some((u) => sameId(u, me._id));
+          if (!canSee || !['photo', 'video', 'voice', 'text'].includes(src.kind)) return res.status(404).json({ success: false, code: 'forward_gone', message: 'That is not here any more.' });
+          const original = src.mediaFrom ? await HellooMessage.findById(src.mediaFrom).lean() : src;
+          if (!original || original.deletedAt || original.takenBackAt) return res.status(410).json({ success: false, code: 'forward_gone', message: 'Its owner took that back.' });
+          if (original.noForward && !sameId(original.from, me._id)) return res.status(403).json({ success: false, code: 'no_forward', message: 'Its owner asked that it is not passed on.' });
+          const mode = (original.view && original.view.mode) || 'keep';
+          if (src.kind !== 'text' && mode !== 'keep') return res.status(403).json({ success: false, code: 'no_forward', message: 'Something sent to be seen once or for a day cannot be passed on.' });
+          kind = src.kind;
+          doc.kind = kind;
+          doc.forwarded = true;
+          if (kind === 'text') doc.text = src.text;
+          else {
+            doc.mediaFrom = original._id;
+            doc.text = src.text || '';
+            if (kind === 'photo') doc.photo = original.photo;
+            if (kind === 'video') doc.video = original.video;
+            if (kind === 'voice') doc.voice = original.voice;
+            if (kind !== 'voice') doc.view = { mode: 'keep', openedAt: null, expiresAt: null, save: Boolean(original.view && original.view.save) };
+            Object.assign(doc, await mediaHome(me, otherId));
+          }
+        } else if (kind === 'text') {
           const text = String(body.text || '').trim();
           if (!text) return res.status(400).json({ success: false, message: 'Type a message first.' });
           if (text.length > TEXT_MAX) return res.status(400).json({ success: false, message: `A message can be up to ${TEXT_MAX} characters.` });
@@ -1499,8 +1543,11 @@ function createHelloo(deps) {
     app.get(['/api/helloo/voice/:messageId', '/api/helloo/media/:messageId'], hellooRead, requireAuth, async (req, res) => {
       try {
         const id = oid(req.params.messageId);
-        const message = id ? await HellooMessage.findById(id).select('conversationId kind deletedAt hiddenFor from view takenBackAt').lean() : null;
+        const message = id ? await HellooMessage.findById(id).select('conversationId kind deletedAt hiddenFor from view takenBackAt mediaFrom').lean() : null;
         const conversation = message ? await HellooConversation.findById(message.conversationId).select('members').lean() : null;
+        // A forward opens its original's one copy, while the original lives.
+        const original = message && message.mediaFrom ? await HellooMessage.findById(message.mediaFrom).select('takenBackAt deletedAt').lean() : null;
+        if (message && message.mediaFrom && (!original || original.deletedAt || original.takenBackAt)) return res.status(410).json({ success: false, code: 'gone', message: 'Its owner took that back.' });
         const seen = message && !message.deletedAt && !(message.hiddenFor || []).some((u) => sameId(u, req.authUser._id));
         if (!message || !seen || !['voice', 'photo', 'video'].includes(message.kind) || !conversation || !conversation.members.some((m) => sameId(m, req.authUser._id))) {
           return res.status(404).json({ success: false, message: 'That is not here any more.' });
@@ -1518,7 +1565,7 @@ function createHelloo(deps) {
           return res.status(410).json({ success: false, code: 'gone', message: 'That is gone now.' });
         }
         if (mode === 'once' && message.view.openedAt) return res.status(410).json({ success: false, code: 'gone', message: 'That was to be seen once.' });
-        const voice = await HellooVoice.findOne({ messageId: id }).lean();
+        const voice = await HellooVoice.findOne({ messageId: message.mediaFrom || id }).lean();
         if (!voice) return res.status(404).json({ success: false, message: 'That voice note is not here.' });
         if (mode === 'once' && !mine) {
           // Only the first opening wins; then the bytes go.
@@ -1538,20 +1585,51 @@ function createHelloo(deps) {
       }
     });
 
-    // Take it back: the sender's photo or clip is deleted for good and opens
-    // for nobody, however long ago it was sent.
-    app.post('/api/helloo/messages/:id/takeback', hellooWrite, requireAuth, async (req, res) => {
+    // Every chat a taken-back original was passed on into hears it is gone.
+    async function tellForwardsGone(originalId, me) {
+      const forwards = await HellooMessage.find({ mediaFrom: originalId }).select('conversationId').lean();
+      if (!forwards.length) return;
+      const chats = await HellooConversation.find({ _id: { $in: [...new Set(forwards.map((f) => String(f.conversationId)))] } }).select('members').lean();
+      const byChat = new Map(chats.map((c) => [String(c._id), c.members]));
+      for (const f of forwards) for (const m of byChat.get(String(f.conversationId)) || []) if (!sameId(m, me)) emit(m, { type: 'media-gone', chatId: String(f.conversationId), id: String(f._id) });
+    }
+    // "Stop passing it on": the sender's original can no longer be forwarded.
+    app.post('/api/helloo/messages/:id/noforward', hellooWrite, requireAuth, async (req, res) => {
       try {
         const id = oid(req.params.id);
-        const me = req.authUser._id;
-        const message = id ? await HellooMessage.findById(id).select('conversationId kind deletedAt from takenBackAt').lean() : null;
-        if (!message || message.deletedAt || !['photo', 'video'].includes(message.kind) || !sameId(message.from, me)) return res.status(404).json({ success: false, message: 'That is not yours to take back.' });
-        if (!message.takenBackAt) {
-          await HellooMessage.updateOne({ _id: id }, { $set: { takenBackAt: new Date() } });
-          await HellooVoice.deleteOne({ messageId: id });
-          const conversation = await HellooConversation.findById(message.conversationId).select('members').lean();
-          for (const m of (conversation && conversation.members) || []) if (!sameId(m, me)) emit(m, { type: 'media-gone', chatId: String(message.conversationId), id: String(id) });
-        }
+        const message = id ? await HellooMessage.findById(id).select('from mediaFrom deletedAt').lean() : null;
+        if (!message || message.deletedAt || message.mediaFrom || !sameId(message.from, req.authUser._id)) return res.status(404).json({ success: false, message: 'That is not yours.' });
+        const on = req.body?.on !== false;
+        await HellooMessage.updateOne({ _id: id }, { $set: { noForward: on } });
+        return res.json({ success: true, noForward: on });
+      } catch (error) {
+        console.error('Helloo no-forward error:', error);
+        return res.status(500).json({ success: false, message: 'Could not change that right now.' });
+      }
+    });
+
+    // Take it back: the sender's photo or clip is deleted for good and opens
+    // for nobody, however long ago it was sent.
+    // Taking one of your photos, clips or voice notes back: its bytes are
+    // deleted, it opens for nobody, and every forward of it closes too.
+    // Also used by My data (lib/mydata.js). False when it is not yours.
+    async function takeBackMedia(id, me) {
+      const message = id ? await HellooMessage.findById(id).select('conversationId kind deletedAt from takenBackAt').lean() : null;
+      if (!message || message.deletedAt || !['photo', 'video', 'voice'].includes(message.kind) || !sameId(message.from, me)) return false;
+      if (!message.takenBackAt) {
+        await HellooMessage.updateOne({ _id: id }, { $set: { takenBackAt: new Date() } });
+        await HellooVoice.deleteOne({ messageId: id });
+        const conversation = await HellooConversation.findById(message.conversationId).select('members').lean();
+        for (const m of (conversation && conversation.members) || []) if (!sameId(m, me)) emit(m, { type: 'media-gone', chatId: String(message.conversationId), id: String(id) });
+        await tellForwardsGone(id, me);
+      }
+      return true;
+    }
+    takeBackMediaNow = takeBackMedia;
+    app.post('/api/helloo/messages/:id/takeback', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const ok = await takeBackMedia(oid(req.params.id), req.authUser._id);
+        if (!ok) return res.status(404).json({ success: false, message: 'That is not yours to take back.' });
         return res.json({ success: true, takenBack: true });
       } catch (error) {
         console.error('Helloo take back error:', error);
@@ -2387,7 +2465,7 @@ function createHelloo(deps) {
     return wss;
   }
 
-  return { mount, attachLive, VOICE_PATH, emit, cardsFor, faces: { card, faced, sideOf, nameOn, callsOut, pictureOut }, chats: { openChat, reachRule, reachFor, releaseOut } };
+  return { mount, attachLive, VOICE_PATH, emit, cardsFor, media: { takeBack: (id, me) => (takeBackMediaNow ? takeBackMediaNow(id, me) : false) }, faces: { card, faced, sideOf, nameOn, callsOut, pictureOut }, chats: { openChat, reachRule, reachFor, releaseOut } };
 }
 
 module.exports = { createHelloo, HELLOO_VOICE_PATH: VOICE_PATH };

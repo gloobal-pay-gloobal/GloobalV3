@@ -16,7 +16,7 @@ test("the QR card has a Helloo button that sends the pay link to Helloo", () => 
 });
 
 test("the Profile list has a Helloo row with Helloo's mark, opening Helloo", () => {
-  assert.match(dash, /\["Helloo", "Sound pay", "Complaints & reports"\]/);
+  assert.match(dash, /\["My data", "Helloo", "Sound pay", "Complaints & reports"\]/);
   assert.match(dash, /label === "Helloo"\s*\?\s*gloobalOpenHelloo\(""\)/);
   assert.match(dash, /label === "Helloo" && <GloobalHellooMark/);
 });

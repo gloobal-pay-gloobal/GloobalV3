@@ -24,6 +24,9 @@ const usedItemSchema = new mongoose.Schema(
     soldAt: { type: Date, default: null },
     expiresAt: { type: Date, required: true },
     views: { type: Number, default: 0 },
+    // Taken back by the seller from My data: off the market (status
+    // 'removed') until they bring it back, if it was live then.
+    takenBackAt: { type: Date, default: null },
     reports: { type: [mongoose.Schema.Types.ObjectId], default: [] },
   },
   { timestamps: true }

@@ -116,7 +116,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     })).filter((p) => p.author);
   }
   // What feeds, Explore and search may show: live posts, never a status.
-  const visible = (extra = {}) => Object.assign({ removedAt: null, hiddenAt: null, story: { $ne: true } }, extra);
+  const visible = (extra = {}) => Object.assign({ removedAt: null, hiddenAt: null, takenBackAt: null, story: { $ne: true } }, extra);
   const beforeOf = (req) => { const d = req.query.before ? new Date(String(req.query.before)) : null; return d && !Number.isNaN(d.getTime()) ? d : null; };
 
   function mount(app, baseAuth) {
@@ -165,13 +165,15 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       try {
         const id = oid(req.params.id);
         const m = id ? await SocialMedia.findById(id).lean() : null;
-        const post = m && m.post ? await SocialPost.findById(m.post).select('removedAt story expiresAt').lean() : null;
+        const post = m && m.post ? await SocialPost.findById(m.post).select('removedAt takenBackAt story expiresAt').lean() : null;
         if (post && post.story && post.expiresAt && new Date(post.expiresAt).getTime() < Date.now()) return res.status(404).json({ success: false, message: 'Not here any more.' });
         // Served while it belongs to a live post, or to an ad.
-        if (!m || !((post && !post.removedAt) || m.ad)) return res.status(404).json({ success: false, message: 'Not here any more.' });
+        if (!m || !((post && !post.removedAt && !post.takenBackAt) || m.ad)) return res.status(post && post.takenBackAt ? 410 : 404).json({ success: false, code: post && post.takenBackAt ? 'taken_back' : 'gone', message: post && post.takenBackAt ? 'Taken back by its owner.' : 'Not here any more.' });
         const buf = Buffer.from(m.data.buffer || m.data);
         res.set('Content-Type', m.mime);
-        res.set('Cache-Control', 'public, max-age=31536000, immutable');
+        // Kept by phones for minutes, not a year: taking a post back must
+        // reach the people who already opened it (My data).
+        res.set('Cache-Control', 'public, max-age=300');
         res.set('Accept-Ranges', 'bytes');
         res.set('Cross-Origin-Resource-Policy', 'cross-origin');
         const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
@@ -283,7 +285,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const me = req.authUser;
         const [out, inn] = await Promise.all([SocialLink.find({ kind: 'follow', from: me._id }).select('to').lean(), SocialLink.find({ kind: 'follow', to: me._id }).select('from').lean()]);
         const circle = [me._id, ...out.map((l) => l.to), ...inn.map((l) => l.from)];
-        const posts = await SocialPost.find({ author: { $in: circle }, story: true, removedAt: null, hiddenAt: null, expiresAt: { $gt: new Date() } }).sort({ createdAt: 1 }).limit(300).lean();
+        const posts = await SocialPost.find({ author: { $in: circle }, story: true, removedAt: null, hiddenAt: null, takenBackAt: null, expiresAt: { $gt: new Date() } }).sort({ createdAt: 1 }).limit(300).lean();
         const shown = await postsOut(posts, me._id);
         const groups = new Map();
         for (const p of shown) { const k = `${p.author.accountId}:${p.author.side}`; if (!groups.has(k)) groups.set(k, { author: p.author, mine: p.mine, items: [], last: p.at }); const g = groups.get(k); g.items.push(p); g.last = p.at; }
@@ -362,7 +364,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const sideMatch = u.shopOwnerId ? {} : (hasShop ? (side === 'shop' ? { side: 'shop' } : { side: 'self' }) : {});
         const before = beforeOf(req);
         const own = sameId(u._id, me._id);
-        const base = Object.assign({ author: u._id, removedAt: null, story: { $ne: true } }, own ? {} : { hiddenAt: null }, sideMatch);
+        const base = Object.assign({ author: u._id, removedAt: null, story: { $ne: true } }, own ? {} : { hiddenAt: null, takenBackAt: null }, sideMatch);
         const posts = await SocialPost.find(Object.assign({}, base, before ? { createdAt: { $lt: before } } : {})).sort({ createdAt: -1 }).limit(30).lean();
         const [postCount, followers, following, isFollowing] = await Promise.all([
           SocialPost.countDocuments(base), SocialLink.countDocuments({ kind: 'follow', to: u._id }), SocialLink.countDocuments({ kind: 'follow', from: u._id }),
@@ -388,7 +390,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     const livePost = async (req, res) => {
       const id = oid(req.params.id);
       const post = id ? await SocialPost.findOne({ _id: id, removedAt: null }) : null;
-      if (!post || (post.hiddenAt && !sameId(post.author, req.authUser._id))) { res.status(404).json({ success: false, message: 'That post is gone.' }); return null; }
+      if (!post || ((post.hiddenAt || post.takenBackAt) && !sameId(post.author, req.authUser._id))) { res.status(404).json({ success: false, message: 'That post is gone.' }); return null; }
       return post;
     };
     app.post('/api/social/posts/:id/like', socialWrite, requireAuth, async (req, res) => {

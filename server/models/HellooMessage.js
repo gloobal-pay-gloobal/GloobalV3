@@ -36,6 +36,15 @@ const hellooMessageSchema = new mongoose.Schema(
     openCount: { type: Number, default: 0 },
     // Taken back by the sender: the bytes are deleted and it opens for nobody.
     takenBackAt: { type: Date, default: null },
+    // Forwarded: this message holds no bytes of its own. It points at the
+    // ORIGINAL message (the first one sent), whose single stored copy every
+    // forward opens — so passing a photo on adds nothing to storage, and
+    // taking the original back closes every forward at once. Never a chain:
+    // a forward of a forward points at the same original.
+    mediaFrom: { type: mongoose.Schema.Types.ObjectId, ref: 'HellooMessage', default: null, index: true },
+    forwarded: { type: Boolean, default: false },
+    // The sender said it may not be passed on (set on the original).
+    noForward: { type: Boolean, default: false },
     // Where this media belongs. `country` is the sender's own. `countries`
     // is every country it is kept in: the sender's and, when the chat
     // crosses a border, the receiver's too — so each country holds what its

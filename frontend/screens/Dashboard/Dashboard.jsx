@@ -864,6 +864,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // (features/nearby/soundPayUi.jsx). The sheet it opens offers "Get paid"
   // (play my ID) and "Pay" (listen, on the Scan screen).
   const [showEarn, setShowEarn] = useState14(false);
+  // Profile → My data (features/mydata/myData.jsx).
+  const [showMyData, setShowMyData] = useState14(false);
   const requestCloseEarn = useBackClose(showEarn, () => setShowEarn(false));
   const requestCloseReceive = useBackClose(showReceive, () => setShowReceive(false));
   const [myShareRate, setMyShareRate] = useState14(1);
@@ -3706,13 +3708,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        because there is already an "About" row in this list and two rows
        starting with that word is a menu nobody can scan. */
   }{PROFILE_ROWS.slice(0, 1)
-    .concat(["Creator Profile"], shareRole === "merchant" ? ["My shops"] : [], PROFILE_ROWS.slice(1, 4), ["Helloo", "Sound pay", "Complaints & reports"], PROFILE_ROWS.slice(4)).map((label, i) => {
+    .concat(["Creator Profile"], shareRole === "merchant" ? ["My shops"] : [], PROFILE_ROWS.slice(1, 4), ["My data", "Helloo", "Sound pay", "Complaints & reports"], PROFILE_ROWS.slice(4)).map((label, i) => {
     // The theme's own family, very faint: one soft tint per row instead of
     // the eight-colour stripe the shared list drew in every theme.
     const rowColor = gloobalFamilyColor(i);
     return <button
       key={label}
-      data-testid={label === "My shops" ? "profile-my-shops" : label === "Helloo" ? "profile-helloo" : undefined}
+      data-testid={label === "My shops" ? "profile-my-shops" : label === "Helloo" ? "profile-helloo" : label === "My data" ? "profile-my-data" : undefined}
       // "Notifications" is the one row with a real screen behind it — the
       // server-held list, rendered from App.jsx so a push click can open
       // the same sheet. The rest still open their placeholder detail view.
@@ -3727,6 +3729,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         // Helloo, GLOOBAL's messenger, opens in its own app.
         : label === "Helloo"
           ? gloobalOpenHelloo("")
+        : label === "My data"
+          ? setShowMyData(true)
         : label === "Sound pay"
           ? setShowEarn(true)
         : label === "Complaints & reports"
@@ -3749,7 +3753,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     ><span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>{label}</span><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>{label === "My shops" && shopsInfo && shopsInfo.shops && <span
       data-testid="profile-my-shops-count"
       style={{ fontSize: 11.5, fontWeight: 800, color: T.inkFaint }}
-    >{`${shopsInfo.shops.length} of ${Number(shopsInfo.max) || 5}`}</span>}{label === "Helloo" && <GloobalHellooMark size={20} />}{label === "Sound pay" && <SoundPlayIcon size={16} color={T.inkFaint} />}{label === "Complaints & reports" && complaintsNeedingMe > 0 && <span
+    >{`${shopsInfo.shops.length} of ${Number(shopsInfo.max) || 5}`}</span>}{label === "Helloo" && <GloobalHellooMark size={20} />}{label === "My data" && <span style={{ fontSize: 12, fontWeight: 800, color: T.inkFaint }}>Take back</span>}{label === "Sound pay" && <SoundPlayIcon size={16} color={T.inkFaint} />}{label === "Complaints & reports" && complaintsNeedingMe > 0 && <span
       data-complaints-badge
       style={{ minWidth: 20, height: 20, borderRadius: 10, background: T.negative, color: "#fff", fontSize: 11, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}
     >{complaintsNeedingMe}</span>}<ChevronRightIcon /></span></button>;
@@ -4682,7 +4686,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     summary={essentialsHeld} balance={bankBalance} ccyCode={ccyCode} lens={displayLens}
     onClose={requestCloseBalanceSplit}
     onOpenEssentials={() => { setShowBalanceSplit(false); setShowEssentials(true); }}
-  /></ScreenErrorBoundary>}{showEarn && <EarnSheet
+  /></ScreenErrorBoundary>}{showMyData && <MyDataScreen onClose={() => setShowMyData(false)} />}{showEarn && <EarnSheet
     gloobalId={myGloobalId}
     side={shareRole === "merchant" ? "shop" : "person"}
     currencySign={currencySuffix(collectionCurrency)}

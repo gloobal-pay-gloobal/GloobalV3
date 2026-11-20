@@ -24,6 +24,6 @@ test('across a border: kept in both countries, and it says who in which', async 
   assert.deepEqual(h.countries, ['IN', 'CN']);
   assert.deepEqual(h.sharedWith, [{ userId: 'li', gloobalId: 'LI001', country: 'CN' }]);
 });
-test('the route writes it on every photo and clip', () => {
-  assert.equal(src.split('Object.assign(doc, await mediaHome(me, otherId));').length - 1, 2);
+test('the route writes it on every photo and clip, and on every forward', () => {
+  assert.equal(src.split('Object.assign(doc, await mediaHome(me, otherId));').length - 1, 3);
 });

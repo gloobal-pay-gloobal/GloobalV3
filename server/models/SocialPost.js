@@ -38,6 +38,9 @@ const socialPostSchema = new mongoose.Schema(
     // Taken down by its author, or hidden after reports until someone looks.
     removedAt: { type: Date, default: null },
     hiddenAt: { type: Date, default: null },
+    // Taken back by its author from My data (lib/mydata.js): shown to nobody
+    // but them, its pictures served to nobody; brought back the same way.
+    takenBackAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

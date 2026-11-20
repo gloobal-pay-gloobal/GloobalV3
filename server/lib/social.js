@@ -7,7 +7,8 @@
 //
 // Routes (all JSON; all but the media GET need a signed-in account):
 //   POST   /api/social/media                { kind, mime, data } → { id }   a picture (≤700 KB) or a short video (≤8 MB)
-//   GET    /api/social/media/:id            the bytes, public, with Range for video
+//   GET    /api/social/media/:id?v=PASS     the bytes, for a signed-in viewer's pass, with Range
+//   GET    /api/social/pass                 a 15-minute view pass for the signed-in account
 //   POST   /api/social/posts                { media:[id], caption, topic, tags:[itemId] }
 //   DELETE /api/social/posts/:id            your own post
 //   GET    /api/social/feed?before=         people you follow, then more from everyone
@@ -64,7 +65,10 @@ function sniff(buf) {
   return null;
 }
 
-function createSocial({ User, rateLimit, windowMs, publicBase = '', people = null }) {
+function createSocial({ User, rateLimit, windowMs, publicBase = '', people = null, viewPass = null }) {
+  // No open links (lib/viewPass.js): post and ad media opens only with a
+  // signed-in account's pass.
+  const sealed = viewPass ? require('./viewPass').requireViewPass(viewPass, User) : (req, res, next) => next();
   // people: Helloo's card maker ({ cardsFor, faced }), so a face here is the
   // same as in a chat — photo or emoji as the person chose, a shop's logo.
   const socialRead = rateLimit({ name: 'social-read', max: 600, windowMs });
@@ -161,7 +165,13 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     });
     // Public, like any post: a picture in a feed is an <img>, which sends no
     // sign-in. Only media that belongs to a live post is served.
-    app.get('/api/social/media/:id', socialRead, async (req, res) => {
+    // A view pass for the signed-in account (lib/viewPass.js).
+    app.get('/api/social/pass', socialRead, requireAuth, async (req, res) => {
+      if (!viewPass) return res.status(503).json({ success: false, message: 'Not available.' });
+      res.set('Cache-Control', 'no-store');
+      return res.json({ success: true, ...viewPass.issue(req.authUser._id) });
+    });
+    app.get('/api/social/media/:id', socialRead, sealed, async (req, res) => {
       try {
         const id = oid(req.params.id);
         const m = id ? await SocialMedia.findById(id).lean() : null;
@@ -171,9 +181,10 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         if (!m || !((post && !post.removedAt && !post.takenBackAt) || m.ad)) return res.status(post && post.takenBackAt ? 410 : 404).json({ success: false, code: post && post.takenBackAt ? 'taken_back' : 'gone', message: post && post.takenBackAt ? 'Taken back by its owner.' : 'Not here any more.' });
         const buf = Buffer.from(m.data.buffer || m.data);
         res.set('Content-Type', m.mime);
-        // Kept by phones for minutes, not a year: taking a post back must
-        // reach the people who already opened it (My data).
-        res.set('Cache-Control', 'public, max-age=300');
+        // Kept only by the viewer's own phone, for minutes, not a year: no
+        // shared cache holds it (no open links), and taking a post back
+        // reaches the people who already opened it (My data).
+        res.set('Cache-Control', 'private, max-age=300');
         res.set('Accept-Ranges', 'bytes');
         res.set('Cross-Origin-Resource-Policy', 'cross-origin');
         const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));

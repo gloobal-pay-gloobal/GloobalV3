@@ -78,7 +78,11 @@ function UsedFace({ person, size = 40 }) {
 }
 function UsedPhoto({ src, h = 104, r = 15, fit = "cover" }) {
   const [bad, setBad] = useStateUm(false);
-  return <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: h, borderRadius: r, background: T.surfaceAlt, overflow: "hidden", flexShrink: 0 }}>{src && !bad ? <img src={src} alt="" loading="lazy" onError={() => setBad(true)} style={{ width: "100%", height: "100%", objectFit: fit, display: "block" }} /> : <UmNoPhoto size={Math.min(34, h / 3)} color={T.inkFaint} />}</span>;
+  // Sealed: only with the signed-in viewer's pass (features/viewpass).
+  const pass = useGloobalViewPass();
+  const shown = gloobalSealedSrc(src, pass);
+  useEffectUm(() => { setBad(false); }, [shown]);
+  return <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: h, borderRadius: r, background: T.surfaceAlt, overflow: "hidden", flexShrink: 0 }}>{shown && !bad ? <img src={shown} alt="" loading="lazy" onError={() => setBad(true)} style={{ width: "100%", height: "100%", objectFit: fit, display: "block" }} /> : <UmNoPhoto size={Math.min(34, h / 3)} color={T.inkFaint} />}</span>;
 }
 function UsedChip({ on, onClick, children, testid, disabled }) {
   return <button onClick={onClick} disabled={disabled} aria-pressed={Boolean(on)} data-testid={testid} className="v2-tap" style={{ flexShrink: 0, padding: "8px 13px", borderRadius: 999, border: "none", background: on ? T.accentSoft : T.surface, color: on ? T.accent : T.inkSoft, boxShadow: on ? `inset 0 0 0 1.5px ${T.accent}` : T.shadowCard, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: T.fontBody, whiteSpace: "nowrap", opacity: disabled ? 0.6 : 1 }}>{children}</button>;

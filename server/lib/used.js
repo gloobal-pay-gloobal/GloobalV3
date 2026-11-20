@@ -7,7 +7,7 @@
 // holds money, and an offer is only words.
 //
 //   POST   /api/used/photos              upload one picture (JSON, base64)
-//   GET    /api/used/photos/:id          the picture, while its listing stands
+//   GET    /api/used/photos/:id?v=PASS   the picture, while its listing stands, for a signed-in viewer's pass
 //   POST   /api/used/items               list something
 //   GET    /api/used/items?cat&q&km&lat&lng&before
 //   GET    /api/used/items/:id           one listing, its seller, my deal on it
@@ -58,7 +58,9 @@ function photoKind(buf) {
   return '';
 }
 
-function createUsed({ User, rateLimit, windowMs, currencyOf, publicBase = '' }) {
+function createUsed({ User, rateLimit, windowMs, currencyOf, publicBase = '', viewPass = null }) {
+  // No open links (lib/viewPass.js): listing photos open only with a pass.
+  const sealed = viewPass ? require('./viewPass').requireViewPass(viewPass, User) : (req, res, next) => next();
   const usedRead = rateLimit({ name: 'used-read', max: 600, windowMs });
   const usedWrite = rateLimit({ name: 'used-write', max: 60, windowMs });
   const usedUpload = rateLimit({ name: 'used-upload', max: 40, windowMs });
@@ -116,14 +118,14 @@ function createUsed({ User, rateLimit, windowMs, currencyOf, publicBase = '' }) 
     });
     // Public like any listing picture: an <img> sends no sign-in. Served
     // while its listing has not been taken down.
-    app.get('/api/used/photos/:id', usedRead, async (req, res) => {
+    app.get('/api/used/photos/:id', usedRead, sealed, async (req, res) => {
       try {
         const id = oid(req.params.id);
         const p = id ? await UsedPhoto.findById(id).lean() : null;
         const it = p && p.item ? await UsedItem.findById(p.item).select('status').lean() : null;
         if (!p || !it || it.status === 'removed' || it.status === 'hidden') return res.status(404).json({ success: false, message: 'Not here any more.' });
         res.set('Content-Type', p.mime);
-        res.set('Cache-Control', 'public, max-age=86400');
+        res.set('Cache-Control', 'private, max-age=300');
         res.set('X-Content-Type-Options', 'nosniff');
         return res.end(Buffer.isBuffer(p.data) ? p.data : Buffer.from(p.data.buffer || p.data));
       } catch (error) { return fail(res, 'photo', error); }

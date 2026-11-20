@@ -196,6 +196,7 @@ const { createSocial, SOCIAL_MEDIA_PATH } = require('./lib/social');
 const { createUsed } = require('./lib/used');
 const { createWork } = require('./lib/work');
 const { createMyData } = require('./lib/mydata');
+const { createViewPass } = require('./lib/viewPass');
 const adsLib = require('./lib/ads');
 const HoomanAnswer = require('./models/HoomanAnswer');
 const HoomanProfile = require('./models/HoomanProfile');
@@ -1463,14 +1464,17 @@ const helloo = createHelloo({
 helloo.mount(app, requireAuth);
 
 // GLOOBAL Social — posts, follows, likes, comments (lib/social.js).
-createSocial({ User, rateLimit, windowMs: WINDOW_MS, people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
+// No open links: people's pictures and videos open only with a signed-in
+// account's 15-minute view pass (lib/viewPass.js).
+const viewPass = createViewPass({ secret: AUTH_TOKEN_SECRET });
+createSocial({ User, rateLimit, windowMs: WINDOW_MS, viewPass, people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
 // Social · Work (lib/work.js): Work cards, openings near you, applying by
 // chat. GLOOBAL only connects people and keeps 0%.
 createWork({ User, rateLimit, windowMs: WINDOW_MS, currencyOf: async (user) => (await localCurrencyFor(accountCountryIso(user))) || 'INR', people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
 
 // GLOOBAL बाज़ार · Used (lib/used.js): people selling their own second-hand
 // things nearby. GLOOBAL keeps 0%: nothing there moves or holds money.
-createUsed({ User, rateLimit, windowMs: WINDOW_MS, currencyOf: async (user) => (await localCurrencyFor(accountCountryIso(user))) || 'INR' }).mount(app, requireAuth);
+createUsed({ User, rateLimit, windowMs: WINDOW_MS, viewPass, currencyOf: async (user) => (await localCurrencyFor(accountCountryIso(user))) || 'INR' }).mount(app, requireAuth);
 
 // My data (lib/mydata.js): everything you put into GLOOBAL, how far each
 // thing went, and taking it back — one thing or everything at once.

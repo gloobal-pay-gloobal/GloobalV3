@@ -381,3 +381,34 @@ test('views count different people, never the author; a shop counts its differen
   const shop = await call('get /api/social/profile/:gloobalId', asha, { params: { gloobalId: 'CHAI1' }, query: { side: 'shop' } });
   assert.equal(shop.body.profile.visitors, 2);
 });
+
+test('follow, follow back, following: every name says which, lists show both ways, and unfollowing always works', async () => {
+  const fresh = (await call('post /api/social/follow', meera, { body: { to: String(ravi._id), on: false } }));
+  assert.equal(fresh.status, 200);
+  await call('post /api/social/follow', ravi, { body: { to: String(meera._id), on: false } });
+  // Ravi follows Meera: for Meera, Ravi "follows me" and she is not following.
+  const f = await call('post /api/social/follow', ravi, { body: { to: String(meera._id), on: true } });
+  assert.equal(f.body.following, true); assert.equal(f.body.followsMe, false);
+  const forMeera = await call('get /api/social/profile/:gloobalId', meera, { params: { gloobalId: 'RAVI1' }, query: { side: 'self' } });
+  assert.equal(forMeera.body.profile.isFollowing, false); assert.equal(forMeera.body.profile.followsMe, true);
+  // Her followers list has Ravi, with "follows me" for the Follow back button.
+  const followers = await call('get /api/social/people/:gloobalId/:which', meera, { params: { gloobalId: 'MEERA', which: 'followers' } });
+  const row = followers.body.people.find((p) => p.accountId === String(ravi._id));
+  assert.ok(row); assert.equal(row.followsMe, true); assert.equal(row.following, false);
+  // She follows back: both ways now.
+  const back = await call('post /api/social/follow', meera, { body: { to: String(ravi._id), on: true } });
+  assert.equal(back.body.following, true); assert.equal(back.body.followsMe, true);
+  const following = await call('get /api/social/people/:gloobalId/:which', meera, { params: { gloobalId: 'MEERA', which: 'following' } });
+  assert.ok(following.body.people.some((p) => p.accountId === String(ravi._id) && p.following && p.followsMe));
+  // Unfollow: gone from her following, and the count drops.
+  const un = await call('post /api/social/follow', meera, { body: { to: String(ravi._id), on: false } });
+  assert.equal(un.body.following, false);
+  const after = await call('get /api/social/people/:gloobalId/:which', meera, { params: { gloobalId: 'MEERA', which: 'following' } });
+  assert.ok(!after.body.people.some((p) => p.accountId === String(ravi._id)));
+  // Someone whose profile is off cannot follow, but can always unfollow.
+  const nisha = { _id: id(), symbolId: 'NISHA2', fullName: 'Nisha Q', countryIso: 'IN', creatorProfile: {}, socialOn: { self: false } };
+  User.rows.push(nisha);
+  const off = await call('post /api/social/follow', nisha, { query: { as: 'self' }, body: { to: String(ravi._id), on: true } });
+  assert.equal(off.status, 403); assert.equal(off.body.code, 'social_off');
+  assert.equal((await call('post /api/social/follow', nisha, { query: { as: 'self' }, body: { to: String(ravi._id), on: false } })).status, 200);
+});

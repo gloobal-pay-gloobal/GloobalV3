@@ -121,6 +121,18 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     const users = uniq.length ? await User.find({ _id: { $in: uniq } }).select(CARD).lean() : [];
     return new Map(users.map((u) => [String(u._id), u]));
   }
+  // Who I follow and who follows me, among these accounts — so every name
+  // can carry the right button: Follow, Follow back or Following.
+  async function tiesOf(meId, ids) {
+    const list = [...new Set((ids || []).map(String))].map(oid).filter(Boolean);
+    if (!meId || !list.length) return { following: new Set(), followsMe: new Set() };
+    const [out, back] = await Promise.all([
+      SocialLink.find({ kind: 'follow', from: meId, to: { $in: list } }).select('to').lean(),
+      SocialLink.find({ kind: 'follow', to: meId, from: { $in: list } }).select('from').lean(),
+    ]);
+    return { following: new Set(out.map((l) => String(l.to))), followsMe: new Set(back.map((l) => String(l.from))) };
+  }
+  const tied = (card, ties) => (card ? Object.assign(card, { following: ties.following.has(String(card.accountId)), followsMe: ties.followsMe.has(String(card.accountId)) }) : card);
   async function postsOut(postsIn, meId) {
     let posts = postsIn;
     if (!posts.length) return [];
@@ -139,9 +151,10 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       { $group: { _id: '$media', n: { $sum: 1 } } },
     ]).catch(() => []) : [];
     const views = new Map(seenRows.map((r) => [String(r._id), r.n]));
+    const ties = await tiesOf(meId, posts.map((p) => p.author));
     return posts.map((p) => ({
       id: String(p._id),
-      author: cardOf(byId.get(String(p.author)), p.side),
+      author: tied(cardOf(byId.get(String(p.author)), p.side), ties),
       media: (p.media || []).map((m) => ({ id: String(m.id), kind: m.kind, url: mediaUrl(m.id) })),
       caption: p.caption || '',
       topic: p.topic || '',
@@ -401,12 +414,13 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const byId = await cards(rows.map((r) => r.who));
         const postOf = new Map(posts.map((p) => [String(p._id), p]));
         const followingBack = new Set((await SocialLink.find({ kind: 'follow', from: me, to: { $in: rows.filter((r) => r.type === 'follow').map((r) => r.who) } }).select('to').lean()).map((l) => String(l.to)));
+        const actTies = await tiesOf(me, rows.map((r) => r.who));
         const items = rows.map((r) => {
           const p = r.post ? postOf.get(String(r.post)) : null;
           const first = p && (p.media || [])[0];
           return {
             type: r.type, at: r.at, text: r.text || '',
-            who: cardOf(byId.get(String(r.who)), 'self'),
+            who: tied(cardOf(byId.get(String(r.who)), 'self'), actTies),
             post: p ? { id: String(p._id), caption: (p.caption || '').slice(0, 80), media: first ? { id: String(first.id), kind: first.kind, url: mediaUrl(first.id) } : null } : null,
             followingBack: r.type === 'follow' ? followingBack.has(String(r.who)) : undefined,
             fresh: !seenAt || new Date(r.at) > new Date(seenAt),
@@ -626,7 +640,8 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const re = new RegExp(escapeRe(q), 'i');
         const shops = await User.find({ $or: [{ 'creatorProfile.handle': re }, { 'creatorProfile.handleFirst': re }] }).select(CARD).limit(12).lean();
         const posters = await SocialPost.distinct('author', { removedAt: null, side: 'self' });
-        const persons = posters.length ? await User.find({ _id: { $in: posters.slice(0, 2000) }, fullName: re }).select(CARD).limit(12).lean() : [];
+        // A person is findable once they have turned Social on or posted.
+        const persons = await User.find({ fullName: re, shopOwnerId: null, $or: [{ 'socialOn.self': true }, { _id: { $in: posters.slice(0, 2000) } }] }).select(CARD).limit(12).lean();
         // "#chai" finds by the hashtag itself; plain words look in captions.
         const asTag = q[0] === '#' ? cleanTag(q) : '';
         const posts = await SocialPost.find(visible(asTag ? { hashtags: asTag } : { caption: re })).sort({ likeCount: -1, createdAt: -1 }).limit(18).lean();
@@ -634,7 +649,9 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const personsOn = persons.filter((u) => !(u.socialOn && u.socialOn.self === false));
         shops.length = 0; shops.push(...shopsOn); persons.length = 0; persons.push(...personsOn);
         const found = await cards([...shops, ...persons].map((u) => u._id));
-        return res.json({ success: true, people: [...shops.map((u) => cardOf(found.get(String(u._id)), 'shop')), ...persons.map((u) => cardOf(found.get(String(u._id)), 'self'))], posts: await postsOut(posts, req.authUser._id) });
+        const ties = await tiesOf(req.authUser._id, [...shops, ...persons].map((u) => u._id));
+        const people = [...shops.map((u) => cardOf(found.get(String(u._id)), 'shop')), ...persons.map((u) => cardOf(found.get(String(u._id)), 'self'))].filter((c) => c && !sameId(c.accountId, req.authUser._id)).map((c) => tied(c, ties));
+        return res.json({ success: true, people, posts: await postsOut(posts, req.authUser._id) });
       } catch (error) { return fail(res, 'search', error); }
     });
 
@@ -657,17 +674,20 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
           SocialPost.countDocuments(base), SocialLink.countDocuments({ kind: 'follow', to: u._id }), SocialLink.countDocuments({ kind: 'follow', from: u._id }),
           SocialLink.exists({ kind: 'follow', from: me._id, to: u._id }),
         ]);
+        const followsMe = own ? false : Boolean(await SocialLink.exists({ kind: 'follow', from: u._id, to: me._id }));
         // A shop counts the different people who came to it.
         let visitors;
         if (side === 'shop') { if (!own) await recordShopVisit(u, me._id); visitors = await shopVisitors(u._id); }
-        return res.json({ success: true, profile: Object.assign(cardOf((await cards([u._id])).get(String(u._id)), side), { posts: postCount, followers, following, isFollowing: Boolean(isFollowing), isMe: own, on }, visitors === undefined ? {} : { visitors }, aboutOf(u, side)), grid: await postsOut(posts, me._id), before: posts.length ? posts[posts.length - 1].createdAt : null });
+        return res.json({ success: true, profile: Object.assign(cardOf((await cards([u._id])).get(String(u._id)), side), { posts: postCount, followers, following, isFollowing: Boolean(isFollowing), followsMe, isMe: own, on }, visitors === undefined ? {} : { visitors }, aboutOf(u, side)), grid: await postsOut(posts, me._id), before: posts.length ? posts[posts.length - 1].createdAt : null });
       } catch (error) { return fail(res, 'profile', error); }
     });
 
     // ── FOLLOW, LIKE ──────────────────────────────────────────────────
-    app.post('/api/social/follow', socialWrite, requireAuth, requireOn, async (req, res) => {
+    app.post('/api/social/follow', socialWrite, requireAuth, async (req, res) => {
       try {
         const me = req.authUser;
+        // Unfollowing is always allowed; following needs your own profile on.
+        if ((req.body || {}).on !== false && !(await isOn(me, req.socialSide))) return res.status(403).json({ success: false, code: 'social_off', message: 'Turn on your social profile first, then follow.' });
         const to = oid((req.body || {}).to);
         if (!to || sameId(to, me._id)) return res.status(400).json({ success: false, message: 'Pick someone else to follow.' });
         const target = await User.findById(to).select('_id shopOwnerId socialOn creatorProfile.handle').lean();
@@ -676,7 +696,37 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         if (on && !(await isOn(target, 'self')) && !(await isOn(target, 'shop'))) return res.status(404).json({ success: false, code: 'social_off', message: 'This profile is not on Social.' });
         if (on) await SocialLink.updateOne({ kind: 'follow', from: me._id, to }, { $setOnInsert: { kind: 'follow', from: me._id, to } }, { upsert: true });
         else await SocialLink.deleteOne({ kind: 'follow', from: me._id, to });
-        return res.json({ success: true, following: on, followers: await SocialLink.countDocuments({ kind: 'follow', to }) });
+        return res.json({ success: true, following: on, followsMe: Boolean(await SocialLink.exists({ kind: 'follow', from: to, to: me._id })), followers: await SocialLink.countDocuments({ kind: 'follow', to }) });
+      } catch (error) { return fail(res, 'follow', error); }
+    });
+    // Followers and Following, as lists: newest first, each with the right
+    // button for you (Follow, Follow back, Following). Profiles turned off
+    // stay out of sight.
+    app.get('/api/social/people/:gloobalId/:which', socialRead, requireAuth, async (req, res) => {
+      try {
+        const which = req.params.which === 'following' ? 'following' : req.params.which === 'followers' ? 'followers' : '';
+        if (!which) return res.status(404).json({ success: false, message: 'Not found.' });
+        const me = req.authUser;
+        const u = await User.findOne({ symbolId: String(req.params.gloobalId) }).select('_id').lean();
+        if (!u) return res.status(404).json({ success: false, message: 'No one with that GLOOBAL ID.' });
+        const before = beforeOf(req);
+        const q = Object.assign({ kind: 'follow' }, which === 'followers' ? { to: u._id } : { from: u._id }, before ? { createdAt: { $lt: before } } : {});
+        const links = await SocialLink.find(q).sort({ createdAt: -1 }).limit(60).lean();
+        const ids = links.map((l) => (which === 'followers' ? l.from : l.to));
+        const byId = await cards(ids);
+        const ties = await tiesOf(me._id, ids);
+        const people = [];
+        for (const id of ids) {
+          const raw = byId.get(String(id));
+          if (!raw) continue;
+          // The face people know it by: a shop account is its shop; a person
+          // is themselves, or their shop if only that side is on.
+          const side = raw.shopOwnerId ? 'shop' : (raw.socialOn && raw.socialOn.self === false && raw.creatorProfile && raw.creatorProfile.handle ? 'shop' : 'self');
+          if (!sameId(id, me._id) && !(await isOn(raw, side))) continue;
+          const card = cardOf(raw, side);
+          if (card) people.push(Object.assign(tied(card, ties), { isMe: sameId(id, me._id) }));
+        }
+        return res.json({ success: true, people, before: links.length === 60 ? links[links.length - 1].createdAt : null });
       } catch (error) { return fail(res, 'follow', error); }
     });
     const livePost = async (req, res) => {

@@ -32,6 +32,8 @@ const socialPostSchema = new mongoose.Schema(
     // A status: shown for a day to the people who follow you and the people
     // you follow, in the row above the feed — never in the feed or Explore.
     story: { type: Boolean, default: false },
+    // How it was made: a post (pictures), a reel (a short video), or a video.
+    format: { type: String, enum: ['post', 'reel', 'video'], default: 'post' },
     expiresAt: { type: Date, default: null },
     likeCount: { type: Number, default: 0 },
     commentCount: { type: Number, default: 0 },

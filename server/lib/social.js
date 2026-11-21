@@ -35,6 +35,7 @@ const ContentView = require('../models/ContentView');
 const SocialSeen = require('../models/SocialSeen');
 const SocialPost = require('../models/SocialPost');
 const SocialMedia = require('../models/SocialMedia');
+const SocialHighlight = require('../models/SocialHighlight');
 const SocialLink = require('../models/SocialLink');
 const SocialComment = require('../models/SocialComment');
 const CreatorItem = require('../models/CreatorItem');
@@ -136,6 +137,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       topic: p.topic || '',
       hashtags: p.hashtags || [],
       story: Boolean(p.story),
+      format: p.format || ((p.media || [])[0] && p.media[0].kind === 'video' ? 'video' : 'post'),
       expiresAt: p.expiresAt || null,
       tags: (p.tags || []).map((t) => ({ itemId: String(t.itemId || ''), shop: t.shopSymbolId, title: t.title, price: t.price, currency: t.currency })),
       likes: p.likeCount || 0,
@@ -240,6 +242,94 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         return res.json(Object.assign({ success: true }, aboutOf(fresh, k)));
       } catch (error) { return fail(res, 'profile edit', error); }
     });
+    // ── HIGHLIGHTS ───────────────────────────────────────────────────
+    // A few of your own past statuses, kept on your profile under a title.
+    //   GET    /api/social/stories/archive?as=          your statuses, newest first (expired too)
+    //   GET    /api/social/highlights/:gloobalId?side=  a profile's highlights
+    //   GET    /api/social/highlights/item/:id          one highlight's statuses
+    //   POST   /api/social/highlights?as=               { title, stories:[id] }
+    //   PUT    /api/social/highlights/:id               { title?, stories? }
+    //   DELETE /api/social/highlights/:id
+    const liveStory = { story: true, removedAt: null, takenBackAt: null };
+    const ownStories = async (u, side, ids) => {
+      const want = (Array.isArray(ids) ? ids : []).slice(0, 100).map(oid).filter(Boolean);
+      if (!want.length) return [];
+      const rows = await SocialPost.find(Object.assign({ _id: { $in: want }, author: u._id }, liveStory, u.shopOwnerId ? {} : { side })).select('_id').lean();
+      const ok = new Set(rows.map((r) => String(r._id)));
+      return want.filter((x) => ok.has(String(x)));
+    };
+    const highlightOut = async (rows) => {
+      const firsts = await SocialPost.find(Object.assign({ _id: { $in: rows.map((h) => h.stories[0]).filter(Boolean) } }, liveStory)).select('_id media').lean();
+      const byId = new Map(firsts.map((p) => [String(p._id), p]));
+      return rows.map((h) => {
+        const f = byId.get(String(h.stories[0]));
+        const m = f && f.media && f.media[0];
+        return { id: String(h._id), title: h.title || '', count: (h.stories || []).length, cover: m ? { id: String(m.id), kind: m.kind, url: mediaUrl(m.id) } : null };
+      });
+    };
+    app.get('/api/social/stories/archive', socialRead, requireAuth, async (req, res) => {
+      try {
+        const u = req.authUser; const side = sideOf(u, req.socialSide);
+        const posts = await SocialPost.find(Object.assign({ author: u._id }, liveStory, u.shopOwnerId ? {} : { side })).sort({ createdAt: -1 }).limit(100).lean();
+        return res.json({ success: true, stories: await postsOut(posts, u._id) });
+      } catch (error) { return fail(res, 'archive', error); }
+    });
+    app.get('/api/social/highlights/item/:id', socialRead, requireAuth, async (req, res) => {
+      try {
+        const id = oid(req.params.id);
+        const h = id ? await SocialHighlight.findById(id).lean() : null;
+        if (!h) return res.status(404).json({ success: false, message: 'Not here any more.' });
+        const owner = await User.findById(h.owner).select(CARD).lean();
+        if (!sameId(h.owner, req.authUser._id) && !(await isOn(owner, h.side))) return res.status(404).json({ success: false, code: 'social_off', message: 'This profile is not on Social.' });
+        const posts = await SocialPost.find(Object.assign({ _id: { $in: h.stories } }, liveStory, { hiddenAt: null })).lean();
+        const order = new Map(h.stories.map((s, i) => [String(s), i]));
+        posts.sort((a, b) => order.get(String(a._id)) - order.get(String(b._id)));
+        return res.json({ success: true, highlight: { id: String(h._id), title: h.title, mine: sameId(h.owner, req.authUser._id) }, stories: await postsOut(posts, req.authUser._id) });
+      } catch (error) { return fail(res, 'highlight', error); }
+    });
+    app.get('/api/social/highlights/:gloobalId', socialRead, requireAuth, async (req, res) => {
+      try {
+        const u = await User.findOne({ symbolId: String(req.params.gloobalId || '') }).select(CARD).lean();
+        if (!u) return res.status(404).json({ success: false, message: 'No such account.' });
+        const side = sideOf(u, req.query.side === 'shop' ? 'shop' : 'self');
+        const own = sameId(u._id, req.authUser._id) || sameId(u.shopOwnerId, req.socialOwner && req.socialOwner._id);
+        if (!own && !(await isOn(u, side))) return res.json({ success: true, highlights: [] });
+        const rows = await SocialHighlight.find({ owner: u._id, side }).sort({ createdAt: 1 }).limit(50).lean();
+        return res.json({ success: true, highlights: await highlightOut(rows.filter((h) => h.stories && h.stories.length)) });
+      } catch (error) { return fail(res, 'highlights', error); }
+    });
+    app.post('/api/social/highlights', socialWrite, requireAuth, requireOn, async (req, res) => {
+      try {
+        const u = req.authUser; const side = sideOf(u, req.socialSide);
+        const title = String((req.body || {}).title || '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 24) || 'Highlights';
+        const stories = await ownStories(u, side, (req.body || {}).stories);
+        if (!stories.length) return res.status(400).json({ success: false, code: 'no_stories', message: 'Pick at least one of your statuses.' });
+        if ((await SocialHighlight.countDocuments({ owner: u._id, side })) >= 50) return res.status(400).json({ success: false, code: 'too_many', message: 'You can keep up to 50 highlights.' });
+        const h = await SocialHighlight.create({ owner: u._id, side, title, stories });
+        const [out] = await highlightOut([h.toObject()]);
+        return res.json({ success: true, highlight: out });
+      } catch (error) { return fail(res, 'highlight create', error); }
+    });
+    app.put('/api/social/highlights/:id', socialWrite, requireAuth, async (req, res) => {
+      try {
+        const u = req.authUser; const id = oid(req.params.id);
+        const h = id ? await SocialHighlight.findOne({ _id: id, owner: u._id }).lean() : null;
+        if (!h) return res.status(404).json({ success: false, message: 'Not here any more.' });
+        const set = {};
+        if ((req.body || {}).title !== undefined) set.title = String(req.body.title || '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 24) || 'Highlights';
+        if ((req.body || {}).stories !== undefined) { const st = await ownStories(u, h.side, req.body.stories); if (!st.length) return res.status(400).json({ success: false, code: 'no_stories', message: 'Keep at least one status, or delete the highlight.' }); set.stories = st; }
+        await SocialHighlight.updateOne({ _id: h._id }, { $set: set });
+        const [out] = await highlightOut([Object.assign({}, h, set)]);
+        return res.json({ success: true, highlight: out });
+      } catch (error) { return fail(res, 'highlight edit', error); }
+    });
+    app.delete('/api/social/highlights/:id', socialWrite, requireAuth, async (req, res) => {
+      try {
+        const id = oid(req.params.id);
+        await SocialHighlight.deleteOne({ _id: id, owner: req.authUser._id });
+        return res.json({ success: true });
+      } catch (error) { return fail(res, 'highlight delete', error); }
+    });
     // Turn the profile you are acting as (?as=) on or off.
     app.post('/api/social/on', socialWrite, requireAuth, async (req, res) => {
       try {
@@ -337,7 +427,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const m = id ? await SocialMedia.findById(id).lean() : null;
         const m0id = m ? m._id : null;
         const post = m && m.post ? await SocialPost.findById(m.post).select('removedAt takenBackAt story expiresAt').lean() : null;
-        if (post && post.story && post.expiresAt && new Date(post.expiresAt).getTime() < Date.now()) return res.status(404).json({ success: false, message: 'Not here any more.' });
+        if (post && post.story && post.expiresAt && new Date(post.expiresAt).getTime() < Date.now() && !(await SocialHighlight.exists({ stories: post._id }))) return res.status(404).json({ success: false, message: 'Not here any more.' });
         // Served while it belongs to a live post, or to an ad.
         if (!m || !((post && !post.removedAt && !post.takenBackAt) || m.ad || m.cover)) return res.status(post && post.takenBackAt ? 410 : 404).json({ success: false, code: post && post.takenBackAt ? 'taken_back' : 'gone', message: post && post.takenBackAt ? 'Taken back by its owner.' : 'Not here any more.' });
         const buf = Buffer.from(m.data.buffer || m.data);
@@ -380,6 +470,10 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const story = body.story === true;
         if (story && media.length > 1) return res.status(400).json({ success: false, code: 'one_status', message: 'A status is one picture or one video.' });
         const videos = media.filter((m) => m.kind === 'video').length;
+        // Reel or video: exactly one video. A post: pictures (or, from older
+        // apps, one video).
+        const format = story ? 'post' : ['reel', 'video'].includes(body.format) ? body.format : 'post';
+        if (format !== 'post' && (media.length !== 1 || videos !== 1)) return res.status(400).json({ success: false, code: 'one_video', message: format === 'reel' ? 'A reel is one short video.' : 'A video post is one video.' });
         if (videos > 1 || (videos && media.length > 1)) return res.status(400).json({ success: false, code: 'one_video', message: 'A post is up to 10 pictures, or one video.' });
         const order = new Map(ids.map((id, i) => [String(id), i]));
         media.sort((a, b) => order.get(String(a._id)) - order.get(String(b._id)));
@@ -396,6 +490,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
           caption: String(body.caption || '').slice(0, 2200),
           hashtags: hashtagsOf(body.caption),
           story,
+          format,
           expiresAt: story ? new Date(Date.now() + STORY_MS) : null,
           topic: story ? '' : topic,
           tags: items.map((it) => ({ itemId: it._id, shopSymbolId: it.ownerSymbolId, title: it.title, price: it.price, currency: it.currency })),

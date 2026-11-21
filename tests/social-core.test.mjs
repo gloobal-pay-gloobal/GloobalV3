@@ -77,6 +77,7 @@ const Link = stub('./models/SocialLink', model('link'));
 const Comment = stub('./models/SocialComment', model('comment'));
 const Seen = stub('./models/SocialSeen', model('seen'));
 const Item = stub('./models/CreatorItem', model('item'));
+const Highlight = stub('./models/SocialHighlight', model('highlight'));
 const User = model('user');
 
 const id = () => new mongoose.Types.ObjectId();
@@ -316,4 +317,41 @@ test('your social profile: a short bio (no links), a cover photo, and the photo 
   // Someone else's upload can't be your cover.
   const other = await upload(ravi, JPEG, { as: 'self' });
   assert.equal((await call('put /api/social/profile', asha, { query: { as: 'self' }, body: { cover: other.body.id } })).body.code, 'bad_cover');
+});
+
+test('post formats, and highlights: your past statuses kept on your profile', async () => {
+  // A reel is one video; pictures can't be a reel.
+  const pic = await upload(asha, JPEG, { as: 'self' });
+  const asReel = await call('post /api/social/posts', asha, { query: { as: 'self' }, body: { media: [pic.body.id], format: 'reel' } });
+  assert.equal(asReel.body.code, 'one_video');
+  const post = await call('post /api/social/posts', asha, { query: { as: 'self' }, body: { media: [pic.body.id] } });
+  assert.equal(post.body.post.format, 'post');
+  // Two statuses; one already gone after 24 hours.
+  const s1m = await upload(asha, JPEG, { as: 'self' });
+  const s1 = await call('post /api/social/posts', asha, { query: { as: 'self' }, body: { media: [s1m.body.id], story: true } });
+  const s2m = await upload(asha, JPEG, { as: 'self' });
+  const s2 = await call('post /api/social/posts', asha, { query: { as: 'self' }, body: { media: [s2m.body.id], story: true } });
+  const old = Post.rows.find((p) => String(p._id) === s1.body.post.id); old.expiresAt = new Date(Date.now() - 3600e3);
+  const arch = await call('get /api/social/stories/archive', asha, { query: { as: 'self' } });
+  const ids = arch.body.stories.map((x) => x.id);
+  assert.ok(ids.includes(s1.body.post.id) && ids.includes(s2.body.post.id), 'expired statuses stay in your archive');
+  assert.ok(arch.body.stories.every((x) => x.story), 'only statuses');
+  // Someone else's status can't go in your highlight.
+  const rm = await upload(ravi, JPEG, { as: 'self' });
+  const rs = await call('post /api/social/posts', ravi, { query: { as: 'self' }, body: { media: [rm.body.id], story: true } });
+  assert.equal((await call('post /api/social/highlights', asha, { query: { as: 'self' }, body: { title: 'x', stories: [rs.body.post.id] } })).body.code, 'no_stories');
+  const h = await call('post /api/social/highlights', asha, { query: { as: 'self' }, body: { title: '  Alwar trip  ', stories: [s1.body.post.id, s2.body.post.id] } });
+  assert.equal(h.status, 200);
+  assert.equal(h.body.highlight.title, 'Alwar trip');
+  assert.equal(h.body.highlight.count, 2);
+  const list = await call('get /api/social/highlights/:gloobalId', ravi, { params: { gloobalId: asha.symbolId }, query: { side: 'self' } });
+  assert.equal(list.body.highlights.length, 1);
+  const one = await call('get /api/social/highlights/item/:id', ravi, { params: { id: h.body.highlight.id } });
+  assert.deepEqual(one.body.stories.map((x) => x.id), [s1.body.post.id, s2.body.post.id]);
+  assert.equal(one.body.highlight.mine, false);
+  // Only its owner can delete it.
+  await call('delete /api/social/highlights/:id', ravi, { params: { id: h.body.highlight.id } });
+  assert.equal(Highlight.rows.length, 1);
+  await call('delete /api/social/highlights/:id', asha, { params: { id: h.body.highlight.id } });
+  assert.equal(Highlight.rows.length, 0);
 });

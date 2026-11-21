@@ -95,6 +95,60 @@ const isReachPrice = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 
 const RING_MS = 45 * 1000;
 const REACH_PAYMENT_FRESH_MS = 60 * 60 * 1000;
 const ASKS_PER_DAY = 10;
+// A paid call is billed per second from the caller's GLOOBAL balance, up
+// to an hour at a time, and settled once a minute while it runs.
+const CALL_MAX_SECONDS = 60 * 60;
+const CALL_SETTLE_MS = 60 * 1000;
+const CALL_MANDATE_HEADER = 'x-gloobal-call-mandate';
+const CALL_MANDATE_TTL_MS = 2 * 60 * 1000;
+const cents2 = (v) => Math.round(Number(v) * 100) / 100;
+// What `seconds` of a call cost at `perMinute`, to the cent. Ten seconds at
+// 1.00 a minute is 0.17.
+const callCost = (seconds, perMinute) => cents2((Math.max(0, seconds) * perMinute) / 60);
+// How long a balance keeps a call going: whole seconds whose cost it covers.
+function secondsFor(balance, perMinute) {
+  if (!(perMinute > 0) || !(balance > 0)) return 0;
+  let s = Math.min(CALL_MAX_SECONDS, Math.floor((balance * 60) / perMinute));
+  while (s > 0 && callCost(s, perMinute) > balance + 1e-9) s -= 1;
+  return s;
+}
+
+// The server pays for a call with the caller's approval, not a PIN typed
+// at each minute: one payment at a time, over loopback, carrying a signed
+// mandate for that call. Set from server.js once the token helpers exist.
+let callMoney = null;
+function configureHellooMoney(d) { callMoney = d; }
+function callMandateHeader(callId) { const at = Date.now(); return `${callId}.${at}.${signCallMandate(callId, at)}`; }
+function signCallMandate(callId, at) {
+  return require('crypto').createHmac('sha256', callMoney.AUTH_TOKEN_SECRET).update(`call:${callId}:${at}`).digest('base64url');
+}
+// Called by the send route. null for an ordinary request; the call for a
+// valid, fresh mandate whose call has a payment waiting; throws otherwise.
+async function readCallMandate(req) {
+  const raw = req.headers[CALL_MANDATE_HEADER];
+  if (!raw) return null;
+  if (!callMoney) throw new Error('calls cannot pay here');
+  const [callId, at, sig] = String(raw).split('.');
+  if (!callId || !at || !sig || !mongoose.isValidObjectId(callId)) throw new Error('bad call mandate');
+  const crypto = require('crypto');
+  const want = Buffer.from(signCallMandate(callId, at));
+  const got = Buffer.from(sig);
+  if (want.length !== got.length || !crypto.timingSafeEqual(want, got)) throw new Error('bad call mandate');
+  if (Math.abs(Date.now() - Number(at)) > CALL_MANDATE_TTL_MS) throw new Error('stale call mandate');
+  const call = await HellooCall.findById(callId).lean();
+  if (!call || !call.paid || !call.paid.approvedAt || !(call.paid.paying > 0)) throw new Error('no call waiting to be paid');
+  return { call };
+}
+// Exactly this caller, this callee, the amount waiting, one currency.
+function callMandateCovers(mandate, { senderId, receiverId, amount, senderCurrency, receiverCurrency }) {
+  const p = mandate.call.paid;
+  return String(p.payerId) === String(senderId)
+    && String(p.payeeId) === String(receiverId)
+    && cents2(amount) === cents2(p.paying)
+    && cents2(p.charged + p.paying) <= callCost(p.maxSeconds, p.perMinute) + 1e-9
+    && String(senderCurrency || '') === String(receiverCurrency || '')
+    && String(senderCurrency || '') === p.currency;
+}
 
 const VOICE_MAX_BYTES = 600 * 1024;
 const VOICE_MAX_SECONDS = 120;
@@ -623,11 +677,36 @@ function createHelloo(deps) {
 
   // What `senderId` must do to message `receiverId`: free, pay a price, or
   // only ask. Payments (money sent in the chat) are never charged.
-  async function reachRule(receiverId, senderId, senderSide) {
+  // Does the receiver know the sender? They saved them, or the two have
+  // paid each other on GLOOBAL. (Writing to someone allows them, below.)
+  async function knows(receiverId, senderId) {
+    const receiver = await User.findById(receiverId).select('shopOwnerId').lean();
+    const person = (receiver && receiver.shopOwnerId) || receiverId;
+    if (await HellooSavedContact.exists({ owner: person, contact: senderId })) return true;
+    // Money for reaching them (a paid message or call) does not count: a
+    // fan who paid once is still a fan, not a friend.
+    return Boolean(await Transaction.exists({ status: 'success', 'metadata.payMethod': { $nin: ['helloo-reach', 'helloo-call'] }, $or: [{ fromUserId: receiverId, toUserId: senderId }, { fromUserId: senderId, toUserId: receiverId }] }));
+  }
+  // Is the receiver met as a person here (not as a shop, which takes
+  // messages from new customers)?
+  async function reachedAsPerson(receiverId, receiverSide) {
+    const r = await User.findById(receiverId).select('shopOwnerId creatorProfile.handle').lean();
+    if (!r || r.shopOwnerId) return false;
+    return !(r.creatorProfile && r.creatorProfile.handle) || receiverSide === 'self';
+  }
+  async function reachRule(receiverId, senderId, senderSide, receiverSide) {
     const reach = await HellooReach.findOne({ userId: receiverId }).lean();
-    if (!reach || (reach.allowed || []).some((a) => sameId(a, senderId))) return { free: true };
+    if (reach && (reach.allowed || []).some((a) => sameId(a, senderId))) return { free: true };
     // Set just for this sender: never, or a price of their own.
-    if ((reach.never || []).some((a) => sameId(a, senderId))) return { free: false, closed: true, never: true, kind: 'people', price: 0, currency: await currencyOf(receiverId) };
+    if (reach && (reach.never || []).some((a) => sameId(a, senderId))) return { free: false, closed: true, never: true, kind: 'people', price: 0, currency: await currencyOf(receiverId) };
+    // Saved by them, or someone they have paid or been paid by: free.
+    if (await knows(receiverId, senderId)) return { free: true };
+    if (!reach) {
+      // Nothing set: a person takes a first message from a stranger only as
+      // a request (a friend's friend who got the number). A shop takes it.
+      if (await reachedAsPerson(receiverId, receiverSide)) return { free: false, closed: true, unknown: true, kind: 'people', price: 0, currency: await currencyOf(receiverId) };
+      return { free: true };
+    }
     const own = (reach.prices || []).find((p) => sameId(p.userId, senderId));
     if (own && own.price > 0) return { free: false, closed: false, kind: 'people', price: Math.min(REACH_MAX, reachTenths(own.price)), own: true, currency: await currencyOf(receiverId) };
     const sender = await User.findById(senderId).select('creatorProfile.handle').lean();
@@ -635,8 +714,20 @@ function createHelloo(deps) {
     const kind = sender?.creatorProfile?.handle && senderSide !== 'self' ? 'business' : 'people';
     const group = groupOut(reach[kind]);
     if (group.closed) return { free: false, closed: true, kind, price: 0, currency: await currencyOf(receiverId) };
-    if (group.price <= 0) return { free: true };
-    return { free: false, closed: false, kind, price: group.price, currency: await currencyOf(receiverId) };
+    if (group.price > 0) return { free: false, closed: false, kind, price: group.price, currency: await currencyOf(receiverId) };
+    if (await reachedAsPerson(receiverId, receiverSide)) return { free: false, closed: true, unknown: true, kind, price: 0, currency: await currencyOf(receiverId) };
+    return { free: true };
+  }
+  // A call: free for the people who reach them free; otherwise their price
+  // per minute, paid first — or, with no call price, a request.
+  async function callRule(receiverId, callerId, callerSide, receiverSide) {
+    const rule = await reachRule(receiverId, callerId, callerSide, receiverSide);
+    if (rule.free) return { free: true };
+    if (rule.never) return { free: false, never: true };
+    const reach = await HellooReach.findOne({ userId: receiverId }).select('calls').lean();
+    const perMinute = reach && reach.calls && reach.calls.price > 0 ? reachTenths(reach.calls.price) : 0;
+    if (perMinute > 0) return { free: false, perMinute, currency: await currencyOf(receiverId) };
+    return { free: false, request: true, unknown: Boolean(rule.unknown) };
   }
 
   // What `ownerId` set for one person: their mode, the price they pay (a
@@ -669,6 +760,7 @@ function createHelloo(deps) {
     const amount = Number(meta.destinationAmount ?? txn.amount) || 0;
     const currency = String(meta.destinationCurrency || txn.currency || '').toUpperCase();
     if (currency !== rule.currency || amount + 1e-9 < rule.price) return null;
+    // Used once.
     const used = await HellooMessage.exists({ $or: [{ 'paid.referenceId': txn.referenceId }, { 'payment.referenceId': txn.referenceId }] });
     if (used) return null;
     return { referenceId: txn.referenceId, amount, currency };
@@ -750,6 +842,13 @@ function createHelloo(deps) {
       chatId: call.conversationId ? String(call.conversationId) : '',
       direction: outgoing ? 'out' : 'in',
       video: Boolean(call.video),
+      paid: call.paid && call.paid.perMinute ? {
+        perMinute: call.paid.perMinute, currency: call.paid.currency, maxSeconds: call.paid.maxSeconds || 0,
+        charged: cents2(call.paid.charged || 0), short: Boolean(call.paid.short),
+        // What the whole call comes to once it is over; while it runs, the
+        // phone counts it from answeredAt.
+        total: call.seconds ? callCost(Math.min(call.seconds, call.paid.maxSeconds || call.seconds), call.paid.perMinute) : 0,
+      } : null,
       status: call.status,
       at: call.createdAt,
       answeredAt: call.answeredAt || null,
@@ -762,6 +861,76 @@ function createHelloo(deps) {
 
   // Close a call once: set its final status, post it into the chat, and
   // tell both people. Safe to call twice — the second is a no-op.
+  // ── Paid calls: the caller's balance, per second ───────────────────────
+  // The balance a paid call draws on — the GLOOBAL balance, where Ads &
+  // Earn pays in and ads are paid from. Never below zero, never lent.
+  const balanceOf = deps.balanceOf || ((u) => Math.max(0, Number(u && u.balance) || 0));
+  async function walletFor(payerId, perMinute, currency) {
+    const payer = await User.findById(payerId).lean();
+    const mine = payer ? await currencyOf(payer) : '';
+    const balance = payer ? cents2(balanceOf(payer)) : 0;
+    const sameMoney = mine === currency;
+    return { balance, currency: mine, sameMoney, seconds: sameMoney ? secondsFor(balance, perMinute) : 0 };
+  }
+  // Pay what a running or finished call owes so far: the seconds since it
+  // was answered (up to what the balance allowed), less what is paid. One
+  // payment at a time; a crash mid-payment is retried after a minute.
+  // Returns 'paid', 'nothing', 'busy', 'short' or 'failed'.
+  async function settleCall(callId, finalSeconds = null) {
+    const call = await HellooCall.findById(callId).lean();
+    const p = call && call.paid;
+    if (!p || !p.perMinute || !p.approvedAt || !call.answeredAt) return 'nothing';
+    const ran = finalSeconds !== null ? finalSeconds : Math.floor((Date.now() - new Date(call.answeredAt).getTime()) / 1000);
+    const seconds = Math.min(Math.max(0, ran), p.maxSeconds || 0);
+    const owed = cents2(callCost(seconds, p.perMinute) - (p.charged || 0));
+    if (!(owed >= 0.01)) return 'nothing';
+    const mine = await HellooCall.findOneAndUpdate(
+      { _id: call._id, $or: [{ 'paid.paying': { $in: [0, null] } }, { 'paid.payingAt': { $lt: new Date(Date.now() - 60 * 1000) } }] },
+      { $set: { 'paid.paying': owed, 'paid.payingSeconds': seconds, 'paid.payingAt': new Date() } },
+      { returnDocument: 'after', lean: true }
+    );
+    if (!mine) return 'busy';
+    const [payer, payee] = await Promise.all([User.findById(p.payerId).lean(), User.findById(p.payeeId).lean()]);
+    let outcome = 'failed'; let referenceId = ''; let message = '';
+    if (payer && payee && callMoney) {
+      try {
+        const r = await fetch(`http://127.0.0.1:${callMoney.PORT}/api/transactions/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${callMoney.issueAuthToken(payer)}`, [CALL_MANDATE_HEADER]: callMandateHeader(String(call._id)), 'X-Forwarded-For': '127.0.0.1' },
+          body: JSON.stringify({ senderSymbolId: payer.symbolId, receiverSymbolId: payee.symbolId, amount: owed, note: `Helloo call · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`, idempotencyKey: `call-${String(call._id)}-${seconds}`, payMethod: 'helloo-call' }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 201 || (r.status === 200 && j && j.success)) { outcome = 'paid'; referenceId = (j.transaction && j.transaction.referenceId) || j.referenceId || ''; }
+        else if (r.status === 402 || /balance|insufficient/i.test(String(j && j.message))) { outcome = 'short'; message = (j && j.message) || ''; }
+        else message = (j && j.message) || `HTTP ${r.status}`;
+      } catch (e) { message = e.message; }
+    }
+    if (outcome === 'paid') {
+      await HellooCall.updateOne({ _id: call._id }, { $inc: { 'paid.charged': owed }, $set: { 'paid.settledSeconds': seconds, 'paid.paying': 0, 'paid.payingAt': null }, $push: referenceId ? { 'paid.refs': referenceId } : {} });
+      return 'paid';
+    }
+    await HellooCall.updateOne({ _id: call._id }, { $set: Object.assign({ 'paid.paying': 0, 'paid.payingAt': null }, outcome === 'short' ? { 'paid.short': true } : {}) });
+    if (outcome !== 'short') console.error('Helloo call payment failed:', String(call._id), message);
+    return outcome;
+  }
+  // While a paid call runs: settle each minute, and end it when the time
+  // the balance allowed is up, or the balance can no longer pay.
+  const callTimers = new Map();
+  function stopCallTimers(callId) {
+    const t = callTimers.get(String(callId));
+    if (t) { clearInterval(t.every); clearTimeout(t.end); callTimers.delete(String(callId)); }
+  }
+  function startCallTimers(call) {
+    const id = String(call._id);
+    stopCallTimers(id);
+    const every = setInterval(() => {
+      settleCall(id).then((r) => { if (r === 'short') finishCall(id, 'ended', null).catch(() => {}); }).catch(() => {});
+    }, CALL_SETTLE_MS);
+    const end = setTimeout(() => { finishCall(id, 'ended', null).catch(() => {}); }, Math.max(1, call.paid.maxSeconds) * 1000);
+    every.unref?.(); end.unref?.();
+    callTimers.set(id, { every, end });
+  }
+
   async function finishCall(callId, status, byId) {
     const now = new Date();
     const before = await HellooCall.findOne({ _id: callId, status: { $in: ['ringing', 'answered'] } }).lean();
@@ -776,6 +945,18 @@ function createHelloo(deps) {
       { returnDocument: 'after', lean: true }
     );
     if (!done) return null;
+    if (done.paid && done.paid.perMinute) {
+      stopCallTimers(done._id);
+      // The last seconds, paid now; a payment still going on is waited for.
+      if (done.answeredAt) {
+        for (let i = 0; i < 5; i += 1) {
+          const r = await settleCall(done._id, seconds).catch(() => 'failed');
+          if (r !== 'busy') break;
+          await new Promise((ok) => setTimeout(ok, 400));
+        }
+        Object.assign(done, await HellooCall.findById(done._id).lean());
+      }
+    }
     const people = await cardsFor([done.callerId, done.calleeId]);
     const chat = done.conversationId ? await HellooConversation.findById(done.conversationId).select('reads members').lean() : null;
     if (done.conversationId) {
@@ -1370,13 +1551,13 @@ function createHelloo(deps) {
 
         // Your price, their choice. Money sent in the chat is never charged.
         if (kind !== 'payment' && kind !== 'order') {
-          const rule = await reachRule(otherId, me._id, storedSide(conversation, me._id));
+          const rule = await reachRule(otherId, me._id, storedSide(conversation, me._id), storedSide(conversation, otherId));
           if (!rule.free) {
             if (rule.never) {
               return res.status(403).json({ success: false, code: 'reach_never', rule, message: 'This person is not taking messages from you.' });
             }
             if (rule.closed) {
-              return res.status(403).json({ success: false, code: 'reach_closed', rule, message: 'This person only takes requests. Ask first, free.' });
+              return res.status(403).json({ success: false, code: 'reach_closed', rule, message: rule.unknown ? "They haven't saved you yet. Send a message request — free." : 'This person only takes requests. Ask first, free.' });
             }
             const paid = await checkReachPayment(body.reachRef, req.hellooOwner._id, otherId, rule);
             if (!paid) {
@@ -2030,6 +2211,7 @@ function createHelloo(deps) {
           currency: await currencyOf(req.authUser),
           people: groupOut(reach.people),
           business: groupOut(reach.business),
+          calls: { price: reach.calls && reach.calls.price > 0 ? reachTenths(reach.calls.price) : 0 },
           allowed: allowedIds.map((id) => people.get(String(id))).filter(Boolean).reverse(),
           hideLastSeen: Boolean(reach.hideLastSeen),
           picture: pictureOut(reach.picture),
@@ -2055,6 +2237,12 @@ function createHelloo(deps) {
             set[`${key}.price`] = reachTenths(price);
           }
           if (typeof g.closed === 'boolean') set[`${key}.closed`] = g.closed;
+        }
+        // Calls from people not allowed: { calls: { price } } per minute.
+        if (req.body?.calls && typeof req.body.calls === 'object' && req.body.calls.price !== undefined) {
+          const price = Number(req.body.calls.price);
+          if (!isReachPrice(price)) return res.status(400).json({ success: false, message: `A price is from 0 to ${REACH_MAX}, in steps of 0.10.` });
+          set['calls.price'] = reachTenths(price);
         }
         // Privacy: { hideLastSeen: true | false }, on its own or with prices.
         const hidingChanged = typeof req.body?.hideLastSeen === 'boolean';
@@ -2084,7 +2272,7 @@ function createHelloo(deps) {
             announcePresence(me, sockets.has(String(me)), null);
           }
         }
-        return res.json({ success: true, people: groupOut(reach.people), business: groupOut(reach.business), hideLastSeen: Boolean(reach.hideLastSeen), picture: pictureOut(reach.picture) });
+        return res.json({ success: true, people: groupOut(reach.people), business: groupOut(reach.business), calls: { price: reach.calls && reach.calls.price > 0 ? reachTenths(reach.calls.price) : 0 }, hideLastSeen: Boolean(reach.hideLastSeen), picture: pictureOut(reach.picture) });
       } catch (error) {
         console.error('Helloo reach save error:', error);
         return res.status(500).json({ success: false, message: 'Could not save your prices right now.' });
@@ -2136,9 +2324,13 @@ function createHelloo(deps) {
       try {
         const other = oid(req.params.id);
         if (!other || !(await User.exists({ _id: other }))) return res.status(404).json({ success: false, message: 'Nobody on GLOOBAL has that account.' });
-        const rule = await reachRule(other, req.authUser._id);
+        const side = req.query.side === 'self' ? 'self' : req.query.side === 'shop' ? 'shop' : '';
+        const rule = await reachRule(other, req.authUser._id, '', side);
+        const call = await callRule(other, req.authUser._id, '', side);
+        // A paid call: what the caller has, and how long that keeps it going.
+        if (call.perMinute) call.wallet = await walletFor(req.hellooOwner ? req.hellooOwner._id : req.authUser._id, call.perMinute, call.currency);
         const asked = await HellooAsk.findOne({ from: req.authUser._id, to: other, status: 'pending' }).select('_id createdAt').lean();
-        return res.json({ success: true, rule, askPending: Boolean(asked) });
+        return res.json({ success: true, rule, call, askPending: Boolean(asked) });
       } catch (error) {
         console.error('Helloo reach card error:', error);
         return res.status(500).json({ success: false, message: 'Could not check that right now.' });
@@ -2155,7 +2347,7 @@ function createHelloo(deps) {
         if (text.length < 3 || text.length > 120) return res.status(400).json({ success: false, message: 'Say who you are in 3 to 120 characters.' });
         const blocks = await blockState(me, other);
         if (blocks.iBlocked || blocks.theyBlocked) return res.status(403).json({ success: false, code: 'blocked_by_them', message: 'This person is not taking messages from you.' });
-        const askRule = await reachRule(other, me);
+        const askRule = await reachRule(other, me, '', 'self');
         if (askRule.free) return res.status(400).json({ success: false, code: 'not_needed', message: 'They already let you message them free.' });
         if (askRule.never) return res.status(403).json({ success: false, code: 'reach_never', message: 'This person is not taking messages from you.' });
         const today = await HellooAsk.countDocuments({ from: me, createdAt: { $gt: new Date(Date.now() - 24 * 3600e3) } });
@@ -2298,9 +2490,23 @@ function createHelloo(deps) {
             message: c.mode === 'off' ? 'This shop does not take calls. Message it instead.' : `This shop takes calls ${c.from}–${c.to}. Message it for now.`,
           });
         }
-        const rule = await reachRule(other._id, me, storedSide(existing, me));
+        const rule = await callRule(other._id, me, storedSide(existing, me), storedSide(existing, other._id));
+        let paidCall = null;
         if (!rule.free) {
-          return res.status(403).json({ success: false, code: 'call_needs_allow', rule, message: 'They take calls only from people they have allowed. Message them first, or ask.' });
+          if (rule.never) return res.status(403).json({ success: false, code: 'reach_never', message: 'This person is not taking calls from you.' });
+          if (rule.request) return res.status(403).json({ success: false, code: 'call_needs_allow', rule, message: rule.unknown ? "They haven't saved you yet. Send a call request — free." : 'They take calls only from people they have allowed. Send a request first.' });
+          // A paid call: per second from the caller's balance. It rings only
+          // when the balance covers at least a second, the same money, and
+          // the caller said yes with their PIN to this rate.
+          const payerId = req.hellooOwner ? req.hellooOwner._id : me;
+          const wallet = await walletFor(payerId, rule.perMinute, rule.currency);
+          const quote = Object.assign({}, rule, { wallet });
+          if (!wallet.sameMoney) return res.status(409).json({ success: false, code: 'call_other_money', rule: quote, message: 'Paid calls work between people with the same money for now.' });
+          if (wallet.seconds < 1) return res.status(402).json({ success: false, code: 'call_wallet_empty', rule: quote, message: 'Your balance is empty. Add money, then call.' });
+          if (!req.body?.paid || Number(req.body.paid.perMinute) !== rule.perMinute) return res.status(402).json({ success: false, code: 'call_payment_required', rule: quote, message: 'This person charges for calls, per second. See what your balance covers, then call.' });
+          const pinOk = await checkPin(req.hellooOwner || req.authUser, String(req.body.paid.pin || '')).catch(() => null);
+          if (!pinOk || pinOk.ok === false) return res.status(401).json({ success: false, code: 'pin_wrong', rule: quote, message: (pinOk && pinOk.message) || 'That PIN is not right.' });
+          paidCall = { payerId, payeeId: other._id, perMinute: rule.perMinute, currency: rule.currency, approvedAt: new Date(), maxSeconds: wallet.seconds };
         }
         // One live call per person: a second ring to someone already on a
         // call is "busy", which reads as a missed call for them.
@@ -2309,7 +2515,7 @@ function createHelloo(deps) {
           $or: [{ callerId: other._id }, { calleeId: other._id }],
           createdAt: { $gt: new Date(Date.now() - 4 * 3600e3) },
         });
-        const call = await HellooCall.create({ callerId: me, calleeId: other._id, conversationId: conversation._id, video: Boolean(req.body?.video) });
+        const call = await HellooCall.create(Object.assign({ callerId: me, calleeId: other._id, conversationId: conversation._id, video: Boolean(req.body?.video) }, paidCall ? { paid: paidCall } : {}));
         const people = await cardsFor([me, other._id]);
         const out = callOut(call.toObject(), me, people, conversation);
         if (busy) {
@@ -2377,6 +2583,18 @@ function createHelloo(deps) {
           if (!isCallee) return res.status(400).json({ success: false, message: 'Only the person called can answer.' });
           const done = await HellooCall.findOneAndUpdate({ _id: id, status: 'ringing' }, { $set: { status: 'answered', answeredAt: new Date() } }, { returnDocument: 'after', lean: true });
           if (!done) return res.status(409).json({ success: false, code: 'call_over', message: 'That call has ended.' });
+          // A paid call: the time is counted from now, against the balance
+          // as it is now — whatever was spent while it rang is not lent.
+          if (done.paid && done.paid.perMinute) {
+            const wallet = await walletFor(done.paid.payerId, done.paid.perMinute, done.paid.currency);
+            await HellooCall.updateOne({ _id: id }, { $set: { 'paid.maxSeconds': wallet.seconds } });
+            done.paid.maxSeconds = wallet.seconds;
+            if (wallet.seconds < 1) {
+              await finishCall(id, 'ended', null);
+              return res.status(402).json({ success: false, code: 'call_wallet_empty', message: 'Their balance ran out, so the call could not start.' });
+            }
+            startCallTimers(done);
+          }
           const people = await cardsFor([call.callerId, call.calleeId]);
           const chat = (await chatsOfCalls([call])).get(String(call.conversationId));
           emit(call.callerId, { type: 'call-update', call: callOut(done, call.callerId, people, chat) });
@@ -2563,7 +2781,7 @@ function createHelloo(deps) {
     return wss;
   }
 
-  return { mount, attachLive, VOICE_PATH, emit, cardsFor, media: { takeBack: (id, me) => (takeBackMediaNow ? takeBackMediaNow(id, me) : false) }, faces: { card, faced, sideOf, nameOn, callsOut, pictureOut }, chats: { openChat, reachRule, reachFor, releaseOut } };
+  return { mount, attachLive, VOICE_PATH, emit, cardsFor, media: { takeBack: (id, me) => (takeBackMediaNow ? takeBackMediaNow(id, me) : false) }, faces: { card, faced, sideOf, nameOn, callsOut, pictureOut }, chats: { openChat, reachRule, callRule, reachFor, releaseOut } };
 }
 
-module.exports = { createHelloo, HELLOO_VOICE_PATH: VOICE_PATH, stickerMine };
+module.exports = { createHelloo, HELLOO_VOICE_PATH: VOICE_PATH, stickerMine, configureHellooMoney, readCallMandate, callMandateCovers, callCost, secondsFor, CALL_MANDATE_HEADER };

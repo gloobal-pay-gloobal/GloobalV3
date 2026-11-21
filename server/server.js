@@ -193,6 +193,7 @@ const NameHistory = require('./models/NameHistory');
 const PushSubscription = require('./models/PushSubscription');
 const pushService = require('./services/pushService');
 const { createHelloo, HELLOO_VOICE_PATH } = require('./lib/helloo');
+const hellooLib = require('./lib/helloo');
 const { createSocial, SOCIAL_MEDIA_PATH } = require('./lib/social');
 const { createUsed } = require('./lib/used');
 const { createWork } = require('./lib/work');
@@ -1474,6 +1475,8 @@ const helloo = createHelloo({
   allowedOrigins: ALLOWED_ORIGINS,
   // The GLOOBAL PIN, lockout included — for releasing a private chat.
   checkPin: (user, pin) => livePhotoCheckPin(user, pin),
+  // What a paid call draws on: the GLOOBAL balance.
+  balanceOf: (user) => Math.max(0, accountBalanceOf(user)),
 });
 helloo.mount(app, requireAuth);
 
@@ -10895,7 +10898,15 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     } catch (mandateError) {
       return res.status(403).json({ success: false, message: `The ad could not pay: ${mandateError.message}.` });
     }
-    const standing = rentMandate || adMandate;
+    // The third: a Helloo paid call paying for the seconds it ran
+    // (lib/helloo.js), approved by the caller with their PIN at the start.
+    let callMandate = null;
+    try {
+      callMandate = rentMandate || adMandate ? null : await hellooLib.readCallMandate(req);
+    } catch (mandateError) {
+      return res.status(403).json({ success: false, message: `The call could not pay: ${mandateError.message}.` });
+    }
+    const standing = rentMandate || adMandate || callMandate;
 
     const senderIdentifier = String(senderSymbolId || fromSymbolId || symbolId || '').trim();
     const receiverIdentifier = String(receiverSymbolId || toSymbolId || to || '').trim();
@@ -11053,6 +11064,12 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       const [fromCur, toCur] = await Promise.all([localCurrencyFor(accountCountryIso(sender)), localCurrencyFor(accountCountryIso(receiver))]);
       if (!adsLib.adMandateCovers(adMandate, { senderId: sender._id, receiverId: receiver._id, amount: amountForMandate, senderCurrency: fromCur, receiverCurrency: toCur })) {
         return res.status(403).json({ success: false, message: 'The ad could not pay: the instruction does not match this payment.' });
+      }
+    } else if (callMandate) {
+      const amountForMandate = Number(hasSourceAmount ? sourceAmount : amount);
+      const [fromCur, toCur] = await Promise.all([localCurrencyFor(accountCountryIso(sender)), localCurrencyFor(accountCountryIso(receiver))]);
+      if (!hellooLib.callMandateCovers(callMandate, { senderId: sender._id, receiverId: receiver._id, amount: amountForMandate, senderCurrency: fromCur, receiverCurrency: toCur })) {
+        return res.status(403).json({ success: false, message: 'The call could not pay: the instruction does not match this payment.' });
       }
     } else if (cleanPin) {
       const pinRecord = await Pin.findOne({ userId: sender._id });
@@ -11538,6 +11555,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         rentAuto: Boolean(rentMandate),
         adAuto: Boolean(adMandate),
         adCampaignId: adMandate ? String(adMandate.campaign._id) : null,
+        hellooCallId: callMandate ? String(callMandate.call._id) : null,
         senderMatchedBy: senderResolved.matchedBy,
         receiverMatchedBy: receiverResolved.matchedBy,
         senderInput: senderIdentifier,
@@ -15645,6 +15663,7 @@ const httpServer = app.listen(PORT, () => {
 // Rent that pays by itself: once an hour, through the send route.
 rent.configureRent({ AUTH_TOKEN_SECRET, PORT, issueAuthToken });
 adsLib.configureAds({ AUTH_TOKEN_SECRET, PORT, issueAuthToken });
+hellooLib.configureHellooMoney({ AUTH_TOKEN_SECRET, PORT, issueAuthToken });
 rent.startRentAutoSettle();
 // Helloo's live channel shares this port: Render exposes one, and a
 // WebSocket upgrade is just another request on it.

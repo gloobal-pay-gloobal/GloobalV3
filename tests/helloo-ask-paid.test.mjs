@@ -21,10 +21,11 @@ stub('./models/HellooReach', {
     return {};
   },
 });
+stub('./models/HellooSavedContact', { exists: async () => null });
 const users = { [ME]: { _id: ME, countryIso: 'IN' }, [ASKER]: { _id: ASKER, creatorProfile: {} } };
 const limit = () => (req, res, next) => next();
 const helloo = require('./lib/helloo.js').createHelloo({
-  User: { findById: (id) => query(users[String(id)]) }, Transaction: {}, ProfilePhoto: {}, pushService: { isPushEnabled: () => false },
+  User: { findById: (id) => query(users[String(id)]) }, Transaction: { exists: async () => null }, ProfilePhoto: {}, pushService: { isPushEnabled: () => false },
   accountCountryIso: () => 'IN', localCurrencyFor: () => 'INR', resolveUser: async () => null,
   authenticatedUserFromToken: async () => null, rateLimit: limit, windowMs: 1000, allowedOrigins: [],
 });

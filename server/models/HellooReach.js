@@ -30,6 +30,9 @@ const hellooReachSchema = new mongoose.Schema(
     // People taken out of this person's Helloo contacts, and when. They
     // come back by themselves after a new payment or chat with them.
     hiddenContacts: [{ _id: false, userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, at: { type: Date, default: Date.now } }],
+    // Calls from people who have not been allowed (or saved): a price per
+    // minute, paid before the call rings. 0 = they send a request instead.
+    calls: { price: { type: Number, default: 0, min: 0, max: 7 } },
     prices: [{ _id: false, userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, price: { type: Number, min: 0.1, max: 7 } }],
     // Privacy (Me → Privacy): nobody is told when this person is online or
     // when they were last seen.

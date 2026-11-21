@@ -21,6 +21,29 @@ const hellooCallSchema = new mongoose.Schema(
     endedAt: { type: Date, default: null },
     seconds: { type: Number, default: 0 },
     endedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    // A paid call: billed per second from the caller's GLOOBAL balance —
+    // the same money Ads & Earn pays into and ads are paid from. Nothing
+    // is lent: it rings only when the balance covers at least a second,
+    // and it ends by itself when the balance is used up (maxSeconds).
+    // Settled minute by minute while it runs, and the last seconds at the
+    // end, each as one ordinary payment caller → callee (lib/helloo.js).
+    paid: {
+      payerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      payeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      perMinute: { type: Number },
+      currency: { type: String },
+      approvedAt: { type: Date },
+      maxSeconds: { type: Number, default: 0 },
+      settledSeconds: { type: Number, default: 0 },
+      charged: { type: Number, default: 0 },
+      // The payment being made right now (0 when none), and when it began.
+      paying: { type: Number, default: 0 },
+      payingSeconds: { type: Number, default: 0 },
+      payingAt: { type: Date, default: null },
+      refs: { type: [String], default: [] },
+      // The balance ran out before the time was paid: the call was ended.
+      short: { type: Boolean, default: false },
+    },
   },
   { timestamps: true }
 );

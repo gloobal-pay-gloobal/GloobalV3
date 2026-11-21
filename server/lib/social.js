@@ -32,6 +32,7 @@
 // `?as=` acts as a shop you run, the same way Helloo does.
 const mongoose = require('mongoose');
 const ContentView = require('../models/ContentView');
+const { recordShopVisit, shopVisitors } = require('./shopVisits');
 const SocialSeen = require('../models/SocialSeen');
 const SocialPost = require('../models/SocialPost');
 const SocialMedia = require('../models/SocialMedia');
@@ -129,6 +130,15 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     posts = posts.filter((p) => { const u = off.get(String(p.author)); return !u || u.socialOn[sideOf(u, p.side)] !== false || sameId(p.author, meId); });
     const liked = await SocialLink.find({ kind: 'like', from: meId, to: { $in: posts.map((p) => p._id) } }).select('to').lean();
     const likedSet = new Set(liked.map((l) => String(l.to)));
+    // Views: the different verified people who opened it (its first picture
+    // or its video), never counting its author.
+    const firsts = posts.map((p) => (p.media || [])[0] && p.media[0].id).filter(Boolean);
+    const seenRows = firsts.length ? await ContentView.aggregate([
+      { $match: { media: { $in: firsts } } },
+      { $match: { $expr: { $ne: ['$viewer', '$owner'] } } },
+      { $group: { _id: '$media', n: { $sum: 1 } } },
+    ]).catch(() => []) : [];
+    const views = new Map(seenRows.map((r) => [String(r._id), r.n]));
     return posts.map((p) => ({
       id: String(p._id),
       author: cardOf(byId.get(String(p.author)), p.side),
@@ -142,6 +152,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       tags: (p.tags || []).map((t) => ({ itemId: String(t.itemId || ''), shop: t.shopSymbolId, title: t.title, price: t.price, currency: t.currency })),
       likes: p.likeCount || 0,
       comments: p.commentCount || 0,
+      views: views.get(String((p.media || [])[0] && p.media[0].id)) || 0,
       liked: likedSet.has(String(p._id)),
       mine: sameId(p.author, meId),
       at: p.createdAt,
@@ -646,7 +657,10 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
           SocialPost.countDocuments(base), SocialLink.countDocuments({ kind: 'follow', to: u._id }), SocialLink.countDocuments({ kind: 'follow', from: u._id }),
           SocialLink.exists({ kind: 'follow', from: me._id, to: u._id }),
         ]);
-        return res.json({ success: true, profile: Object.assign(cardOf((await cards([u._id])).get(String(u._id)), side), { posts: postCount, followers, following, isFollowing: Boolean(isFollowing), isMe: own, on }, aboutOf(u, side)), grid: await postsOut(posts, me._id), before: posts.length ? posts[posts.length - 1].createdAt : null });
+        // A shop counts the different people who came to it.
+        let visitors;
+        if (side === 'shop') { if (!own) await recordShopVisit(u, me._id); visitors = await shopVisitors(u._id); }
+        return res.json({ success: true, profile: Object.assign(cardOf((await cards([u._id])).get(String(u._id)), side), { posts: postCount, followers, following, isFollowing: Boolean(isFollowing), isMe: own, on }, visitors === undefined ? {} : { visitors }, aboutOf(u, side)), grid: await postsOut(posts, me._id), before: posts.length ? posts[posts.length - 1].createdAt : null });
       } catch (error) { return fail(res, 'profile', error); }
     });
 

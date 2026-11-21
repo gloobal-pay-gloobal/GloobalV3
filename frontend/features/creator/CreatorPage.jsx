@@ -25,7 +25,7 @@
 //    cost. The server enforces this; the UI simply never draws the tab for
 //    anyone else.
 import { useState as useState54, useEffect as useEffect51 } from "react";
-import { MessageCircle as ShopMessageIcon, Palette as Palette2, Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Pencil as Pencil3, ChevronRight as ChevronRight8, Eye as Eye2, MessageSquare, Navigation as Navigation2, Search as Search9, X as X17, MessageCircle as MessageCircle2, Phone as Phone3, AtSign as AtSign2, Sparkles as Sparkles2 } from "lucide-react";
+import { BarChart2 as ShopVisitorsIcon, MessageCircle as ShopMessageIcon, Palette as Palette2, Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Pencil as Pencil3, ChevronRight as ChevronRight8, Eye as Eye2, MessageSquare, Navigation as Navigation2, Search as Search9, X as X17, MessageCircle as MessageCircle2, Phone as Phone3, AtSign as AtSign2, Sparkles as Sparkles2 } from "lucide-react";
 
 var CREATOR_PAGE_TABS = ["Selling", "Buying"];
 
@@ -705,6 +705,13 @@ function CreatorPage({
     Number(creator.repeatPayers) >= 10 ? <span style={{
       display: "block", fontSize: 11, fontWeight: 600, color: skin.inkFaint, marginTop: 5
     }}><b style={{ color: skin.ink, fontWeight: 800 }}>{creator.repeatPayers}</b> people have paid them more than once</span> : null
+  }{
+    /* Visitors: different verified people who opened this shop, here or on
+       its Social profile, each counted once ever. Its owner always sees it;
+       others from ten up, for the same reason as above. */
+    typeof creator.visitors === "number" && (isOwner || creator.visitors >= 10) ? <span data-testid="creator-visitors" style={{
+      display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: skin.inkFaint, marginTop: 5
+    }}><ShopVisitorsIcon size={13} color={skin.ink} strokeWidth={2.6} /><b style={{ color: skin.ink, fontWeight: 800 }}>{creator.visitors >= 1000 ? `${(creator.visitors / 1000).toFixed(creator.visitors >= 10000 ? 0 : 1).replace(/\.0$/, "")}K` : creator.visitors}</b> {creator.visitors === 1 ? "person has" : "different people have"} visited</span> : null
   }</span></div>{
     /* ── THE ICON ROW ─────────────────────────────────────────────────
        Round buttons with the word underneath, inside the card, instead of

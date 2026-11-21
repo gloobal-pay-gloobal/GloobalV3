@@ -6,8 +6,9 @@ const mongoose = require('mongoose');
 // of names beyond the owner's own count.
 const contentViewSchema = new mongoose.Schema(
   {
-    kind: { type: String, enum: ['social', 'used'], required: true },
-    // The SocialMedia or UsedPhoto opened.
+    kind: { type: String, enum: ['social', 'used', 'shop'], required: true },
+    // The SocialMedia or UsedPhoto opened — or, for a shop visit, the shop's
+    // own account (lib/shopVisits.js).
     media: { type: mongoose.Schema.Types.ObjectId, required: true },
     viewer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     // Whose picture it is: the badge counts the people who reached them.

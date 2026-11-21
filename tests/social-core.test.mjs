@@ -78,6 +78,15 @@ const Comment = stub('./models/SocialComment', model('comment'));
 const Seen = stub('./models/SocialSeen', model('seen'));
 const Item = stub('./models/CreatorItem', model('item'));
 const Highlight = stub('./models/SocialHighlight', model('highlight'));
+// Who opened what. aggregate() answers the one question social.js asks it:
+// per first picture, how many different people (not its owner) opened it.
+const View = stub('./models/ContentView', Object.assign(model('view'), {}));
+View.aggregate = async (pipe) => {
+  const ids = pipe[0].$match.media.$in.map(String);
+  const n = new Map();
+  for (const r of View.rows) if (ids.includes(String(r.media)) && String(r.viewer) !== String(r.owner)) n.set(String(r.media), (n.get(String(r.media)) || 0) + 1);
+  return [...n].map(([k, v]) => ({ _id: k, n: v }));
+};
 const User = model('user');
 
 const id = () => new mongoose.Types.ObjectId();
@@ -354,4 +363,21 @@ test('post formats, and highlights: your past statuses kept on your profile', as
   assert.equal(Highlight.rows.length, 1);
   await call('delete /api/social/highlights/:id', asha, { params: { id: h.body.highlight.id } });
   assert.equal(Highlight.rows.length, 0);
+});
+
+test('views count different people, never the author; a shop counts its different visitors', async () => {
+  const up = await upload(ravi, JPEG);
+  const made = await call('post /api/social/posts', ravi, { body: { media: [up.body.id], caption: 'Counted' } });
+  assert.equal(made.status, 200);
+  const mid = new mongoose.Types.ObjectId(up.body.id);
+  // Asha twice, Meera once, Ravi himself once: two people.
+  for (const who of [asha, asha, meera, ravi]) await View.updateOne({ media: mid, viewer: who._id }, { $inc: { count: 1 }, $set: { owner: ravi._id }, $setOnInsert: { kind: 'social' } }, { upsert: true });
+  const prof = await call('get /api/social/profile/:gloobalId', meera, { params: { gloobalId: 'RAVI1' }, query: { side: 'self' } });
+  const post = prof.body.grid.find((p) => p.caption === 'Counted');
+  assert.equal(post.views, 2);
+  assert.equal(prof.body.profile.visitors, undefined, 'a person has no visitor count');
+  // The shop: Ravi twice and Meera once are two visitors; its owner never counts.
+  for (const who of [ravi, ravi, meera, asha]) await call('get /api/social/profile/:gloobalId', who, { params: { gloobalId: 'CHAI1' }, query: { side: 'shop' } });
+  const shop = await call('get /api/social/profile/:gloobalId', asha, { params: { gloobalId: 'CHAI1' }, query: { side: 'shop' } });
+  assert.equal(shop.body.profile.visitors, 2);
 });

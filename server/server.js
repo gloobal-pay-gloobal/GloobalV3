@@ -13,6 +13,7 @@ const LedgerEntry = require('./models/LedgerEntry');
 const Referral = require('./models/Referral');
 const ReferralEarning = require('./models/ReferralEarning');
 const { resolveReferrer } = require('./lib/defaultReferrer');
+const { recordShopVisit, shopVisitors } = require('./lib/shopVisits');
 // Three levels deep: 1% of a Creator Share to whoever invited the payer,
 // 0.5% to whoever invited them, 0.25% one further up. Paid by Gloobal; the
 // payer's own share is never touched. See models/ReferralEarning.js.
@@ -5431,8 +5432,10 @@ app.post('/api/creator/:symbolId/events', lookupLimit, requireAuth, async (req, 
     }
     // Your own shop does not count.
     if (symbolId && symbolId === req.authUser.symbolId) return res.json({ success: true, counted: false });
-    const owner = symbolId ? await User.exists({ symbolId, 'creatorProfile.handle': { $type: 'string', $ne: '' } }) : null;
+    const owner = symbolId ? await User.findOne({ symbolId, 'creatorProfile.handle': { $type: 'string', $ne: '' } }).select('_id shopOwnerId').lean() : null;
     if (!owner) return res.status(404).json({ success: false, code: 'user_not_found', message: 'No shop found.' });
+    // Every different person who opens the shop page, counted once ever.
+    if (type === 'view') await recordShopVisit(owner, req.authUser._id);
     const day = creatorStatDay();
     const inc = {};
     if (type === 'item') {
@@ -6153,6 +6156,7 @@ app.get('/api/creator/:symbolId/profile', lookupLimit, requireAuth, async (req, 
     out.repeatPayers = repeatPayers;
     out.reviews = reviews;
     out.cover = cover ? { photo: cover.dataUrl, focusY: cover.focusY } : null;
+    out.visitors = await shopVisitors(user._id);
     res.set('Cache-Control', 'private, max-age=60');
     return res.json({ success: true, creator: out, isOwner });
   } catch (error) {

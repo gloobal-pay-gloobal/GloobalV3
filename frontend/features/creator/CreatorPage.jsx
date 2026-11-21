@@ -656,7 +656,7 @@ function CreatorPage({
   }}><span style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{
     minWidth: 0, fontSize: 21, lineHeight: 1.2, fontWeight: theme.font.weight, color: skin.ink,
     fontFamily: theme.font.stack, overflowWrap: "anywhere"
-  }}>{name}</span><button
+  }}>{name}</span>{creator && creator.symbolId ? <GloobalNameBadge symbolId={creator.symbolId} shop size={20} /> : null}<button
     onClick={() => setDetailsOpen((v) => !v)}
     aria-label={detailsOpen ? "Hide creator details" : "Show creator details"}
     aria-pressed={detailsOpen}

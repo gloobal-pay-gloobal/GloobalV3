@@ -172,9 +172,8 @@ function CreatorFinder({
               fontSize: 16, fontWeight: 800, color: paint.fg
             }}>{businessMarkInitials(found.handle || "")}</span>
           }<span style={{ flex: 1, minWidth: 0 }}><span style={{
-            display: "block", fontSize: 14, fontWeight: 700, color: T.ink,
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-          }}>{creatorDisplayName(found)}</span>{
+            display: "flex", alignItems: "center", gap: 5, fontSize: 14, fontWeight: 700, color: T.ink, minWidth: 0
+          }}><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{creatorDisplayName(found)}</span><GloobalNameBadge symbolId={found.symbolId} shop size={14} /></span>{
             Array.isArray(found.items) && found.items.length ? <span style={{
               display: "block", fontSize: 10.5, color: T.inkFaint, fontWeight: 600, marginTop: 3
             }}>{found.items.length} thing{found.items.length === 1 ? "" : "s"} on their list</span> : null

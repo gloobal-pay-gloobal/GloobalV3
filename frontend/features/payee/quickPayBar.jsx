@@ -421,8 +421,8 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       background: "none", cursor: "pointer", textAlign: "left", fontFamily: "inherit"
     }}
   ><BusinessMark name={shop.handle || ""} logo={shop.logo} size={36} radius={11} /><span style={{ flex: 1, minWidth: 0 }}><span style={{
-    display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-  }}>{creatorDisplayName(shop)}</span><span style={{
+    display: "flex", alignItems: "center", gap: 5, fontSize: 13.5, fontWeight: 800, color: T.ink, minWidth: 0
+  }}><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{creatorDisplayName(shop)}</span><GloobalNameBadge symbolId={shop.symbolId} shop size={14} /></span><span style={{
     display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 1
   }}>{(typeof bazaarCategoryInfo === "function" && bazaarCategoryInfo(shop.category) || {}).label || "Shop"}</span></span><ArrowRight4 size={15} color={T.inkFaint} /></button>)}</div> : null}{padOpen && !nameMode && !error && !suggest && !busy && !text.trim() ? quickPayShortcuts() : null}{padOpen && !nameMode ? quickPaySmartPad() : null}{nameMode ? <CreatorNameKeyboard
     open
@@ -494,7 +494,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
         display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 6, padding: "0 8px 10px", animation: "quickPayIn 0.2s ease"
       }}>{items.map(draw)}</div> : null}</div>;
     };
-    const tile = (key, label, face, onClick) => <button
+    const tile = (key, label, face, onClick, mark) => <button
       key={key}
       type="button"
       onPointerDown={(e) => e.preventDefault()}
@@ -504,7 +504,9 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
         display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0, padding: "6px 2px",
         border: "none", background: "none", cursor: "pointer", fontFamily: "inherit"
       }}
-    >{face}<span style={{
+    >{/* The badge sits on the face's top corner (the flag has the bottom one), so the short name keeps its room. */}<span style={{ position: "relative", display: "inline-block" }}>{face}{mark ? <span style={{
+      position: "absolute", top: -4, right: -4, display: "flex", padding: 1.5, borderRadius: "50%", background: T.surface, boxShadow: "0 1px 3px rgba(0,0,0,0.18)"
+    }}>{mark}</span> : null}</span><span style={{
       maxWidth: "100%", fontSize: 11.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
     }}>{label}</span></button>;
     return <div data-quickpay-shortcuts="" style={{
@@ -518,11 +520,11 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       if (!target) return;
       setText(target);
       lookUp(target);
-    }))}{row("favourites", "Favourites", shops, (c) => tile(c.key, c.label || c.handle, <QuickPayShopFace symbolId={c.key} name={c.handle || c.label || ""} logo={c.logo} />, () => {
+    }, p.gloobalId ? <GloobalNameBadge symbolId={p.gloobalId} shop={Boolean(p.handle)} size={15} /> : null))}{row("favourites", "Favourites", shops, (c) => tile(c.key, c.label || c.handle, <QuickPayShopFace symbolId={c.key} name={c.handle || c.label || ""} logo={c.logo} />, () => {
       if (!c.handle) return;
       setText(c.handle);
       lookUp(c.handle);
-    }))}</div>;
+    }, <GloobalNameBadge symbolId={c.key} shop size={15} />))}</div>;
   }
 
   // ── THE PAD ───────────────────────────────────────────────────────────

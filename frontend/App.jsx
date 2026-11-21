@@ -5251,7 +5251,7 @@ function GloobalId() {
     display: "flex", alignItems: "center", justifyContent: "center", gap: 8
   }}><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{
     scanPayee.creator ? creatorDisplayName(scanPayee.creator) : scanPayee.name
-  }</span>{
+  }</span><GloobalNameBadge symbolId={scanPayee.creator ? scanPayee.creator.symbolId : scanPayee.gloobalId} shop={Boolean(scanPayee.creator)} size={17} />{
     /* ── THE EYE ─────────────────────────────────────────────────────
        On a shop's card the name is what you pay; the account behind it
        — the GLOOBAL ID and the shop's number — is one tap away rather

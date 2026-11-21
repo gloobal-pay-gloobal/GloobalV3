@@ -272,7 +272,9 @@ function useGloobalTiers(sym) {
 }
 function GloobalNameBadge({ symbolId, shop = false, size = "1em", tier, ring = false }) {
   const t = useGloobalTiers(tier === undefined ? String(symbolId || "") : "");
-  const n = tier !== undefined ? tier : t ? (shop ? t.share : t.pay) : 0;
+  const n0 = tier !== undefined ? tier : t ? (shop ? t.share : t.pay) : 0;
+  // A shop is at least Fair from its first day, so it never shows bare.
+  const n = shop ? Math.max(1, n0 || 0) : n0;
   if (!n) return null;
   const fam = shop ? "share" : "pay";
   const names = shop ? ["Fair", "Sharing", "Generous", "Community"] : ["Local", "Cross-border", "Global", "World"];

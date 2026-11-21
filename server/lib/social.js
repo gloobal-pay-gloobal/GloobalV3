@@ -71,7 +71,7 @@ function sniff(buf) {
   return null;
 }
 
-function createSocial({ User, rateLimit, windowMs, publicBase = '', people = null, viewPass = null, personCheckedUntil = null, verifiedHost = (req, res, next) => next() }) {
+function createSocial({ User, rateLimit, windowMs, publicBase = '', people = null, viewPass = null, personCheckedUntil = null, verifiedHost = (req, res, next) => next(), setPhoto = null }) {
   // No open links (lib/viewPass.js): post and ad media opens only with a
   // signed-in account's pass.
   const sealed = viewPass ? require('./viewPass').requireViewPass(viewPass, User) : (req, res, next) => next();
@@ -80,11 +80,16 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
   const socialRead = rateLimit({ name: 'social-read', max: 600, windowMs });
   const socialWrite = rateLimit({ name: 'social-write', max: 120, windowMs });
   const socialUpload = rateLimit({ name: 'social-upload', max: 40, windowMs });
-  const CARD = '_id symbolId fullName countryIso shopOwnerId socialOn badge.tier creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast';
+  const CARD = '_id symbolId fullName countryIso shopOwnerId socialOn socialProfile badge.tier creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast';
 
   // Is this social profile on? Chosen → as chosen. Never chosen → on only
   // when it already has posts (from before profiles had to be turned on).
   const sideOf = (u, side) => (u && u.shopOwnerId ? 'shop' : side === 'shop' ? 'shop' : 'self');
+  // A profile's bio and cover, for its page.
+  const aboutOf = (u, side) => {
+    const sp = (u && u.socialProfile && u.socialProfile[side === 'shop' || (u && u.shopOwnerId) ? 'shop' : 'self']) || {};
+    return { bio: sp.bio || '', cover: sp.cover ? { id: String(sp.cover), url: `${publicBase}/api/social/media/${sp.cover}` } : null };
+  };
   async function isOn(u, side) {
     const k = sideOf(u, side);
     const v = u && u.socialOn && u.socialOn[k];
@@ -194,6 +199,47 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         return res.json({ success: true, accounts });
       } catch (error) { return fail(res, 'accounts', error); }
     });
+    // ── EDIT YOUR SOCIAL PROFILE ─────────────────────────────────────
+    // PUT /api/social/profile?as=  { bio?, cover? (media id | null), photo? (data URL | null) }
+    // Bio: up to 150 letters, no links. Cover: a picture you just uploaded
+    // through /api/social/media. Photo: kept once, as GLOOBAL's own photo
+    // (yourself) or the shop's logo — the same picture everywhere.
+    app.put('/api/social/profile', socialWrite, requireAuth, async (req, res) => {
+      try {
+        const body = req.body || {};
+        const u = req.authUser;
+        const k = sideOf(u, req.socialSide);
+        const set = {};
+        if (body.bio !== undefined) {
+          const bio = String(body.bio || '').replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '').replace(/\n{3,}/g, '\n\n').trim();
+          if ([...bio].length > 150) return res.status(400).json({ success: false, code: 'bio_long', message: 'Keep it to 150 letters.' });
+          if (/https?:|www\.|\.(com|in|net|org|io|app|link|ly)\b/i.test(bio)) return res.status(400).json({ success: false, code: 'bio_link', message: 'No links in your bio. People can message you on Helloo.' });
+          set[`socialProfile.${k}.bio`] = bio;
+        }
+        let oldCover = null;
+        if (body.cover !== undefined) {
+          const current = u.socialProfile && u.socialProfile[k] && u.socialProfile[k].cover;
+          if (body.cover === null) { set[`socialProfile.${k}.cover`] = null; oldCover = current; }
+          else {
+            const id = oid(body.cover);
+            const m = id ? await SocialMedia.findOne({ _id: id, owner: u._id, post: null, ad: null }).select('_id kind').lean() : null;
+            if (!m || m.kind !== 'photo') return res.status(400).json({ success: false, code: 'bad_cover', message: 'Pick a photo for your cover.' });
+            await SocialMedia.updateOne({ _id: m._id }, { $set: { cover: true } });
+            set[`socialProfile.${k}.cover`] = m._id;
+            if (current && String(current) !== String(m._id)) oldCover = current;
+          }
+        }
+        if (body.photo !== undefined) {
+          if (!setPhoto) return res.status(503).json({ success: false, message: 'Photos cannot be changed right now.' });
+          const r = await setPhoto(u, k === 'shop' ? 'logo' : 'photo', body.photo);
+          if (r && r.ok === false) return res.status(r.status || 400).json({ success: false, code: r.code, message: r.message });
+        }
+        if (Object.keys(set).length) await User.updateOne({ _id: u._id }, { $set: set });
+        if (oldCover) SocialMedia.deleteOne({ _id: oldCover, owner: u._id, cover: true }).catch(() => {});
+        const fresh = await User.findById(u._id).select('socialProfile').lean();
+        return res.json(Object.assign({ success: true }, aboutOf(fresh, k)));
+      } catch (error) { return fail(res, 'profile edit', error); }
+    });
     // Turn the profile you are acting as (?as=) on or off.
     app.post('/api/social/on', socialWrite, requireAuth, async (req, res) => {
       try {
@@ -216,7 +262,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         if (what.kind === 'photo' && buf.length > PHOTO_MAX) return res.status(413).json({ success: false, code: 'too_big', message: 'That picture is too big.' });
         if (what.kind === 'video' && buf.length > VIDEO_MAX) return res.status(413).json({ success: false, code: 'too_big', message: 'Videos can be up to 8 MB for now.' });
         // Uploads nobody used within a day are cleared as new ones arrive.
-        SocialMedia.deleteMany({ owner: req.authUser._id, post: null, ad: null, createdAt: { $lt: new Date(Date.now() - 864e5) } }).catch(() => {});
+        SocialMedia.deleteMany({ owner: req.authUser._id, post: null, ad: null, cover: { $ne: true }, createdAt: { $lt: new Date(Date.now() - 864e5) } }).catch(() => {});
         const m = await SocialMedia.create({ owner: req.authUser._id, kind: what.kind, mime: what.mime, size: buf.length, data: buf });
         return res.json({ success: true, id: String(m._id), kind: what.kind, url: mediaUrl(m._id) });
       } catch (error) { return fail(res, 'media upload', error); }
@@ -293,7 +339,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const post = m && m.post ? await SocialPost.findById(m.post).select('removedAt takenBackAt story expiresAt').lean() : null;
         if (post && post.story && post.expiresAt && new Date(post.expiresAt).getTime() < Date.now()) return res.status(404).json({ success: false, message: 'Not here any more.' });
         // Served while it belongs to a live post, or to an ad.
-        if (!m || !((post && !post.removedAt && !post.takenBackAt) || m.ad)) return res.status(post && post.takenBackAt ? 410 : 404).json({ success: false, code: post && post.takenBackAt ? 'taken_back' : 'gone', message: post && post.takenBackAt ? 'Taken back by its owner.' : 'Not here any more.' });
+        if (!m || !((post && !post.removedAt && !post.takenBackAt) || m.ad || m.cover)) return res.status(post && post.takenBackAt ? 410 : 404).json({ success: false, code: post && post.takenBackAt ? 'taken_back' : 'gone', message: post && post.takenBackAt ? 'Taken back by its owner.' : 'Not here any more.' });
         const buf = Buffer.from(m.data.buffer || m.data);
         // Written down: this verified person opened it (My data counts them).
         if (req.viewerId && m0id) ContentView.updateOne({ media: m0id, viewer: req.viewerId }, { $inc: { count: 1 }, $set: { lastAt: new Date(), owner: m && m.owner }, $setOnInsert: { kind: 'social' } }, { upsert: true }).catch(() => {});
@@ -505,7 +551,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
           SocialPost.countDocuments(base), SocialLink.countDocuments({ kind: 'follow', to: u._id }), SocialLink.countDocuments({ kind: 'follow', from: u._id }),
           SocialLink.exists({ kind: 'follow', from: me._id, to: u._id }),
         ]);
-        return res.json({ success: true, profile: Object.assign(cardOf((await cards([u._id])).get(String(u._id)), side), { posts: postCount, followers, following, isFollowing: Boolean(isFollowing), isMe: own, on }), grid: await postsOut(posts, me._id), before: posts.length ? posts[posts.length - 1].createdAt : null });
+        return res.json({ success: true, profile: Object.assign(cardOf((await cards([u._id])).get(String(u._id)), side), { posts: postCount, followers, following, isFollowing: Boolean(isFollowing), isMe: own, on }, aboutOf(u, side)), grid: await postsOut(posts, me._id), before: posts.length ? posts[posts.length - 1].createdAt : null });
       } catch (error) { return fail(res, 'profile', error); }
     });
 

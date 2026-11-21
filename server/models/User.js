@@ -64,6 +64,13 @@ const userSchema = new mongoose.Schema({
     self: { type: Boolean, default: undefined },
     shop: { type: Boolean, default: undefined },
   },
+  // What each social profile says about itself: a short bio, and a cover
+  // picture (a SocialMedia row marked cover). Its photo is the one GLOOBAL
+  // already keeps (ProfilePhoto, or the shop's CreatorLogo).
+  socialProfile: {
+    self: { bio: { type: String, default: '', maxlength: 150 }, cover: { type: mongoose.Schema.Types.ObjectId, ref: 'SocialMedia', default: null } },
+    shop: { bio: { type: String, default: '', maxlength: 150 }, cover: { type: mongoose.Schema.Types.ObjectId, ref: 'SocialMedia', default: null } },
+  },
   symbolIdHistory: [{
     symbolId: {
       type: String,

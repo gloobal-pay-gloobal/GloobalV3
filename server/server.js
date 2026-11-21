@@ -1482,7 +1482,7 @@ helloo.mount(app, requireAuth);
 const viewPass = createViewPass({ secret: AUTH_TOKEN_SECRET });
 // Set below, once the passkey helpers exist (lib/viewCheck.js).
 let viewCheckUntil = async () => null;
-createSocial({ User, rateLimit, windowMs: WINDOW_MS, viewPass, verifiedHost: verifiedId.requireVerifiedHost, personCheckedUntil: (id) => viewCheckUntil(id), people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
+createSocial({ User, rateLimit, windowMs: WINDOW_MS, viewPass, setPhoto: socialSetPhoto, verifiedHost: verifiedId.requireVerifiedHost, personCheckedUntil: (id) => viewCheckUntil(id), people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
 // Social · Work (lib/work.js): Work cards, openings near you, applying by
 // chat. GLOOBAL only connects people and keeps 0%.
 createWork({ User, rateLimit, windowMs: WINDOW_MS, currencyOf: async (user) => (await localCurrencyFor(accountCountryIso(user))) || 'INR', people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
@@ -4642,6 +4642,25 @@ app.put(
     }
   }
 );
+
+// A social profile's picture (lib/social.js PUT /api/social/profile): the
+// one GLOOBAL already keeps — yourself: ProfilePhoto; a shop: CreatorLogo.
+// Same checks as the routes above, including the live-face rule.
+async function socialSetPhoto(user, which, photo) {
+  const Model = which === 'logo' ? CreatorLogo : ProfilePhoto;
+  if (photo === null) { await Model.deleteOne({ userId: user._id }); return { ok: true }; }
+  const validated = validateProfilePhoto(photo);
+  if (!validated.ok) return validated;
+  if (which === 'photo' && await livePhoto.hasLiveFace(user._id)) {
+    const current = await ProfilePhoto.findOne({ userId: user._id }).select('dataUrl').lean();
+    if (!current || current.dataUrl !== validated.dataUrl) return { ok: false, status: 409, code: 'live_photo_required', message: 'Your photo is your live GLOOBAL face. Change it in GLOOBAL, Profile, with the camera check.' };
+    return { ok: true };
+  }
+  const fields = { dataUrl: validated.dataUrl, mimeType: validated.mimeType, bytes: validated.bytes };
+  try { await Model.updateOne({ userId: user._id }, { $set: fields }, { upsert: true }); }
+  catch (e) { if (e?.code !== 11000) throw e; await Model.updateOne({ userId: user._id }, { $set: fields }); }
+  return { ok: true };
+}
 
 // ── THE LIVE PHOTO ──────────────────────────────────────────────────────
 // Routes and rules in lib/livePhoto.js. The PIN check is the same one

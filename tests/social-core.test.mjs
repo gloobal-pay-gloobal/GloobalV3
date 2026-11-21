@@ -297,3 +297,23 @@ test('a social profile is off until its owner turns it on, one at a time', async
   assert.equal(own.status, 200);
   assert.equal(own.body.profile.on, false);
 });
+
+test('your social profile: a short bio (no links), a cover photo, and the photo GLOOBAL keeps', async () => {
+  const bad = await call('put /api/social/profile', asha, { query: { as: 'self' }, body: { bio: 'see www.mysite.com' } });
+  assert.equal(bad.body.code, 'bio_link');
+  const long = await call('put /api/social/profile', asha, { query: { as: 'self' }, body: { bio: 'x'.repeat(151) } });
+  assert.equal(long.body.code, 'bio_long');
+  const ok = await call('put /api/social/profile', asha, { query: { as: 'self' }, body: { bio: '  Chai, cricket and code.\n\n\n\nAlwar  ' } });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.bio, 'Chai, cricket and code.\n\nAlwar');
+  const m = await upload(asha, JPEG, { as: 'self' });
+  const c = await call('put /api/social/profile', asha, { query: { as: 'self' }, body: { cover: m.body.id } });
+  assert.equal(c.status, 200);
+  assert.equal(c.body.cover.id, m.body.id);
+  const seen = await call('get /api/social/profile/:gloobalId', ravi, { params: { gloobalId: asha.symbolId }, query: { side: 'self' } });
+  assert.equal(seen.body.profile.bio, 'Chai, cricket and code.\n\nAlwar');
+  assert.equal(seen.body.profile.cover.id, m.body.id);
+  // Someone else's upload can't be your cover.
+  const other = await upload(ravi, JPEG, { as: 'self' });
+  assert.equal((await call('put /api/social/profile', asha, { query: { as: 'self' }, body: { cover: other.body.id } })).body.code, 'bad_cover');
+});

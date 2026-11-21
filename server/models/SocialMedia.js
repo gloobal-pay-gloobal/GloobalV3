@@ -11,6 +11,8 @@ const socialMediaSchema = new mongoose.Schema(
     post: { type: mongoose.Schema.Types.ObjectId, ref: 'SocialPost', default: null, index: true },
     // Or the ad it is shown in (lib/ads.js). One or the other, never both.
     ad: { type: mongoose.Schema.Types.ObjectId, ref: 'AdCampaign', default: null },
+    // A profile's cover picture (User.socialProfile.<side>.cover).
+    cover: { type: Boolean, default: false },
     kind: { type: String, enum: ['photo', 'video'], required: true },
     mime: { type: String, required: true },
     size: { type: Number, required: true },

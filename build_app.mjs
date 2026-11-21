@@ -152,6 +152,7 @@ const FRONTEND_MODULES = [
   // "defined earlier in the file".
   "components/common/rewardFx.jsx",
   "components/inputs/dialPads.jsx",
+  "components/inputs/pinPanel.jsx",
   "components/inputs/amountPad.jsx",
   "components/payments/PayOptionsSheet.jsx",
   "components/payments/PayPinModal.jsx",

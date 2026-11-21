@@ -80,30 +80,13 @@ function PayPinModal({ open, onClose, amountLabel, onVerified }) {
     };
   }, [pin]);
   if (!open) return null;
+  // The shared PIN screen, with the amount on top.
   return <div
-    style={{ position: "fixed", inset: 0, zIndex: 520, background: "rgba(15,12,35,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+    style={{ position: "fixed", inset: 0, zIndex: 520, background: T.bg, display: "flex", flexDirection: "column", fontFamily: T.fontBody, padding: "calc(14px + env(safe-area-inset-top, 0px)) 18px calc(22px + env(safe-area-inset-bottom, 0px))", boxSizing: "border-box", overflowY: "auto" }}
     role="dialog"
     aria-modal="true"
     aria-label="Enter your PIN to confirm payment"
-  ><div style={{ width: "100%", maxWidth: 360, background: T.bg, borderRadius: T.radiusXl, padding: "26px 22px 24px", position: "relative" }}><button
-    onClick={onClose}
-    aria-label="Cancel"
-    className="v2-tap"
-    style={{ position: "absolute", top: 14, right: 14, width: 32, height: 32, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><X4 size={16} color={T.inkFaint} /></button><div style={{ width: 44, height: 44, borderRadius: "50%", background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}><Lock size={20} color={T.accent} /></div><h3 style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, margin: "0 0 4px" }}>
-        Enter PIN
-      </h3>{amountLabel && <div style={{ borderRadius: T.radiusMd, border: `1px solid ${T.line}`, background: T.surfaceAlt, padding: "12px 16px", textAlign: "center", margin: "14px 0 4px", fontSize: 20, fontWeight: 800, color: T.negative, fontFamily: T.fontDisplay }}>{amountLabel}</div>}{
-    /* The backend's own message rather than a flat "Incorrect": it
-       distinguishes a wrong PIN from a locked one, and that difference
-       matters to whoever is holding the phone. */
-  }{pinError && <div role="alert" style={{ fontSize: 12, color: T.negative, fontWeight: 700, textAlign: "center", marginTop: 6, lineHeight: 1.4 }}>{pinError}</div>}<div style={{ marginTop: 14 }}><PhoneDialPad
-    value={pin}
-    onChange={setPin}
-    minLength={6}
-    maxLength={6}
-    masked={!pinRevealed}
-    onToggleMask={() => setPinRevealed((v) => !v)}
-  /></div></div></div>;
+  ><GloobalPinPanel testid="pay-pin" title="Confirm payment" note="Enter your PIN to send" value={pin} onChange={(v) => { if (errorTimer.current) { clearTimeout(errorTimer.current); errorTimer.current = null; } setPinError(null); setPin(v); }} busy={checking} error={pinError || ""} revealed={pinRevealed} onToggleReveal={() => setPinRevealed((v) => !v)} onBack={onClose} backLabel="Cancel" top={amountLabel ? <span data-testid="pay-pin-amount" style={{ display: "inline-flex", padding: "10px 18px", borderRadius: 999, background: T.surface, boxShadow: T.shadowCard, fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{amountLabel}</span> : null} /></div>;
 }
 // ── Profile photo sizing (shared: registration here, Dashboard's change) ──
 //

@@ -117,6 +117,22 @@ const TEXT_MAX = 4000;
 const PAGE_MAX = 100;
 const VOICE_PATH = /^\/api\/helloo\/chats\/[^/]+\/messages\/?$/i;
 
+// A person's own Kullu sticker: only these choices, checked here, so what
+// arrives can only ever draw as a sticker (no links, no long text).
+const STICKER_MOODS = new Set(['smile', 'laugh', 'wink', 'love', 'wow', 'sleep', 'sad']);
+const STICKER_CUPS = new Set(['#C97B4A', '#D97798', '#5FA777', '#8FA3BF', '#E0A43A', '#8B5CF6', '#EF4444', '#334155']);
+const STICKER_PROPS = new Set(['', '🔥', '🎉', '❤️', '🙏', '👍', '🤝', '⏰', '🎁', '☕', '🏏', '🍛', '🌧️', '✨', '😂', '💤']);
+function stickerMine(raw) {
+  const m = raw && typeof raw === 'object' ? raw : null;
+  if (!m) return null;
+  const mood = String(m.mood || ''); const cup = String(m.cup || '').toUpperCase(); const prop = String(m.prop || '');
+  const words = String(m.words || '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim();
+  if (!STICKER_MOODS.has(mood) || !STICKER_CUPS.has(cup) || !STICKER_PROPS.has(prop)) return null;
+  if ([...words].length > 16) return null;
+  if (/https?:|www\.|\.[a-z]{2,}\/|@|\d{6,}/i.test(words)) return null; // no links, handles or numbers to call
+  return { mood, cup, prop, words };
+}
+
 const oid = (value) => (mongoose.isValidObjectId(value) ? new mongoose.Types.ObjectId(String(value)) : null);
 const sameId = (a, b) => String(a) === String(b);
 const pairKeyOf = (a, b) => [String(a), String(b)].sort().join(':');
@@ -382,7 +398,7 @@ function createHelloo(deps) {
     }
     if (m.paid?.referenceId) out.paid = { amount: m.paid.amount, currency: m.paid.currency };
     if (m.kind === 'text') out.text = m.text;
-    if (m.kind === 'sticker') out.sticker = { id: m.sticker?.id || '' };
+    if (m.kind === 'sticker') out.sticker = m.sticker?.id === 'mine' ? { id: 'mine', mood: m.sticker.mood, cup: m.sticker.cup, prop: m.sticker.prop || '', words: m.sticker.words || '' } : { id: m.sticker?.id || '' };
     if (m.kind === 'call') out.call = { id: m.call?.id ? String(m.call.id) : '', video: Boolean(m.call?.video), status: m.call?.status || '', seconds: m.call?.seconds || 0 };
     if (m.kind === 'photo') {
       out.text = m.text || '';
@@ -1474,6 +1490,11 @@ function createHelloo(deps) {
           const stickerId = String(body.stickerId || '');
           if (!/^[a-z0-9-]{1,40}$/.test(stickerId)) return res.status(400).json({ success: false, code: 'bad_sticker', message: 'That sticker cannot be sent.' });
           doc.sticker = { id: stickerId };
+          if (stickerId === 'mine') {
+            const mine = stickerMine(body.mine);
+            if (!mine) return res.status(400).json({ success: false, code: 'bad_sticker', message: 'That sticker cannot be sent.' });
+            Object.assign(doc.sticker, mine);
+          }
         } else {
           return res.status(400).json({ success: false, message: 'Unknown message type.' });
         }
@@ -2480,4 +2501,4 @@ function createHelloo(deps) {
   return { mount, attachLive, VOICE_PATH, emit, cardsFor, media: { takeBack: (id, me) => (takeBackMediaNow ? takeBackMediaNow(id, me) : false) }, faces: { card, faced, sideOf, nameOn, callsOut, pictureOut }, chats: { openChat, reachRule, reachFor, releaseOut } };
 }
 
-module.exports = { createHelloo, HELLOO_VOICE_PATH: VOICE_PATH };
+module.exports = { createHelloo, HELLOO_VOICE_PATH: VOICE_PATH, stickerMine };

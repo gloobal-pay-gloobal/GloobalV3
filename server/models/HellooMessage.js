@@ -61,7 +61,14 @@ const hellooMessageSchema = new mongoose.Schema(
     savedBy: { type: [mongoose.Schema.Types.ObjectId], default: [] },
     // A sticker is only its name: the picture is drawn by the app, so
     // nothing is uploaded and nothing here can carry a file.
-    sticker: { id: { type: String, default: '', maxlength: 40 } },
+    sticker: {
+      id: { type: String, default: '', maxlength: 40 },
+      // id 'mine': the sender's own Kullu, as its few choices (never a picture).
+      mood: { type: String, maxlength: 10 },
+      cup: { type: String, maxlength: 7 },
+      prop: { type: String, maxlength: 8 },
+      words: { type: String, maxlength: 16 },
+    },
     clientId: { type: String, required: true, maxlength: 80 },
     text: { type: String, default: '', maxlength: 4000 },
     voice: {

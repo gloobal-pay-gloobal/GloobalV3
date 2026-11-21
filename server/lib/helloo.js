@@ -76,6 +76,7 @@ const HellooMessage = require('../models/HellooMessage');
 const HellooVoice = require('../models/HellooVoice');
 const HellooBlock = require('../models/HellooBlock');
 const HellooSavedContact = require('../models/HellooSavedContact');
+const SocialPost = require('../models/SocialPost');
 const HellooPresence = require('../models/HellooPresence');
 const CreatorLogo = require('../models/CreatorLogo');
 const HellooReach = require('../models/HellooReach');
@@ -175,6 +176,7 @@ function previewOf(message) {
   if (message.kind === 'voice') return `Voice note · ${Math.max(1, Math.round(message.voice?.seconds || 0))}s`;
   if (message.kind === 'payment') return 'Payment on GLOOBAL';
   if (message.kind === 'sticker') return 'Sticker';
+  if (message.kind === 'post') return message.post?.author ? `Shared a post by ${message.post.author}` : 'Shared a post';
   if (message.kind === 'video') return message.text ? `Video · ${String(message.text).replace(/\s+/g, ' ').trim().slice(0, 140)}` : 'Video';
   if (message.kind === 'order') return hellooOrders.orderPreview(message.order);
   return String(message.text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
@@ -401,6 +403,7 @@ function createHelloo(deps) {
     if (m.paid?.referenceId) out.paid = { amount: m.paid.amount, currency: m.paid.currency };
     if (m.kind === 'text') out.text = m.text;
     if (m.kind === 'sticker') out.sticker = m.sticker?.id === 'mine' ? { id: 'mine', mood: m.sticker.mood, cup: m.sticker.cup, prop: m.sticker.prop || '', words: m.sticker.words || '' } : { id: m.sticker?.id || '' };
+    if (m.kind === 'post') out.post = { id: m.post?.id ? String(m.post.id) : '', author: m.post?.author || '', caption: m.post?.caption || '', media: m.post?.mediaId ? { id: String(m.post.mediaId), kind: m.post.mediaKind || 'photo', url: `/api/social/media/${m.post.mediaId}` } : null };
     if (m.kind === 'call') out.call = { id: m.call?.id ? String(m.call.id) : '', video: Boolean(m.call?.video), status: m.call?.status || '', seconds: m.call?.seconds || 0 };
     if (m.kind === 'photo') {
       out.text = m.text || '';
@@ -1542,6 +1545,14 @@ function createHelloo(deps) {
             if (!mine) return res.status(400).json({ success: false, code: 'bad_sticker', message: 'That sticker cannot be sent.' });
             Object.assign(doc.sticker, mine);
           }
+        } else if (kind === 'post') {
+          // A Social post, shared: it must be up, and never a status.
+          const pid = oid(body.postId);
+          const shared = pid ? await SocialPost.findOne({ _id: pid, removedAt: null, hiddenAt: null, takenBackAt: null, story: { $ne: true } }).select('author side caption media').lean() : null;
+          if (!shared) return res.status(404).json({ success: false, code: 'post_gone', message: 'That post is gone.' });
+          const by = await User.findById(shared.author).select('fullName shopOwnerId creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast').lean();
+          const first = (shared.media || [])[0];
+          doc.post = { id: shared._id, author: by ? nameOn(by, shared.side === 'shop' ? 'shop' : 'self') : '', caption: String(shared.caption || '').replace(/\s+/g, ' ').trim().slice(0, 100), mediaId: first ? first.id : undefined, mediaKind: first ? first.kind : '' };
         } else {
           return res.status(400).json({ success: false, message: 'Unknown message type.' });
         }

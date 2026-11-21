@@ -412,3 +412,25 @@ test('follow, follow back, following: every name says which, lists show both way
   assert.equal(off.status, 403); assert.equal(off.body.code, 'social_off');
   assert.equal((await call('post /api/social/follow', nisha, { query: { as: 'self' }, body: { to: String(ravi._id), on: false } })).status, 200);
 });
+
+test('mentions: "@Name" opens that profile, tells them, and is dropped if not in the text or not a real profile', async () => {
+  const up = await upload(ravi, JPEG);
+  const made = await call('post /api/social/posts', ravi, { body: { media: [up.body.id], caption: 'Chai with @Meera N today', mentions: [
+    { accountId: String(meera._id), side: 'self', label: 'Meera N' },
+    { accountId: String(asha._id), side: 'self', label: 'Asha Rao' }, // not in the text
+    { accountId: 'nope', label: 'Meera N' },
+  ] } });
+  assert.equal(made.status, 200);
+  assert.deepEqual(made.body.post.mentions.map((m) => [m.label, m.gloobalId, m.side]), [['Meera N', 'MEERA', 'self']]);
+  // Meera is told; opening the post by id works for her.
+  const act = await call('get /api/social/activity', meera, {});
+  const row = act.body.items.find((i) => i.type === 'mention');
+  assert.ok(row, 'a mention row'); assert.equal(row.who.gloobalId, 'RAVI1'); assert.equal(row.post.id, made.body.post.id);
+  const one = await call('get /api/social/posts/:id', meera, { params: { id: made.body.post.id } });
+  assert.equal(one.body.post.id, made.body.post.id);
+  // In a comment too.
+  const c = await call('post /api/social/posts/:id/comments', asha, { params: { id: made.body.post.id }, body: { text: 'Next time with @Ravi Kumar and me', mentions: [{ accountId: String(ravi._id), side: 'self', label: 'Ravi Kumar' }] } });
+  assert.equal(c.status, 200); assert.equal(c.body.comment.mentions[0].gloobalId, 'RAVI1');
+  const list = await call('get /api/social/posts/:id/comments', meera, { params: { id: made.body.post.id } });
+  assert.equal(list.body.comments[0].mentions[0].label, 'Ravi Kumar');
+});

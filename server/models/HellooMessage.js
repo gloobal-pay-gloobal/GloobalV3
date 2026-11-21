@@ -19,7 +19,7 @@ const hellooMessageSchema = new mongoose.Schema(
   {
     conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'HellooConversation', required: true },
     from: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    kind: { type: String, enum: ['text', 'voice', 'payment', 'photo', 'video', 'call', 'order', 'sticker'], required: true },
+    kind: { type: String, enum: ['text', 'voice', 'payment', 'photo', 'video', 'call', 'order', 'sticker', 'post'], required: true },
     // A short video clip (a snap): its bytes are in the chat's media store,
     // like a photo's.
     video: { seconds: { type: Number, default: 0 }, width: { type: Number, default: 0 }, height: { type: Number, default: 0 }, mime: { type: String, default: '' }, bytes: { type: Number, default: 0 } },
@@ -59,6 +59,16 @@ const hellooMessageSchema = new mongoose.Schema(
     // saved it to their phone, so the sender is told.
     fx: { type: String, default: '', maxlength: 20 },
     savedBy: { type: [mongoose.Schema.Types.ObjectId], default: [] },
+    // A GLOOBAL Social post sent in the chat: only which post, who made it
+    // and its first words. The picture is not copied — it is shown from the
+    // post itself, sealed, and only while the post is still up.
+    post: {
+      id: { type: mongoose.Schema.Types.ObjectId },
+      author: { type: String, maxlength: 60 },
+      caption: { type: String, maxlength: 100 },
+      mediaId: { type: mongoose.Schema.Types.ObjectId },
+      mediaKind: { type: String, maxlength: 8 },
+    },
     // A sticker is only its name: the picture is drawn by the app, so
     // nothing is uploaded and nothing here can carry a file.
     sticker: {

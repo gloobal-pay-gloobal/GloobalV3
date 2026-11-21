@@ -133,6 +133,29 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     return { following: new Set(out.map((l) => String(l.to))), followsMe: new Set(back.map((l) => String(l.from))) };
   }
   const tied = (card, ties) => (card ? Object.assign(card, { following: ties.following.has(String(card.accountId)), followsMe: ties.followsMe.has(String(card.accountId)) }) : card);
+  // Mentions sent with a post or comment: at most ten, each a real profile
+  // that is on Social, and each "@label" really in the text.
+  async function mentionsIn(raw, text) {
+    const list = (Array.isArray(raw) ? raw : []).slice(0, 10);
+    const out = []; const seen = new Set();
+    for (const m of list) {
+      const id = oid(m && m.accountId);
+      const label = String((m && m.label) || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+      const side = m && m.side === 'shop' ? 'shop' : 'self';
+      if (!id || !label || seen.has(String(id) + side) || !String(text || '').includes('@' + label)) continue;
+      const u = await User.findById(id).select('_id shopOwnerId socialOn creatorProfile.handle').lean();
+      if (!u || !(await isOn(u, side))) continue;
+      seen.add(String(id) + side);
+      out.push({ account: id, side: sideOf(u, side), label });
+    }
+    return out;
+  }
+  async function mentionsOut(rows) {
+    const all = rows.flatMap((r) => r.mentions || []);
+    if (!all.length) return () => [];
+    const byId = await cards(all.map((m) => m.account));
+    return (r) => (r.mentions || []).map((m) => { const c = cardOf(byId.get(String(m.account)), m.side); return c ? { label: m.label, accountId: c.accountId, gloobalId: c.gloobalId, side: c.side, name: c.name, handle: c.handle } : null; }).filter(Boolean);
+  }
   async function postsOut(postsIn, meId) {
     let posts = postsIn;
     if (!posts.length) return [];
@@ -152,6 +175,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     ]).catch(() => []) : [];
     const views = new Map(seenRows.map((r) => [String(r._id), r.n]));
     const ties = await tiesOf(meId, posts.map((p) => p.author));
+    const mentioned = await mentionsOut(posts);
     return posts.map((p) => ({
       id: String(p._id),
       author: tied(cardOf(byId.get(String(p.author)), p.side), ties),
@@ -159,6 +183,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       caption: p.caption || '',
       topic: p.topic || '',
       hashtags: p.hashtags || [],
+      mentions: mentioned(p),
       story: Boolean(p.story),
       format: p.format || ((p.media || [])[0] && p.media[0].kind === 'video' ? 'video' : 'post'),
       expiresAt: p.expiresAt || null,
@@ -390,15 +415,26 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       const posts = await SocialPost.find({ author: me, removedAt: null }).sort({ createdAt: -1 }).limit(300).select('media caption').lean();
       const postIds = posts.map((p) => p._id);
       const after = since ? { createdAt: { $gt: since } } : {};
+      // Posts and comments by others that mention me.
+      const [inPosts, inComments] = await Promise.all([
+        SocialPost.find(Object.assign({ 'mentions.account': me, author: { $ne: me }, removedAt: null, hiddenAt: null, takenBackAt: null }, after)).sort({ createdAt: -1 }).limit(limit).select('author media caption createdAt').lean(),
+        SocialComment.find(Object.assign({ 'mentions.account': me, author: { $ne: me }, removedAt: null }, after)).sort({ createdAt: -1 }).limit(limit).lean(),
+      ]);
       const [likes, comments, follows] = await Promise.all([
         postIds.length ? SocialLink.find(Object.assign({ kind: 'like', to: { $in: postIds }, from: { $ne: me } }, after)).sort({ createdAt: -1 }).limit(limit).lean() : [],
         postIds.length ? SocialComment.find(Object.assign({ post: { $in: postIds }, author: { $ne: me }, removedAt: null }, after)).sort({ createdAt: -1 }).limit(limit).lean() : [],
         SocialLink.find(Object.assign({ kind: 'follow', to: me }, after)).sort({ createdAt: -1 }).limit(limit).lean(),
       ]);
+      // The posts those mentions sit on, for their thumbnails.
+      const extraIds = [...inPosts.map((p) => p._id), ...inComments.map((c) => c.post)].filter((id) => !postIds.some((x) => sameId(x, id)));
+      if (extraIds.length) posts.push(...await SocialPost.find({ _id: { $in: extraIds }, removedAt: null }).select('media caption').lean());
       return { posts, rows: [
         ...likes.map((l) => ({ type: 'like', who: l.from, post: l.to, at: l.createdAt })),
         ...comments.map((c) => ({ type: 'comment', who: c.author, post: c.post, at: c.createdAt, text: c.text })),
         ...follows.map((f) => ({ type: 'follow', who: f.from, at: f.createdAt })),
+        ...inPosts.map((p) => ({ type: 'mention', who: p.author, post: p._id, at: p.createdAt, text: (p.caption || '').slice(0, 120) })),
+        // A comment on my own post that mentions me already shows as a comment.
+        ...inComments.filter((c) => !postIds.some((id) => sameId(id, c.post))).map((c) => ({ type: 'mention', who: c.author, post: c.post, at: c.createdAt, text: c.text, inComment: true })),
       ].sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, limit) };
     }
     app.get('/api/social/activity', socialRead, requireAuth, async (req, res) => {
@@ -514,6 +550,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
           media: media.map((m) => ({ id: m._id, kind: m.kind })),
           caption: String(body.caption || '').slice(0, 2200),
           hashtags: hashtagsOf(body.caption),
+          mentions: await mentionsIn(body.mentions, String(body.caption || '').slice(0, 2200)),
           story,
           format,
           expiresAt: story ? new Date(Date.now() + STORY_MS) : null,
@@ -522,6 +559,16 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         });
         await SocialMedia.updateMany({ _id: { $in: ids }, owner: me._id }, { $set: { post: post._id } });
         const [out] = await postsOut([post.toObject()], me._id);
+        return res.json({ success: true, post: out });
+      } catch (error) { return fail(res, 'post', error); }
+    });
+    // One post by its id — opened from a chat it was sent in, or from Activity.
+    app.get('/api/social/posts/:id', socialRead, requireAuth, async (req, res) => {
+      try {
+        const post = await livePost(req, res);
+        if (!post) return undefined;
+        const [out] = await postsOut([post.toObject ? post.toObject() : post], req.authUser._id);
+        if (!out || (out.story && !out.mine)) return res.status(404).json({ success: false, message: 'That post is gone.' });
         return res.json({ success: true, post: out });
       } catch (error) { return fail(res, 'post', error); }
     });
@@ -754,14 +801,15 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     });
 
     // ── COMMENTS ──────────────────────────────────────────────────────
-    const commentOut = (c, u, meId, postAuthor) => ({ id: String(c._id), author: cardOf(u, c.side), text: c.text, at: c.createdAt, mine: sameId(c.author, meId), canDelete: sameId(c.author, meId) || sameId(postAuthor, meId) });
+    const commentOut = (c, u, meId, postAuthor, mentioned) => ({ id: String(c._id), author: cardOf(u, c.side), text: c.text, mentions: mentioned ? mentioned(c) : [], at: c.createdAt, mine: sameId(c.author, meId), canDelete: sameId(c.author, meId) || sameId(postAuthor, meId) });
     app.get('/api/social/posts/:id/comments', socialRead, requireAuth, async (req, res) => {
       try {
         const post = await livePost(req, res);
         if (!post) return undefined;
         const list = await SocialComment.find({ post: post._id, removedAt: null }).sort({ createdAt: -1 }).limit(100).lean();
         const byId = await cards(list.map((c) => c.author));
-        return res.json({ success: true, comments: list.map((c) => commentOut(c, byId.get(String(c.author)), req.authUser._id, post.author)).filter((c) => c.author) });
+        const mentioned = await mentionsOut(list);
+        return res.json({ success: true, comments: list.map((c) => commentOut(c, byId.get(String(c.author)), req.authUser._id, post.author, mentioned)).filter((c) => c.author) });
       } catch (error) { return fail(res, 'comments', error); }
     });
     app.post('/api/social/posts/:id/comments', socialWrite, requireAuth, requireOn, async (req, res) => {
@@ -770,9 +818,10 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         if (!post) return undefined;
         const text = String((req.body || {}).text || '').trim().slice(0, 500);
         if (!text) return res.status(400).json({ success: false, message: 'Write something first.' });
-        const c = await SocialComment.create({ post: post._id, author: req.authUser._id, side: req.socialSide === 'shop' ? 'shop' : 'self', text });
+        const c = await SocialComment.create({ post: post._id, author: req.authUser._id, side: req.socialSide === 'shop' ? 'shop' : 'self', text, mentions: await mentionsIn((req.body || {}).mentions, text) });
         await SocialPost.updateOne({ _id: post._id }, { $inc: { commentCount: 1 } });
-        return res.json({ success: true, comment: commentOut(c.toObject(), (await cards([req.authUser._id])).get(String(req.authUser._id)), req.authUser._id, post.author) });
+        const made = c.toObject();
+        return res.json({ success: true, comment: commentOut(made, (await cards([req.authUser._id])).get(String(req.authUser._id)), req.authUser._id, post.author, await mentionsOut([made])) });
       } catch (error) { return fail(res, 'comment', error); }
     });
     app.delete('/api/social/comments/:id', socialWrite, requireAuth, async (req, res) => {

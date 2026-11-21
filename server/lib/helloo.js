@@ -31,6 +31,7 @@
 //   POST /api/helloo/chats/:id/release      { pin } — a private chat you both keep, once, for them
 //   POST /api/helloo/chats/:id/release/open { pin } — open one released for you (ten minutes)
 //   POST /api/helloo/contacts/hide         { accountId, hidden } — out of your contacts until you pay or chat again
+//   POST /api/helloo/contacts/save         { accountId, saved, name? } — save or unsave; saved for the person, on every side
 //   PUT  /api/helloo/faces/show            { show } — the shop you are acting as, on your personal profile
 //   POST /api/helloo/block                 { accountId, blocked }
 //   GET  /api/helloo/blocked               the people you have blocked
@@ -74,6 +75,7 @@ const HellooConversation = require('../models/HellooConversation');
 const HellooMessage = require('../models/HellooMessage');
 const HellooVoice = require('../models/HellooVoice');
 const HellooBlock = require('../models/HellooBlock');
+const HellooSavedContact = require('../models/HellooSavedContact');
 const HellooPresence = require('../models/HellooPresence');
 const CreatorLogo = require('../models/CreatorLogo');
 const HellooReach = require('../models/HellooReach');
@@ -1075,6 +1077,42 @@ function createHelloo(deps) {
       }
     });
 
+    // Save or unsave a contact. Saved for the PERSON: as yourself or as any
+    // of your shops, the same people are saved (models/HellooSavedContact).
+    app.post('/api/helloo/contacts/save', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const owner = req.hellooOwner._id;
+        const other = oid(req.body?.accountId);
+        if (!other || sameId(other, owner) || sameId(other, req.authUser._id)) return res.status(400).json({ success: false, message: 'Pick somebody else.' });
+        const target = await User.findById(other).select('_id shopOwnerId').lean();
+        if (!target) return res.status(404).json({ success: false, message: 'No such account.' });
+        if (sameId(target.shopOwnerId, owner)) return res.status(400).json({ success: false, message: 'That is your own shop.' });
+        const saved = req.body?.saved !== false;
+        if (!saved) {
+          await HellooSavedContact.deleteOne({ owner, contact: other });
+          // Their saved name goes too, from this person's one-to-one chats
+          // with them on every side. A private chat keeps its name: that
+          // name is its key.
+          const mine = [owner, ...(await User.find({ shopOwnerId: owner }).select('_id').lean()).map((u) => u._id)];
+          await HellooConversation.updateMany(
+            { members: other, 'reads.userId': { $in: mine } },
+            { $set: { 'reads.$[mine].savedName': '' } },
+            { arrayFilters: [{ 'mine.userId': { $in: mine }, 'mine.private': { $ne: true } }] }
+          ).catch(() => {});
+          return res.json({ success: true, saved: false, name: '' });
+        }
+        const set = typeof req.body?.name === 'string' ? { name: hellooSavedName(req.body.name) } : {};
+        await HellooSavedContact.updateOne({ owner, contact: other }, { $set: set, $setOnInsert: { owner, contact: other } }, { upsert: true });
+        // Saving brings them back if they had been taken out of contacts.
+        await HellooReach.updateMany({ userId: { $in: [owner, req.authUser._id] } }, { $pull: { hiddenContacts: { userId: other } } });
+        const row = await HellooSavedContact.findOne({ owner, contact: other }).select('name').lean();
+        return res.json({ success: true, saved: true, name: (row && row.name) || '' });
+      } catch (error) {
+        console.error('Helloo save contact error:', error);
+        return res.status(500).json({ success: false, message: 'Could not save that right now.' });
+      }
+    });
+
     app.get('/api/helloo/contacts', hellooRead, requireAuth, async (req, res) => {
       try {
         const me = req.authUser._id;
@@ -1120,6 +1158,15 @@ function createHelloo(deps) {
         for (const h of (reach && reach.hiddenContacts) || []) {
           const extra = seen.get(String(h.userId));
           if (extra && !(extra.lastAt && new Date(extra.lastAt) > new Date(h.at))) seen.delete(String(h.userId));
+        }
+        // Saved contacts: always in the list, on every side of this person,
+        // whether or not this side has paid or chatted with them.
+        const savedRows = await HellooSavedContact.find({ owner: req.hellooOwner._id }).sort({ updatedAt: -1 }).limit(2000).select('contact name updatedAt').lean();
+        for (const row of savedRows) {
+          const id = String(row.contact);
+          if (sameId(id, me)) continue;
+          const extra = seen.get(id) || { lastAt: row.updatedAt };
+          seen.set(id, Object.assign(extra, { saved: true, savedName: row.name || '' }));
         }
         const people = await cardsFor([...seen.keys()]);
         const contacts = [...seen.entries()]
@@ -1768,6 +1815,13 @@ function createHelloo(deps) {
         }
         if (!Object.keys(set).length) return res.status(400).json({ success: false, message: 'Nothing to change.' });
         await HellooConversation.updateOne({ _id: conversation._id }, { $set: set }, { arrayFilters: [{ 'mine.userId': req.authUser._id }] });
+        // Naming a one-to-one chat saves that person as a contact, under that
+        // name, on every side of yours. A private chat's name stays secret.
+        if (typeof req.body?.savedName === 'string' && savedName && !isPrivate && !conversation.group && (conversation.members || []).length === 2) {
+          const other = conversation.members.find((m) => !sameId(m, req.authUser._id));
+          const owner = req.hellooOwner._id;
+          if (other && !sameId(other, owner)) await HellooSavedContact.updateOne({ owner, contact: other }, { $set: { name: savedName }, $setOnInsert: { owner, contact: other } }, { upsert: true }).catch(() => {});
+        }
         return res.json({
           success: true,
           muted: typeof req.body.muted === 'boolean' ? req.body.muted : Boolean(mine.muted),

@@ -105,10 +105,12 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
   // the owner's name.
   function cardOf(u, side) {
     if (!u) return null;
-    if (u.hellooCard) return Object.assign(people.faced(u.hellooCard, side === 'shop' ? 'shop' : 'self'), { side: side === 'shop' && u.hellooCard.handle ? 'shop' : 'self' });
+    // A person's own Social picture, when they chose one.
+    const pic = (asShop) => { const id = !asShop && !u.shopOwnerId && u.socialProfile && u.socialProfile.self && u.socialProfile.self.picture; return id ? { picture: { id: String(id), url: `${publicBase}/api/social/media/${id}` } } : {}; };
+    if (u.hellooCard) { const asShop = side === 'shop' && Boolean(u.hellooCard.handle); return Object.assign(people.faced(u.hellooCard, side === 'shop' ? 'shop' : 'self'), { side: asShop ? 'shop' : 'self' }, pic(asShop)); }
     const handle = (u.creatorProfile && u.creatorProfile.handle) || '';
     const shop = side === 'shop' && handle;
-    return { accountId: String(u._id), gloobalId: u.symbolId || '', name: shop ? shopNameOf(u) : (u.fullName || ''), handle: shop ? handle : '', side: shop ? 'shop' : 'self', countryIso: u.countryIso || '' };
+    return Object.assign({ accountId: String(u._id), gloobalId: u.symbolId || '', name: shop ? shopNameOf(u) : (u.fullName || ''), handle: shop ? handle : '', side: shop ? 'shop' : 'self', countryIso: u.countryIso || '' }, pic(Boolean(shop)));
   }
   const mediaUrl = (id) => `${publicBase}/api/social/media/${id}`;
 
@@ -116,7 +118,10 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     const uniq = [...new Set(ids.map(String))].map(oid).filter(Boolean);
     if (people && uniq.length) {
       const m = await people.cardsFor(uniq);
-      return new Map([...(m.raw || m)].map(([k, c]) => [k, { _id: k, hellooCard: c, symbolId: c.gloobalId }]));
+      // What Social itself keeps about each one (on/off, its picture, whose
+      // shop it is) rides along with the Helloo card.
+      const own = new Map((await User.find({ _id: { $in: uniq } }).select('socialOn socialProfile shopOwnerId creatorProfile.handle').lean()).map((u) => [String(u._id), u]));
+      return new Map([...(m.raw || m)].map(([k, c]) => { const o = own.get(String(k)) || {}; return [k, { _id: k, hellooCard: c, symbolId: c.gloobalId, socialOn: o.socialOn, socialProfile: o.socialProfile, shopOwnerId: o.shopOwnerId, creatorProfile: o.creatorProfile }]; }));
     }
     const users = uniq.length ? await User.find({ _id: { $in: uniq } }).select(CARD).lean() : [];
     return new Map(users.map((u) => [String(u._id), u]));
@@ -280,6 +285,22 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
             if (current && String(current) !== String(m._id)) oldCover = current;
           }
         }
+        // Your own picture for Social (a person's side only): a photo from
+        // your gallery, or null to go back to your GLOOBAL face.
+        let oldPicture = null;
+        if (body.picture !== undefined) {
+          if (k !== 'self') return res.status(400).json({ success: false, code: 'shop_logo', message: 'A shop shows its logo.' });
+          const current = u.socialProfile && u.socialProfile.self && u.socialProfile.self.picture;
+          if (body.picture === null) { set['socialProfile.self.picture'] = null; oldPicture = current; }
+          else {
+            const id = oid(body.picture);
+            const m = id ? await SocialMedia.findOne({ _id: id, owner: u._id, post: null, ad: null }).select('_id kind').lean() : null;
+            if (!m || m.kind !== 'photo') return res.status(400).json({ success: false, code: 'bad_picture', message: 'Pick a photo for your picture.' });
+            await SocialMedia.updateOne({ _id: m._id }, { $set: { cover: true } });
+            set['socialProfile.self.picture'] = m._id;
+            if (current && String(current) !== String(m._id)) oldPicture = current;
+          }
+        }
         if (body.photo !== undefined) {
           if (!setPhoto) return res.status(503).json({ success: false, message: 'Photos cannot be changed right now.' });
           const r = await setPhoto(u, k === 'shop' ? 'logo' : 'photo', body.photo);
@@ -287,8 +308,10 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         }
         if (Object.keys(set).length) await User.updateOne({ _id: u._id }, { $set: set });
         if (oldCover) SocialMedia.deleteOne({ _id: oldCover, owner: u._id, cover: true }).catch(() => {});
+        if (oldPicture) SocialMedia.deleteOne({ _id: oldPicture, owner: u._id, cover: true }).catch(() => {});
         const fresh = await User.findById(u._id).select('socialProfile').lean();
-        return res.json(Object.assign({ success: true }, aboutOf(fresh, k)));
+        const pid = k === 'self' && fresh && fresh.socialProfile && fresh.socialProfile.self && fresh.socialProfile.self.picture;
+        return res.json(Object.assign({ success: true, picture: pid ? { id: String(pid), url: `${publicBase}/api/social/media/${pid}` } : null }, aboutOf(fresh, k)));
       } catch (error) { return fail(res, 'profile edit', error); }
     });
     // ── HIGHLIGHTS ───────────────────────────────────────────────────

@@ -434,3 +434,20 @@ test('mentions: "@Name" opens that profile, tells them, and is dropped if not in
   const list = await call('get /api/social/posts/:id/comments', meera, { params: { id: made.body.post.id } });
   assert.equal(list.body.comments[0].mentions[0].label, 'Ravi Kumar');
 });
+
+test('a person can set their own Social picture from the gallery, and go back to their GLOOBAL face', async () => {
+  const up = await upload(meera, JPEG);
+  const set = await call('put /api/social/profile', meera, { query: { as: 'self' }, body: { picture: up.body.id } });
+  assert.equal(set.status, 200); assert.equal(set.body.picture.id, up.body.id);
+  const seen = await call('get /api/social/profile/:gloobalId', ravi, { params: { gloobalId: 'MEERA' }, query: { side: 'self' } });
+  assert.equal(seen.body.profile.picture.id, up.body.id);
+  // It is kept (not cleared as an unused upload) and is served.
+  assert.equal(Media.rows.find((m) => String(m._id) === up.body.id).cover, true);
+  const back = await call('put /api/social/profile', meera, { query: { as: 'self' }, body: { picture: null } });
+  assert.equal(back.body.picture, null);
+  const after = await call('get /api/social/profile/:gloobalId', ravi, { params: { gloobalId: 'MEERA' }, query: { side: 'self' } });
+  assert.equal(after.body.profile.picture, undefined);
+  // Somebody else's upload is refused.
+  const theirs = await upload(ravi, JPEG);
+  assert.equal((await call('put /api/social/profile', meera, { query: { as: 'self' }, body: { picture: theirs.body.id } })).status, 400);
+});

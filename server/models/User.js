@@ -68,7 +68,10 @@ const userSchema = new mongoose.Schema({
   // picture (a SocialMedia row marked cover). Its photo is the one GLOOBAL
   // already keeps (ProfilePhoto, or the shop's CreatorLogo).
   socialProfile: {
-    self: { bio: { type: String, default: '', maxlength: 150 }, cover: { type: mongoose.Schema.Types.ObjectId, ref: 'SocialMedia', default: null } },
+    // picture: a person's own picture for Social only (from their gallery).
+    // Their GLOOBAL face — the live, verified one — is untouched and is what
+    // payments and chats still show.
+    self: { bio: { type: String, default: '', maxlength: 150 }, cover: { type: mongoose.Schema.Types.ObjectId, ref: 'SocialMedia', default: null }, picture: { type: mongoose.Schema.Types.ObjectId, ref: 'SocialMedia', default: null } },
     shop: { bio: { type: String, default: '', maxlength: 150 }, cover: { type: mongoose.Schema.Types.ObjectId, ref: 'SocialMedia', default: null } },
   },
   symbolIdHistory: [{

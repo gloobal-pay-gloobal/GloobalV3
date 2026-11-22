@@ -14,6 +14,7 @@ const eq = (a, b) => (a == null && b == null) || (a != null && b != null && Stri
 const has = (v, x) => (Array.isArray(v) ? v.flat().some((y) => eq(y, x)) : eq(v, x));
 function match(doc, q) {
   return Object.entries(q).every(([k, c]) => {
+    if (k === '$nor') return !c.some((s) => match(doc, s));
     if (k === '$or') return c.some((s) => match(doc, s));
     const v = get(doc, k);
     if (c instanceof RegExp) return c.test(String(v || ''));
@@ -450,4 +451,31 @@ test('a person can set their own Social picture from the gallery, and go back to
   // Somebody else's upload is refused.
   const theirs = await upload(ravi, JPEG);
   assert.equal((await call('put /api/social/profile', meera, { query: { as: 'self' }, body: { picture: theirs.body.id } })).status, 400);
+});
+
+test('a person and the shop on the same account are followed apart, both ways', async () => {
+  const dev = { _id: id(), symbolId: 'DEV01', fullName: 'Dev Shah', countryIso: 'IN', creatorProfile: { handle: 'devkitchen', handleFirst: 'Dev', handleLast: 'Kitchen' }, socialOn: { self: true, shop: true } };
+  User.rows.push(dev);
+  // Meera follows Dev the person: not Dev's shop.
+  const f = await call('post /api/social/follow', meera, { body: { to: String(dev._id), side: 'self', on: true } });
+  assert.equal(f.body.following, true); assert.equal(f.body.side, 'self');
+  const person = await call('get /api/social/profile/:gloobalId', meera, { params: { gloobalId: 'DEV01' }, query: { side: 'self' } });
+  const shop = await call('get /api/social/profile/:gloobalId', meera, { params: { gloobalId: 'DEV01' }, query: { side: 'shop' } });
+  assert.equal(person.body.profile.isFollowing, true, 'the person is followed');
+  assert.equal(shop.body.profile.isFollowing, false, 'the shop is not');
+  assert.equal(person.body.profile.followers, 1); assert.equal(shop.body.profile.followers, 0);
+  const shopFollowers = await call('get /api/social/people/:gloobalId/:which', meera, { params: { gloobalId: 'DEV01', which: 'followers' }, query: { side: 'shop' } });
+  assert.equal(shopFollowers.body.people.length, 0, "the shop's followers list stays empty");
+  // Now the shop too, then unfollow the person: the shop stays followed.
+  await call('post /api/social/follow', meera, { body: { to: String(dev._id), side: 'shop', on: true } });
+  await call('post /api/social/follow', meera, { body: { to: String(dev._id), side: 'self', on: false } });
+  const p2 = await call('get /api/social/profile/:gloobalId', meera, { params: { gloobalId: 'DEV01' }, query: { side: 'self' } });
+  const s2 = await call('get /api/social/profile/:gloobalId', meera, { params: { gloobalId: 'DEV01' }, query: { side: 'shop' } });
+  assert.equal(p2.body.profile.isFollowing, false); assert.equal(s2.body.profile.isFollowing, true);
+  // Dev's shop follows Meera back: Dev the person does not.
+  await call('post /api/social/follow', dev, { query: { as: String(dev._id) }, body: { to: String(meera._id), side: 'self', on: true } });
+  const asPerson = await call('get /api/social/profile/:gloobalId', dev, { query: { side: 'self' }, params: { gloobalId: 'MEERA' } });
+  const asShop = await call('get /api/social/profile/:gloobalId', dev, { query: { side: 'self', as: String(dev._id) }, params: { gloobalId: 'MEERA' } });
+  assert.equal(asPerson.body.profile.isFollowing, false, 'Dev the person is not following');
+  assert.equal(asShop.body.profile.isFollowing, true, "Dev's shop is");
 });

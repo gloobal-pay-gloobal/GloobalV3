@@ -32,7 +32,7 @@ var SHOW_PHONE_HERO_CIRCLE = false;
 // Two grounds, because it appears on both a white permission page and on
 // top of live video, and a control that is legible on one is invisible on
 // the other.
-function ScanSendButton({ onClick, overVideo = false }) {
+function ScanSendButton({ onClick, overVideo = false, label = "Send" }) {
   return <button
     onClick={onClick}
     className="v2-tap"
@@ -65,7 +65,7 @@ function ScanSendButton({ onClick, overVideo = false }) {
         ? `0 10px 34px rgba(${T.accentRgb},0.55), inset 0 1px 0 rgba(255,255,255,0.3)`
         : `0 8px 20px rgba(${T.accentRgb},0.28)`
     }}
-  ><ArrowUpRight5 size={17} />Send</button>;
+  ><ArrowUpRight5 size={17} />{label}</button>;
 }
 
 // The local CACHE of the profile picture, keyed by Gloobal ID. The photo
@@ -4795,6 +4795,8 @@ function GloobalId() {
     onToggleReveal={() => setLoginAuthRevealed((v) => !v)}
     waking={authBusy && authSlow}
     busy={authBusy}
+    // Who is signing in, under the slots — the same screen Helloo shows.
+    who={loginIdentifier ? (/^\d/.test(loginIdentifier) ? `+${loginIdentifier}` : /^\+/.test(loginIdentifier) && /\d/.test(loginIdentifier) ? loginIdentifier : <ColoredGloobalId id={loginIdentifier} />) : null}
   />}{stage === "loginBiometric" && <BiometricVerifyScreen
     onBack={requestBackFromLoginBiometric}
     onVerify={handleLoginBiometricVerify}
@@ -4904,76 +4906,27 @@ function GloobalId() {
     // scanning — not before permission, and not once a code has resolved and
     // there is a confirm card to look at.
     const scanLive = scanCameraAccessGranted && !scanPayee;
-    return <><ScanOverlayBlocksMap /><div style={{
-      position: "fixed", inset: 0, zIndex: 400,
-      // ── BLACK WHILE AIMING, LIGHT ONCE IT LANDS ─────────────────────
-      //
-      // A dark frame is what lets somebody see the picture they are
-      // pointing at a code, so the camera keeps its black. The moment a
-      // code resolves, a white confirmation card floating on a black
-      // field reads as an error dialog — which is the one thing a
-      // payment card must not read as.
-      //
-      // The page then goes to WHITE with a trace of the payee's hue in
-      // it, and the colour itself goes on the card. The first build had
-      // that the other way round, and the founder inverted it: the field
-      // is the biggest thing on screen and the card is the only thing
-      // anybody reads, so colouring the field spent all that area in the
-      // place nobody looks.
-      //
-      // The hue is derived from the scanned ID and nothing else: no
-      // setting, no shop's own colour, nobody choosing. See
-      // scanBackdrop.js for why that also makes it impossible for the
-      // colour to shift under somebody mid-payment.
-      background: scanPayee ? scanPageTint(scanPayee.gloobalId) : "#000",
-      transition: "background 0.45s ease",
-      display: "flex", flexDirection: "column", overflow: "hidden"
-    }}>{
-    /* The camera layer. A direct child of the overlay rather than an item
-       in the column below, which is what lets it run edge to edge behind
-       the back button. Paused while a lookup runs and after a failed one,
-       until the person taps to go again. */
-  }{scanLive && <QrCameraScanner
-    fullScreen
-    active={showScanScreen}
-    paused={scanResolving || Boolean(scanRetry)}
-    onDetected={handleQrScanned}
-    // Every control off the picture while the screen is saying
-    // something. The scanner is paused in exactly those moments anyway.
-    quiet={Boolean(scanResolving || scanError || scanRetry)}
-    onUploadRequested={() => {
-      setScanError(null);
-      setScanRetry(null);
-      if (scanGalleryInputRef.current) scanGalleryInputRef.current.click();
-    }}
-  />}<div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseScanScreen} />{
-    /* ── ONE TITLE, CENTRED, AND IT NAMES THE THING ──────────────────────
-       It was a two-line block pinned beside the back button: "Scan QR"
-       over "Point at any Gloobal code". Two faults in that.
-       "Scan QR" names the ACTION, and the action is already obvious from
-       a camera with a square drawn on it. What is not obvious is WHICH
-       codes this reads — it is not a general QR scanner, it will only
-       resolve a Gloobal code — so the title is the name of the thing.
-       And a subtitle in the header is an instruction printed where the
-       eye is not: somebody holding a phone up at a code is looking at
-       the square, not at a caption above it. It moved under the camera,
-       below. */
-  }<span style={{
-    flex: 1, textAlign: "center", fontSize: 17, fontWeight: 800, fontFamily: T.fontDisplay,
-    // White over the camera, where it needs a shadow to survive whatever
-    // the lens is pointed at. Ink once the page goes light, where white
-    // would simply be gone — the title is the same title either way and
-    // only the ground under it changed.
-    color: scanPayee ? T.ink : "#FFFFFF",
-    textShadow: scanPayee ? "none" : "0 1px 8px rgba(0,0,0,0.5)"
-  }}>
-          <GloobalWordmark /> QR
-        </span>{
-    /* The back button's own width, so the title is centred on the SCREEN
-       rather than on the space left over beside it. Without this it sits
-       27px right of centre, which is just enough to read as a mistake
-       and not enough to read as a decision. */
-  }{scanPayee ? <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>{
+    return <><ScanOverlayBlocksMap /><GloobalScanScreen
+      fixed
+      active={showScanScreen}
+      cameraGranted={scanCameraAccessGranted}
+      onAllowCamera={() => setScanCameraAccessGranted(true)}
+      onBack={requestCloseScanScreen}
+      onDetected={handleQrScanned}
+      galleryRef={scanGalleryInputRef}
+      onGalleryFile={handleScanGalleryFile}
+      // Paused while a lookup runs and after a failed one, until the
+      // person taps to go again.
+      paused={scanResolving || Boolean(scanRetry)}
+      resolving={scanResolving}
+      error={scanError}
+      retry={scanRetry}
+      onRetry={() => { setScanError(null); setScanRetry(null); }}
+      onClearError={() => { setScanError(null); setScanRetry(null); }}
+      // The page goes from black to the payee's own hue once a code lands;
+      // see scanBackdrop.js.
+      tint={scanPayee ? scanPageTint(scanPayee.gloobalId) : null}
+      headerRight={scanPayee ? <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>{
     /* ── THE CORNER, ONCE A CODE HAS LANDED ───────────────────────────
        Both of these lived inside the card: the scan mark under the Pay
        button, and nothing at all for "show me what this shop sells".
@@ -4995,186 +4948,9 @@ function GloobalId() {
   ><Store4 size={NAV_GLYPH_SIZE} color={T.ink} /></NavIconButton> : null}<NavScanButton
     onClick={() => setScanPayee(null)}
     label="Scan another code"
-  /></div> : <span aria-hidden="true" style={{ width: 42, flexShrink: 0 }} />}</div>{
-    /* ── AND THE WORDS WENT BACK UNDER THE CAMERA ────────────────────────
-       They were under it once, moved above the frame, and have now moved
-       back. The history is worth keeping because the reason changed.
-       They were moved UP because the band under the square held the
-       control row, the zoom arc and any message the screen had to say,
-       all at once — the founder photographed the arc drawn through the
-       instruction line and "This is your own QR" behind the flashlight.
-       The arc is gone: the zoom is drawn inside the square now, on its
-       right-hand edge. That band holds the control row and nothing else,
-       so there is room again, and under the picture is where an
-       instruction about aiming belongs — it is the last thing read on
-       the way from the square to the thumb.
-       Anchored at 160: the control row sits at 96 and is 52 tall, so
-       this clears it by 12, and one line of 12.5px type reaches about
-       180 against a square whose lower edge is never nearer than ~281.
-       A MESSAGE still replaces it rather than joining it — same
-       condition as before — because two sentences in one band is the
-       fault this screen already had once. */
-  }{scanLive && !scanPayee && !scanError && !scanRetry && !scanResolving && <div
-    style={{
-      position: "absolute",
-      left: 0,
-      right: 0,
-      bottom: "calc(160px + env(safe-area-inset-bottom, 0px))",
-      zIndex: 1,
-      display: "flex",
-      justifyContent: "center",
-      padding: "0 24px",
-      pointerEvents: "none"
-    }}
-  ><div
-    style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}
-  >
-      Point at any <GloobalWordmark /> code
-    </div></div>}<input
-      ref={scanGalleryInputRef}
-      type="file"
-      accept="image/*"
-      onChange={handleScanGalleryFile}
-      style={{ display: "none" }}
-    />{!scanCameraAccessGranted ? (
-    // ── ONE SCREEN, NOT TWO ──────────────────────────────────────────────
-    //
-    // This was a separate white page: an ambient background, a 200px circle
-    // with a scan mark in it, a headline, and a button. Granting replaced
-    // the whole thing with a black screen and a square. The founder asked
-    // for the two to be one — "build that permission screen upon the real
-    // camera".
-    //
-    // The live camera cannot literally be behind this: no browser hands
-    // over pixels before consent, so on a first run there is nothing to
-    // show. Everything else is shared. Same black ground, same title, same
-    // framing square from QrFrameGuide in the same place at the same size,
-    // same Send button at the bottom. Granting fills the square that is
-    // already on screen; nothing moves, and there is no white-to-black
-    // flash between the two.
-    //
-    // "Allow Access" still only flips this flag — the real request happens
-    // when QrCameraScanner mounts and calls getUserMedia, which is what
-    // puts the browser's own prompt up. Keeping our ask in front of it is
-    // deliberate: a prompt somebody taps away without reading is a denial
-    // that takes a trip into browser settings to undo.
-    <><QrFrameGuide><ScannerIcon size={52} animated color="#FFFFFF" /><div
-      style={{ fontSize: 16, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, marginTop: 14 }}
-    >
-                  Allow camera access
-                </div><div
-      style={{ fontSize: 12.5, color: "rgba(255,255,255,0.78)", lineHeight: 1.45, marginTop: 6 }}
-    >
-                  Your browser will ask you to confirm.
-                </div><button
-      onClick={() => setScanCameraAccessGranted(true)}
-      className="v2-tap"
-      style={{
-        marginTop: 18,
-        border: "none",
-        borderRadius: 999,
-        padding: "12px 32px",
-        background: T.gradButton,
-        color: "#fff",
-        fontSize: 14,
-        fontWeight: 800,
-        cursor: "pointer",
-        boxShadow: `0 8px 20px rgba(${T.accentRgb},0.35)`
-      }}
-    >
-                  Allow Access
-                </button>{scanError && <div
-      role="alert"
-      style={{ fontSize: 12, color: "#fff", background: T.negative, borderRadius: 10, padding: "7px 12px", textAlign: "center", fontWeight: 700, marginTop: 14, lineHeight: 1.4 }}
-    >{scanError}</div>}</QrFrameGuide>{
-    /* Where the scanner's own control row sits, so the gallery picker does
-       not move when the camera comes up. It stays reachable here because a
-       code that arrived as a screenshot never needs the camera at all. */
-  }<div
-      style={{
-        position: "absolute",
-        left: 0,
-        right: 0,
-        bottom: "calc(132px + env(safe-area-inset-bottom, 0px))",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 2
-      }}
-    ><button
-      onClick={() => {
-        // Opens the picker. This used to set scanCameraAccessGranted and
-        // nothing else — a control labelled "Upload from gallery" that
-        // revealed the camera view instead, decoding nothing, leaving no
-        // route in for a device whose camera is blocked or for a code that
-        // arrived as a screenshot.
-        setScanError(null);
-        if (scanGalleryInputRef.current) scanGalleryInputRef.current.click();
-      }}
-      className="v2-tap"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        border: "1px solid rgba(255,255,255,0.35)",
-        borderRadius: 999,
-        padding: "10px 18px",
-        background: "rgba(0,0,0,0.45)",
-        backdropFilter: "blur(6px)",
-        color: "#fff",
-        fontSize: 13,
-        fontWeight: 700,
-        cursor: "pointer"
-      }}
-    ><ImageIcon size={16} />
-                  Upload from gallery
-                </button></div><div
-      style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: "0 24px calc(26px + env(safe-area-inset-bottom, 0px))" }}
-    >{
-    /* Was a div reading "Enter Mobile Number to Pay" that was styled to
-       look like a text field but was not one — no input, no handler, no
-       tap target. It could not be typed into and it did nothing, which is
-       the worst kind of control: it advertised a way to pay someone
-       without a code and then refused to take it.
-
-       This is that promise kept. It opens the real Send flow, where a
-       number or a Gloobal ID can actually be entered. */
-  }<ScanSendButton onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></div></>
-  ) : <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: scanLive ? "flex-end" : "center", padding: "0 24px calc(26px + env(safe-area-inset-bottom, 0px))", gap: 16 }}>{!scanPayee ? <>{
-    /* Upload moved into the scanner's own control row, beside the torch and
-       the zoom. */
-  }{(scanResolving || scanError || scanRetry) && <div
-    style={{
-      position: "absolute",
-      left: 0,
-      right: 0,
-      // The band the torch and the picker sit in when there is nothing to
-      // say. They are hidden whenever this is showing — see `quiet` on
-      // QrCameraScanner — so the two can never be here at once, which is
-      // the collision the founder photographed.
-      bottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
-      zIndex: 2,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: 11,
-      padding: "0 24px"
-    }}
-  >{scanResolving && <div
-    style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}
-  >
-      Looking this QR up…
-    </div>}{scanError && <div
-    role="alert"
-    style={{ fontSize: 12.5, color: "#fff", background: T.negative, borderRadius: 12, padding: "9px 15px", textAlign: "center", fontWeight: 700, maxWidth: 300, lineHeight: 1.4 }}
-  >{scanError}</div>}{scanRetry && <button
-    onClick={() => {
-      setScanError(null);
-      setScanRetry(null);
-    }}
-    className="v2-tap"
-    style={{ border: "none", borderRadius: 999, padding: "10px 24px", background: "rgba(255,255,255,0.94)", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
-  >{scanRetry}</button>}</div>}<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{
+  /></div> : null}
+      bottom={(overVideo) => <ScanSendButton overVideo={overVideo} onClick={() => { closeScanScreen(); setActiveScreen("send"); }} />}
+      result={scanPayee ? <div style={{
     width: "100%", maxWidth: 340, display: "flex", flexDirection: "column", alignItems: "center"
   }}><div style={{
     width: "100%", borderRadius: T.radiusXl,
@@ -5360,7 +5136,8 @@ function GloobalId() {
     // style's; see scanNoteStrip.jsx.
     styleKey={scanPayee.creator.scanNoteStyle}
     speaker={creatorDisplayName(scanPayee.creator)}
-  /> : null}</div>}</div>}</div></>;
+  /> : null}</div> : null}
+    /></>;
   })()}{
     /* A shared receipt link, opened on a payment in this account's own
        history. The same read-only document History shows. */

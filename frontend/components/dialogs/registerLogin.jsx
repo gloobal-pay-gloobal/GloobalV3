@@ -593,13 +593,22 @@ function PinScreen({ value, length, onChange, onSubmit, onBack, revealed, onTogg
 // a known 40-second wait from looking like a fault: the time is the same and
 // the person knows what it is, which is the difference between waiting and
 // wondering whether to force-quit.
-function LoginAuthScreen({ value, length, onChange, onSubmit, onBack, revealed, onToggleReveal, waking, busy, error = "", note = "Welcome back. Your 6-digit GLOOBAL PIN.", extra = null }) {
+// Under the PIN slots on the sign-in screen, in GLOOBAL and in Helloo alike
+// (Helloo is built on top of this bundle and draws this same screen): who
+// is signing in, and — where there is somewhere to send them — what to do
+// about a forgotten PIN. One screen, so the two apps never drift apart.
+function PinSignInNote({ who, forgotHref = "", onForgot = null }) {
+  if (!who && !forgotHref && !onForgot) return null;
+  const forgotLink = { color: T.accent, fontWeight: 800, textDecoration: "none", background: "none", border: "none", padding: 0, font: "inherit", cursor: "pointer" };
+  return <div data-testid="pin-signin-note" style={{ textAlign: "center", fontFamily: T.fontBody, lineHeight: 1.5 }}>{who ? <div style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>Signing in as {who}</div> : null}{forgotHref || onForgot ? <div style={{ marginTop: 2, fontSize: 12.5, color: T.inkSoft }}>Forgot it? {onForgot ? <button type="button" onClick={onForgot} style={forgotLink}>Reset it</button> : <a href={forgotHref} target="_blank" rel="noopener" style={forgotLink}>Reset it in <GloobalWordmark /></a>}</div> : null}</div>;
+}
+function LoginAuthScreen({ value, length, onChange, onSubmit, onBack, revealed, onToggleReveal, waking, busy, error = "", note = "The same PIN you pay with on GLOOBAL. Never kept on this phone.", who = null, forgotHref = "", onForgot = null, extra = null }) {
   // The shared PIN screen. `waking` says why a sign-in is slow: the API
   // on Render's free plan sleeps after ~15 minutes, and the first request
   // pays 20–50 seconds to wake it. Saying so turns waiting into knowing.
   return <div
     style={{ position: "fixed", inset: 0, zIndex: 100, background: T.bg, display: "flex", flexDirection: "column", fontFamily: T.fontBody, padding: "calc(14px + env(safe-area-inset-top, 0px)) 18px calc(22px + env(safe-area-inset-bottom, 0px))", boxSizing: "border-box", overflowY: "auto" }}
-  ><GloobalPinPanel title="Enter your PIN" note={note} length={length} value={value} onChange={onChange} onSubmit={onSubmit} onBack={onBack} revealed={revealed} onToggleReveal={onToggleReveal} busy={busy} error={error} footer={waking ? <div role="status" aria-live="polite" data-testid="login-waking" style={{ marginTop: 4, padding: "10px 14px", borderRadius: T.radiusLg, background: T.accentSoft, color: T.accent, fontSize: 12, fontWeight: 700, lineHeight: 1.45, textAlign: "center", maxWidth: 320 }}>Waking the server {"\u2014"} this can take up to a minute the first time today.</div> : extra} /></div>;
+  ><GloobalPinPanel title="Enter your PIN" note={note} length={length} value={value} onChange={onChange} onSubmit={onSubmit} onBack={onBack} revealed={revealed} onToggleReveal={onToggleReveal} busy={busy} error={error} footer={waking ? <div role="status" aria-live="polite" data-testid="login-waking" style={{ marginTop: 4, padding: "10px 14px", borderRadius: T.radiusLg, background: T.accentSoft, color: T.accent, fontSize: 12, fontWeight: 700, lineHeight: 1.45, textAlign: "center", maxWidth: 320 }}>Waking the server {"\u2014"} this can take up to a minute the first time today.</div> : (extra || <PinSignInNote who={who} forgotHref={forgotHref} onForgot={onForgot} />)} /></div>;
 }
 // `notice` carries whatever the real device check had to say — no sensor
 // on this device, a declined prompt, a timed-out one. It is shown on this

@@ -423,6 +423,9 @@ const FRONTEND_MODULES = [
   "screens/DevTools/DiagnosticsScreen.jsx",
   "screens/DevTools/DisputeCasesSection.jsx",
   "components/common/qrScanner.jsx",
+  // The scan screen GLOOBAL and Helloo both draw (Helloo is built on this
+  // bundle). Uses QrCameraScanner above.
+  "features/scan/GloobalScanScreen.jsx",
   "components/common/appMap.jsx",
   "components/common/themeSwitch.jsx",
   "App.jsx",

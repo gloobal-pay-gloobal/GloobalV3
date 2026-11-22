@@ -35,6 +35,11 @@
 //   POST   /api/social/collections/:id/posts { post, on } put a post in or take it out (in = saved)
 //   GET    /api/social/collections/:id      yours, or one shared with a link
 //   POST   /api/social/collections/:id/copy a shared one, saved as your own
+//   POST   /api/social/shared/can           { to:[accountId] } who of these you may share with
+//   POST   /api/social/posts/:id/share      { to:[accountId] } onto their Shared with me shelf (not a chat)
+//   GET    /api/social/shared               what people shared with you, newest first (?count=1: how many are new)
+//   POST   /api/social/shared/seen          you opened the shelf
+//   DELETE /api/social/shared/:postId       take one off your shelf
 //
 // `?as=` acts as a shop you run, the same way Helloo does.
 const mongoose = require('mongoose');
@@ -45,6 +50,9 @@ const SocialPost = require('../models/SocialPost');
 const SocialMedia = require('../models/SocialMedia');
 const SocialHighlight = require('../models/SocialHighlight');
 const SocialCollection = require('../models/SocialCollection');
+const SocialShare = require('../models/SocialShare');
+const HellooSavedContact = require('../models/HellooSavedContact');
+const HellooBlock = require('../models/HellooBlock');
 const SocialLink = require('../models/SocialLink');
 const SocialComment = require('../models/SocialComment');
 const CreatorItem = require('../models/CreatorItem');
@@ -1125,6 +1133,96 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const c = await SocialCollection.create({ owner: me._id, name, emoji: src.emoji || '', posts: keep, copiedFrom: src._id });
         return res.json({ success: true, collection: collectionOut(c.toObject ? c.toObject() : c) });
       } catch (error) { return fail(res, 'copy collection', error); }
+    });
+
+    // ── SHARED WITH ME ──────────────────────────────────────────────────
+    // A post shared with a person lands on their shelf in Saved, not in a
+    // chat. Only a person shares (a shop never reaches people this way),
+    // and only with someone who saved them as a contact or follows them —
+    // so the shelf holds what the receiver's own people sent. The sender
+    // is never told whether it was watched.
+    const SHARE_DAYS = 30;
+    const SHARE_TO_MAX = 10;
+    const shareSince = () => new Date(Date.now() - SHARE_DAYS * 24 * 3600 * 1000);
+    // Of these accounts, the ones the sender may share with.
+    const mayShareWith = async (senderId, ids) => {
+      const list = ids.filter((x) => x && !sameId(x, senderId));
+      if (!list.length) return new Set();
+      const [savedMe, followMe, blocks] = await Promise.all([
+        HellooSavedContact.find({ owner: { $in: list }, contact: senderId }).select('owner').lean(),
+        SocialLink.find({ kind: 'follow', from: { $in: list }, to: senderId }).select('from fromSide toSide').lean(),
+        HellooBlock.find({ $or: [{ userId: senderId, blockedId: { $in: list } }, { userId: { $in: list }, blockedId: senderId }] }).select('userId blockedId').lean(),
+      ]);
+      const blocked = new Set(blocks.flatMap((b) => [String(b.userId), String(b.blockedId)]));
+      const ok = new Set([...savedMe.map((x) => String(x.owner)), ...followMe.filter((l) => (l.fromSide || 'self') === 'self' && (l.toSide || 'self') === 'self').map((l) => String(l.from))]);
+      return new Set([...ok].filter((x) => !blocked.has(x)));
+    };
+    const personOnly = (req, res) => {
+      if (req.socialFace.side === 'shop') { res.status(403).json({ success: false, code: 'person_only', message: 'Switch to your personal profile to share with people.' }); return false; }
+      return true;
+    };
+    app.post('/api/social/shared/can', socialRead, requireAuth, async (req, res) => {
+      try {
+        if (req.socialFace.side === 'shop') return res.json({ success: true, ok: [] });
+        const ids = (Array.isArray((req.body || {}).to) ? req.body.to : []).slice(0, 200).map(oid).filter(Boolean);
+        return res.json({ success: true, ok: [...(await mayShareWith(req.authUser._id, ids))] });
+      } catch (error) { return fail(res, 'share check', error); }
+    });
+    app.post('/api/social/posts/:id/share', socialWrite, requireAuth, async (req, res) => {
+      try {
+        if (!personOnly(req, res)) return undefined;
+        const post = await livePost(req, res);
+        if (!post) return undefined;
+        if (post.story) return res.status(400).json({ success: false, message: 'A status is not shared on.' });
+        const ids = [...new Set((Array.isArray((req.body || {}).to) ? req.body.to : []).map(String))].slice(0, SHARE_TO_MAX).map(oid).filter(Boolean);
+        if (!ids.length) return res.status(400).json({ success: false, message: 'Pick someone to share with.' });
+        const ok = await mayShareWith(req.authUser._id, ids);
+        const sent = []; const refused = [];
+        for (const to of ids) {
+          if (!ok.has(String(to))) { refused.push(String(to)); continue; }
+          const key = { from: req.authUser._id, to, post: post._id };
+          // Shared again: back on their shelf, and new again.
+          const had = await SocialShare.findOne(key);
+          if (had) { await SocialShare.deleteOne(key); }
+          await SocialShare.create(key);
+          sent.push(String(to));
+        }
+        return res.json({ success: true, sent, refused });
+      } catch (error) { return fail(res, 'share', error); }
+    });
+    app.get('/api/social/shared', socialRead, requireAuth, async (req, res) => {
+      try {
+        const me = req.socialOwner._id;
+        const seen = await SocialSeen.findOne({ user: me }).lean();
+        const since = shareSince();
+        const rows = await SocialShare.find({ to: me, hiddenAt: null, createdAt: { $gt: since } }).sort({ createdAt: -1 }).limit(200).lean();
+        const fresh = rows.filter((r) => !(seen && seen.sharedAt) || r.createdAt > seen.sharedAt);
+        if (req.query.count) return res.json({ success: true, new: new Set(fresh.map((r) => String(r.post))).size, count: new Set(rows.map((r) => String(r.post))).size });
+        // One entry per post: everyone who sent it, the newest sender first.
+        const byPost = new Map();
+        for (const r of rows) { const k = String(r.post); if (!byPost.has(k)) byPost.set(k, { post: r.post, at: r.createdAt, from: [], fresh: false }); const e = byPost.get(k); if (!e.from.some((x) => sameId(x, r.from))) e.from.push(r.from); if (fresh.includes(r)) e.fresh = true; }
+        const entries = [...byPost.values()];
+        const live = await SocialPost.find({ _id: { $in: entries.map((e) => e.post) }, removedAt: null, hiddenAt: null, takenBackAt: null }).lean();
+        const out = await postsOut(live, { id: me, side: 'self' });
+        const postOf = new Map(out.map((p) => [p.id, p]));
+        const who = await cards(entries.flatMap((e) => e.from));
+        const items = entries.map((e) => ({ post: postOf.get(String(e.post)), at: e.at, new: e.fresh, by: e.from.map((id) => cardOf(who.get(String(id)), 'self')).filter(Boolean) })).filter((x) => x.post && x.by.length);
+        return res.json({ success: true, items, new: items.filter((x) => x.new).length, days: SHARE_DAYS });
+      } catch (error) { return fail(res, 'shared', error); }
+    });
+    app.post('/api/social/shared/seen', socialWrite, requireAuth, async (req, res) => {
+      try {
+        await SocialSeen.updateOne({ user: req.socialOwner._id }, { $set: { sharedAt: new Date() } }, { upsert: true });
+        return res.json({ success: true });
+      } catch (error) { return fail(res, 'shared seen', error); }
+    });
+    app.delete('/api/social/shared/:postId', socialWrite, requireAuth, async (req, res) => {
+      try {
+        const post = oid(req.params.postId);
+        if (!post) return res.status(404).json({ success: false, message: 'Not here.' });
+        await SocialShare.updateMany({ to: req.socialOwner._id, post }, { $set: { hiddenAt: new Date() } });
+        return res.json({ success: true });
+      } catch (error) { return fail(res, 'shared', error); }
     });
 
     // Reels, or videos, one after another: the newest first, from everyone

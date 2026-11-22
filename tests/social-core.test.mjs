@@ -80,6 +80,9 @@ const Seen = stub('./models/SocialSeen', model('seen'));
 const Item = stub('./models/CreatorItem', model('item'));
 const Highlight = stub('./models/SocialHighlight', model('highlight'));
 const Collection = stub('./models/SocialCollection', model('collection'));
+const Share = stub('./models/SocialShare', model('share'));
+const SavedContact = stub('./models/HellooSavedContact', model('savedcontact'));
+const Block = stub('./models/HellooBlock', model('block'));
 // Who opened what. aggregate() answers the one question social.js asks it:
 // per first picture, how many different people (not its owner) opened it.
 const View = stub('./models/ContentView', Object.assign(model('view'), {}));
@@ -573,4 +576,34 @@ test('collections: saved posts under your own names, shared with a link, copied 
   await call('delete /api/social/collections/:id', ravi, { params: { id: learn.id } });
   const after = (await call('get /api/social/collections', ravi)).body;
   assert.equal(after.collections.length, 1); assert.equal(after.saved, 1);
+});
+
+test('shared with me: a post lands on a friend\'s shelf, only from people they saved or follow, never from a shop', async () => {
+  const v = await upload(meera, MP4);
+  const reel = (await call('post /api/social/posts', meera, { body: { media: [v.body.id], caption: 'Watch this', format: 'reel' } })).body.post;
+  Share.rows.length = 0; Link.rows.splice(0, Link.rows.length, ...Link.rows.filter((l) => l.kind !== 'follow'));
+  // Ravi has not saved Asha and does not follow her: refused.
+  let r = await call('post /api/social/posts/:id/share', asha, { params: { id: reel.id }, body: { to: [String(ravi._id)] } });
+  assert.deepEqual([r.body.sent, r.body.refused], [[], [String(ravi._id)]]);
+  // He saves her as a contact: now it goes through, and a second friend's share of the same reel joins it.
+  SavedContact.rows.push({ _id: id(), owner: ravi._id, contact: asha._id });
+  assert.deepEqual((await call('post /api/social/shared/can', asha, { body: { to: [String(ravi._id), String(meera._id)] } })).body.ok, [String(ravi._id)]);
+  r = await call('post /api/social/posts/:id/share', asha, { params: { id: reel.id }, body: { to: [String(ravi._id)] } });
+  assert.deepEqual(r.body.sent, [String(ravi._id)]);
+  await call('post /api/social/follow', ravi, { body: { to: String(meera._id), on: true, side: 'self' } });
+  await call('post /api/social/posts/:id/share', meera, { params: { id: reel.id }, body: { to: [String(ravi._id)] } });
+  assert.equal((await call('get /api/social/shared', ravi, { query: { count: '1' } })).body.new, 1);
+  const shelf = (await call('get /api/social/shared', ravi)).body;
+  assert.equal(shelf.items.length, 1, 'one entry for the reel');
+  assert.equal(shelf.items[0].post.id, reel.id); assert.equal(shelf.items[0].by.length, 2); assert.equal(shelf.items[0].new, true);
+  // Opening the shelf: nothing is new any more. The senders learn nothing.
+  await call('post /api/social/shared/seen', ravi);
+  assert.equal((await call('get /api/social/shared', ravi, { query: { count: '1' } })).body.new, 0);
+  assert.equal((await call('get /api/social/shared', asha)).body.items.length, 0);
+  // A shop never shares to a person's shelf; a block stops it; taking it off the shelf hides it.
+  assert.equal((await call('post /api/social/posts/:id/share', ashaShop, { params: { id: reel.id }, body: { to: [String(ravi._id)] } })).body.code, 'person_only');
+  Block.rows.push({ _id: id(), userId: ravi._id, blockedId: asha._id });
+  assert.deepEqual((await call('post /api/social/posts/:id/share', asha, { params: { id: reel.id }, body: { to: [String(ravi._id)] } })).body.refused, [String(ravi._id)]);
+  await call('delete /api/social/shared/:postId', ravi, { params: { postId: reel.id } });
+  assert.equal((await call('get /api/social/shared', ravi)).body.items.length, 0);
 });

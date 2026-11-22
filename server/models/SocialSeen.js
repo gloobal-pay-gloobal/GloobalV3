@@ -6,6 +6,8 @@ const socialSeenSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
     activityAt: { type: Date, default: null },
+    // When they last opened Shared with me: what came after is new.
+    sharedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

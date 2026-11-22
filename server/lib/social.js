@@ -505,6 +505,20 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       if (personCheckedUntil && !until) return res.status(403).json({ success: false, code: 'person_check', message: "Confirm it's you with fingerprint / Face ID to see photos and videos." });
       return res.json({ success: true, ...viewPass.issue(req.authUser._id, until) });
     });
+    // A profile's picture or cover, for a signed-in account, with no
+    // "Confirm it's you" first: it is a face beside a name, like the GLOOBAL
+    // photo in a chat, not a post. Sent as data inside the signed-in
+    // request, so it is still no open link. Nothing else is served here.
+    app.get('/api/social/media/:id/face', socialRead, requireAuth, async (req, res) => {
+      try {
+        const id = oid(req.params.id);
+        const m = id ? await SocialMedia.findById(id).select('kind mime data cover post ad').lean() : null;
+        if (!m || !m.cover || m.post || m.ad || m.kind !== 'photo') return res.status(404).json({ success: false, message: 'Not found.' });
+        const buf = Buffer.from(m.data.buffer || m.data);
+        res.set('Cache-Control', 'private, max-age=300');
+        return res.json({ success: true, data: `data:${m.mime};base64,${buf.toString('base64')}` });
+      } catch (error) { return fail(res, 'profile picture', error); }
+    });
     app.get('/api/social/media/:id', socialRead, sealed, async (req, res) => {
       try {
         const id = oid(req.params.id);

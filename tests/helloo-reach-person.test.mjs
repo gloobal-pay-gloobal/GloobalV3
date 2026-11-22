@@ -89,3 +89,27 @@ test('calls: free when known; a price per minute when set; otherwise a request',
   saved = [['me', 'someone']];
   assert.equal((await chats.callRule('me', 'someone', 'self', 'self')).free, true, 'a friend calls free, even when strangers pay');
 });
+
+test('a restaurant does not reach you free because you reached it free, bought from it or paid it', async () => {
+  saved = []; paidPairs = []; row = null;
+  users.resto = { _id: 'resto', shopOwnerId: 'rowner', creatorProfile: { handle: 'rasoi.ghar' } };
+  // You write to the restaurant: free.
+  assert.equal((await chats.reachRule('resto', 'me', 'self', '')).free, true, 'you reach the shop free');
+  // It writes to you: not free, even after you paid it.
+  paidPairs = [['me', 'resto']];
+  const back = await chats.reachRule('me', 'resto', 'shop', 'self');
+  assert.equal(back.free, false, 'paying a shop does not let it reach you free');
+  assert.equal(back.unknown, true, 'with nothing set it asks first');
+  // With a price for businesses: it pays that.
+  row = { userId: 'me', people: { price: 0 }, business: { price: 2 }, allowed: [], never: [], prices: [] };
+  const paid = await chats.reachRule('me', 'resto', 'shop', 'self');
+  assert.equal(paid.free, false); assert.equal(paid.kind, 'business'); assert.equal(paid.price, 2);
+  // You save it, or Allow it: then free.
+  row = null; saved = [['me', 'resto']];
+  assert.equal((await chats.reachRule('me', 'resto', 'shop', 'self')).free, true, 'saved by you: free');
+  saved = []; row = { userId: 'me', people: { price: 0 }, business: { price: 2 }, allowed: ['resto'], never: [], prices: [] };
+  assert.equal((await chats.reachRule('me', 'resto', 'shop', 'self')).free, true, 'allowed by you: free');
+  // A person you paid still reaches you free (people are not shops).
+  row = null; saved = []; paidPairs = [['anita', 'me']];
+  assert.equal((await chats.reachRule('me', 'anita', 'self', 'self')).free, true);
+});

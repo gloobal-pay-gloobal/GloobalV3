@@ -701,10 +701,11 @@ function createHelloo(deps) {
   // only ask. Payments (money sent in the chat) are never charged.
   // Does the receiver know the sender? They saved them, or the two have
   // paid each other on GLOOBAL. (Writing to someone allows them, below.)
-  async function knows(receiverId, senderId) {
+  async function knows(receiverId, senderId, savedOnly = false) {
     const receiver = await User.findById(receiverId).select('shopOwnerId').lean();
     const person = (receiver && receiver.shopOwnerId) || receiverId;
     if (await HellooSavedContact.exists({ owner: person, contact: senderId })) return true;
+    if (savedOnly) return false;
     // Money for reaching them (a paid message or call) does not count: a
     // fan who paid once is still a fan, not a friend.
     return Boolean(await Transaction.exists({ status: 'success', 'metadata.payMethod': { $nin: ['helloo-reach', 'helloo-call'] }, $or: [{ fromUserId: receiverId, toUserId: senderId }, { fromUserId: senderId, toUserId: receiverId }] }));
@@ -721,8 +722,16 @@ function createHelloo(deps) {
     if (reach && (reach.allowed || []).some((a) => sameId(a, senderId))) return { free: true };
     // Set just for this sender: never, or a price of their own.
     if (reach && (reach.never || []).some((a) => sameId(a, senderId))) return { free: false, closed: true, never: true, kind: 'people', price: 0, currency: await currencyOf(receiverId) };
+    // A shop writing to a person: it is never free just because the person
+    // wrote to it, bought from it or paid it — reaching a restaurant free
+    // does not let the restaurant reach you free. Only the person saving it
+    // (or Allow, above) makes it free; otherwise it pays their price for
+    // businesses, or asks.
+    const senderUser = await User.findById(senderId).select('creatorProfile.handle shopOwnerId').lean();
+    const senderIsShop = Boolean(senderUser && (senderUser.shopOwnerId || (senderUser.creatorProfile && senderUser.creatorProfile.handle && senderSide !== 'self')));
+    const toPerson = await reachedAsPerson(receiverId, receiverSide);
     // Saved by them, or someone they have paid or been paid by: free.
-    if (await knows(receiverId, senderId)) return { free: true };
+    if (await knows(receiverId, senderId, senderIsShop && toPerson)) return { free: true };
     if (!reach) {
       // Nothing set: a person takes a first message from a stranger only as
       // a request (a friend's friend who got the number). A shop takes it.
@@ -731,9 +740,8 @@ function createHelloo(deps) {
     }
     const own = (reach.prices || []).find((p) => sameId(p.userId, senderId));
     if (own && own.price > 0) return { free: false, closed: false, kind: 'people', price: Math.min(REACH_MAX, reachTenths(own.price)), own: true, currency: await currencyOf(receiverId) };
-    const sender = await User.findById(senderId).select('creatorProfile.handle').lean();
     // Someone writing from their personal side is a person, shop or not.
-    const kind = sender?.creatorProfile?.handle && senderSide !== 'self' ? 'business' : 'people';
+    const kind = senderIsShop ? 'business' : 'people';
     const group = groupOut(reach[kind]);
     if (group.closed) return { free: false, closed: true, kind, price: 0, currency: await currencyOf(receiverId) };
     if (group.price > 0) return { free: false, closed: false, kind, price: group.price, currency: await currencyOf(receiverId) };

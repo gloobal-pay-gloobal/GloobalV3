@@ -178,8 +178,14 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     const offRows = await User.find({ _id: { $in: [...new Set(posts.map((p) => String(p.author)))] }, $or: [{ 'socialOn.self': false }, { 'socialOn.shop': false }] }).select('_id shopOwnerId socialOn').lean();
     const off = new Map(offRows.map((u) => [String(u._id), u]));
     posts = posts.filter((p) => { const u = off.get(String(p.author)); return !u || u.socialOn[sideOf(u, p.side)] !== false || sameId(p.author, meId); });
-    const liked = await SocialLink.find({ kind: 'like', from: meId, to: { $in: posts.map((p) => p._id) } }).select('to').lean();
+    const [liked, reposted, saved] = await Promise.all([
+      SocialLink.find({ kind: 'like', from: meId, to: { $in: posts.map((p) => p._id) } }).select('to').lean(),
+      SocialLink.find({ kind: 'repost', from: meId, fromSide: meFace.side, to: { $in: posts.map((p) => p._id) } }).select('to').lean(),
+      SocialLink.find({ kind: 'save', from: meId, to: { $in: posts.map((p) => p._id) } }).select('to').lean(),
+    ]);
     const likedSet = new Set(liked.map((l) => String(l.to)));
+    const repostedSet = new Set(reposted.map((l) => String(l.to)));
+    const savedSet = new Set(saved.map((l) => String(l.to)));
     // Views: the different verified people who opened it (its first picture
     // or its video), never counting its author.
     const firsts = posts.map((p) => (p.media || [])[0] && p.media[0].id).filter(Boolean);
@@ -206,7 +212,11 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       likes: p.likeCount || 0,
       comments: p.commentCount || 0,
       views: views.get(String((p.media || [])[0] && p.media[0].id)) || 0,
+      reposts: p.repostCount || 0,
+      saves: p.saveCount || 0,
       liked: likedSet.has(String(p._id)),
+      reposted: repostedSet.has(String(p._id)),
+      saved: savedSet.has(String(p._id)),
       mine: sameId(p.author, meId),
       at: p.createdAt,
     })).filter((p) => p.author);
@@ -671,7 +681,24 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         if (own.length < PAGE && !req.query.circleOnly) {
           more = await SocialPost.find(visible(Object.assign({ $nor: circleOr }, req.query.moreBefore ? { createdAt: { $lt: new Date(String(req.query.moreBefore)) } } : {}))).sort({ createdAt: -1 }).limit(PAGE - own.length).lean();
         }
-        const posts = [...(await postsOut(own, req.socialFace)), ...(await postsOut(more, req.socialFace)).map((p) => Object.assign(p, { suggested: true }))];
+        // What the people you follow shared again: in among their own posts,
+        // marked with who shared it.
+        const followFaces = follows.map((f) => ({ from: f.to, fromSide: f.toSide }));
+        const repostLinks = followFaces.length ? await SocialLink.find(Object.assign({ kind: 'repost', $or: followFaces }, when)).sort({ createdAt: -1 }).limit(PAGE).lean() : [];
+        const repostPosts = repostLinks.length ? await SocialPost.find(visible({ _id: { $in: repostLinks.map((l) => l.to) } })).lean() : [];
+        const repostOut = await postsOut(repostPosts, req.socialFace);
+        const sharerCards = await cards(repostLinks.map((l) => l.from));
+        const shown = new Set(own.map((p) => String(p._id)));
+        const shared = [];
+        for (const l of repostLinks) {
+          const po = repostOut.find((x) => x.id === String(l.to));
+          if (!po || shown.has(po.id) || po.mine) continue;
+          shown.add(po.id);
+          shared.push(Object.assign({}, po, { repostedBy: cardOf(sharerCards.get(String(l.from)), l.fromSide), repostedAt: l.createdAt }));
+        }
+        const mine = await postsOut(own, req.socialFace);
+        const merged = [...mine, ...shared].sort((a, b) => new Date(b.repostedAt || b.at) - new Date(a.repostedAt || a.at));
+        const posts = [...merged, ...(await postsOut(more, req.socialFace)).map((p) => Object.assign(p, { suggested: true }))];
         return res.json({ success: true, posts, before: own.length ? own[own.length - 1].createdAt : null, moreBefore: more.length ? more[more.length - 1].createdAt : null, end: own.length < PAGE && more.length < PAGE - own.length });
       } catch (error) { return fail(res, 'feed', error); }
     });
@@ -890,6 +917,84 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const fresh = await SocialPost.findById(post._id).select('likeCount').lean();
         return res.json({ success: true, liked: on, likes: fresh ? fresh.likeCount : 0 });
       } catch (error) { return fail(res, 'like', error); }
+    });
+
+    // Share again to your followers (as the face you are on), or keep for
+    // later (only you see what you saved).
+    app.post('/api/social/posts/:id/repost', socialWrite, requireAuth, requireOn, async (req, res) => {
+      try {
+        const post = await livePost(req, res);
+        if (!post) return undefined;
+        if (post.story) return res.status(400).json({ success: false, message: 'A status is not shared again.' });
+        if (sameId(post.author, req.authUser._id) && (post.side || 'self') === req.socialFace.side) return res.status(400).json({ success: false, message: 'It is already on your profile.' });
+        const on = (req.body || {}).on !== false;
+        const link = { kind: 'repost', from: req.authUser._id, fromSide: req.socialFace.side, to: post._id, toSide: 'self' };
+        await readyFaces();
+        if (on) { const r = await SocialLink.updateOne(link, { $setOnInsert: link }, { upsert: true }); if (r.upsertedCount) await SocialPost.updateOne({ _id: post._id }, { $inc: { repostCount: 1 } }); }
+        else { const r = await SocialLink.deleteOne(link); if (r.deletedCount) await SocialPost.updateOne({ _id: post._id, repostCount: { $gt: 0 } }, { $inc: { repostCount: -1 } }); }
+        const fresh = await SocialPost.findById(post._id).select('repostCount').lean();
+        return res.json({ success: true, reposted: on, reposts: fresh ? fresh.repostCount : 0 });
+      } catch (error) { return fail(res, 'repost', error); }
+    });
+    app.post('/api/social/posts/:id/save', socialWrite, requireAuth, async (req, res) => {
+      try {
+        const post = await livePost(req, res);
+        if (!post) return undefined;
+        const on = (req.body || {}).on !== false;
+        const link = { kind: 'save', from: req.authUser._id, fromSide: 'self', to: post._id, toSide: 'self' };
+        await readyFaces();
+        if (on) { const r = await SocialLink.updateOne(link, { $setOnInsert: link }, { upsert: true }); if (r.upsertedCount) await SocialPost.updateOne({ _id: post._id }, { $inc: { saveCount: 1 } }); }
+        else { const r = await SocialLink.deleteOne(link); if (r.deletedCount) await SocialPost.updateOne({ _id: post._id, saveCount: { $gt: 0 } }, { $inc: { saveCount: -1 } }); }
+        const fresh = await SocialPost.findById(post._id).select('saveCount').lean();
+        return res.json({ success: true, saved: on, saves: fresh ? fresh.saveCount : 0 });
+      } catch (error) { return fail(res, 'save', error); }
+    });
+
+    // Reels, or videos, one after another: the newest first, from everyone
+    // (the people you follow are not left out of it either).
+    app.get('/api/social/reels', socialRead, requireAuth, async (req, res) => {
+      try {
+        const format = req.query.format === 'video' ? 'video' : 'reel';
+        const before = beforeOf(req);
+        const rows = await SocialPost.find(visible(Object.assign({ format }, before ? { createdAt: { $lt: before } } : {}))).sort({ createdAt: -1 }).limit(PAGE).lean();
+        return res.json({ success: true, format, posts: await postsOut(rows, req.socialFace), before: rows.length ? rows[rows.length - 1].createdAt : null, end: rows.length < PAGE });
+      } catch (error) { return fail(res, 'reels', error); }
+    });
+
+    // My activity: what you liked, commented on, shared again, saved, and
+    // where you were mentioned — each a list, newest first.
+    app.get('/api/social/my-activity', socialRead, requireAuth, async (req, res) => {
+      try {
+        const type = String(req.query.type || 'likes');
+        const me = req.authUser; const face = req.socialFace;
+        let items = [];
+        const postsBy = async (ids) => { const rows = await SocialPost.find({ _id: { $in: ids }, removedAt: null, hiddenAt: null, takenBackAt: null }).lean(); const out = await postsOut(rows, face); return new Map(out.map((p) => [p.id, p])); };
+        if (type === 'likes' || type === 'reposts' || type === 'saved') {
+          const kind = type === 'likes' ? 'like' : type === 'reposts' ? 'repost' : 'save';
+          const q = Object.assign({ kind, from: me._id }, kind === 'repost' ? { fromSide: face.side } : {});
+          const links = await SocialLink.find(q).sort({ createdAt: -1 }).limit(60).lean();
+          const byId = await postsBy(links.map((l) => l.to));
+          items = links.map((l) => ({ at: l.createdAt, post: byId.get(String(l.to)) })).filter((x) => x.post);
+        } else if (type === 'comments') {
+          const list = await SocialComment.find({ author: me._id, side: face.side, removedAt: null }).sort({ createdAt: -1 }).limit(60).lean();
+          const byId = await postsBy(list.map((c) => c.post));
+          items = list.map((c) => ({ at: c.createdAt, text: c.text, post: byId.get(String(c.post)) })).filter((x) => x.post);
+        } else if (type === 'mentions') {
+          const mine = { 'mentions.account': me._id, 'mentions.side': face.side };
+          const [inPosts, inComments] = await Promise.all([
+            SocialPost.find(visible(mine)).sort({ createdAt: -1 }).limit(40).lean(),
+            SocialComment.find(Object.assign({ removedAt: null }, mine)).sort({ createdAt: -1 }).limit(40).lean(),
+          ]);
+          const out = await postsOut(inPosts, face);
+          const byId = await postsBy(inComments.map((c) => c.post));
+          const who = await cards(inComments.map((c) => c.author));
+          items = [
+            ...out.map((p) => ({ at: p.at, post: p, by: p.author, where: 'post' })),
+            ...inComments.map((c) => ({ at: c.createdAt, text: c.text, post: byId.get(String(c.post)), by: cardOf(who.get(String(c.author)), c.side), where: 'comment' })).filter((x) => x.post && x.by),
+          ].sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 60);
+        } else return res.status(400).json({ success: false, message: 'Pick likes, comments, reposts, saved or mentions.' });
+        return res.json({ success: true, type, items });
+      } catch (error) { return fail(res, 'my activity', error); }
     });
 
     // ── COMMENTS ──────────────────────────────────────────────────────

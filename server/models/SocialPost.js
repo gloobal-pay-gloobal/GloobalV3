@@ -40,6 +40,9 @@ const socialPostSchema = new mongoose.Schema(
     expiresAt: { type: Date, default: null },
     likeCount: { type: Number, default: 0 },
     commentCount: { type: Number, default: 0 },
+    // Shared again by others to their followers, and kept by people for later.
+    repostCount: { type: Number, default: 0 },
+    saveCount: { type: Number, default: 0 },
     // Taken down by its author, or hidden after reports until someone looks.
     removedAt: { type: Date, default: null },
     hiddenAt: { type: Date, default: null },

@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 // per pair, which the unique index holds.
 const socialLinkSchema = new mongoose.Schema(
   {
-    kind: { type: String, enum: ['follow', 'like', 'report'], required: true },
+    kind: { type: String, enum: ['follow', 'like', 'report', 'repost', 'save'], required: true },
     from: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     to: { type: mongoose.Schema.Types.ObjectId, required: true },
     // A follow is between two faces, not two accounts: one GLOOBAL ID can be

@@ -479,3 +479,44 @@ test('a person and the shop on the same account are followed apart, both ways', 
   assert.equal(asPerson.body.profile.isFollowing, false, 'Dev the person is not following');
   assert.equal(asShop.body.profile.isFollowing, true, "Dev's shop is");
 });
+
+test('repost and save: counted once, shown to followers, and in My activity', async () => {
+  // Meera posts a reel; Ravi likes, comments, reposts and saves it.
+  const v = await upload(meera, MP4);
+  const reel = (await call('post /api/social/posts', meera, { body: { media: [v.body.id], caption: 'chai time', format: 'reel' } })).body.post;
+  const repost = (on, who = ravi) => call('post /api/social/posts/:id/repost', who, { params: { id: reel.id }, body: { on } });
+  const save = (on) => call('post /api/social/posts/:id/save', ravi, { params: { id: reel.id }, body: { on } });
+  await repost(true); assert.equal((await repost(true)).body.reposts, 1, 'once');
+  await save(true); assert.equal((await save(true)).body.saves, 1, 'once');
+  assert.equal((await repost(true, meera)).status, 400, 'not your own');
+  await call('post /api/social/posts/:id/like', ravi, { params: { id: reel.id }, body: { on: true } });
+  await call('post /api/social/posts/:id/comments', ravi, { params: { id: reel.id }, body: { text: 'so good' } });
+  // Asha follows Ravi: Meera's reel reaches her, marked as Ravi's repost.
+  await call('post /api/social/follow', asha, { body: { to: String(ravi._id), side: 'self' } });
+  const feed = await call('get /api/social/feed', asha, { query: { circleOnly: '1' } });
+  const shared = feed.body.posts.find((p) => p.id === reel.id);
+  assert.ok(shared && shared.repostedBy && shared.repostedBy.gloobalId === ravi.symbolId, 'shared by Ravi');
+  assert.equal(shared.reposts, 1); assert.equal(shared.saves, 1);
+  // Ravi sees his own flags, and his activity lists.
+  const seen = (await call('get /api/social/posts/:id', ravi, { params: { id: reel.id } })).body.post;
+  assert.equal(seen.reposted, true); assert.equal(seen.saved, true); assert.equal(seen.liked, true);
+  for (const [type, check] of [['likes', (i) => i.post.id === reel.id], ['comments', (i) => i.post.id === reel.id && i.text === 'so good'], ['reposts', (i) => i.post.id === reel.id], ['saved', (i) => i.post.id === reel.id]]) {
+    const r = await call('get /api/social/my-activity', ravi, { query: { type } });
+    assert.ok(r.body.items.some(check), type);
+  }
+  // Reels: only reels.
+  const reels = await call('get /api/social/reels', ravi, { query: { format: 'reel' } });
+  assert.ok(reels.body.posts.length && reels.body.posts.every((p) => p.format === 'reel'));
+  const videos = await call('get /api/social/reels', ravi, { query: { format: 'video' } });
+  assert.ok(videos.body.posts.every((p) => p.format === 'video'));
+  // Undo: gone from counts and lists.
+  assert.equal((await repost(false)).body.reposts, 0); assert.equal((await save(false)).body.saves, 0);
+  assert.equal((await call('get /api/social/my-activity', ravi, { query: { type: 'saved' } })).body.items.length, 0);
+});
+
+test('My activity: where you were mentioned, in a post or a comment', async () => {
+  const p = await upload(asha, JPEG);
+  await call('post /api/social/posts', asha, { body: { media: [p.body.id], caption: 'with @Meera Iyer', mentions: [{ accountId: String(meera._id), side: 'self', label: 'Meera Iyer' }] } });
+  const r = await call('get /api/social/my-activity', meera, { query: { type: 'mentions' } });
+  assert.ok(r.body.items.some((i) => i.where === 'post' && i.by.name && /Asha/.test(i.by.name)), JSON.stringify(r.body.items.map((i) => [i.where, i.by])));
+});

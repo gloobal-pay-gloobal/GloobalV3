@@ -28,6 +28,13 @@
 //   DELETE /api/social/comments/:id         yours, or any on your post
 //   POST   /api/social/posts/:id/report     { reason }
 //   GET    /api/social/my-items             what your shops sell, to tag in a post
+//   GET    /api/social/collections?post=    your collections of saved posts (has: this post is in it)
+//   POST   /api/social/collections          { name, emoji }
+//   PUT    /api/social/collections/:id      { name, emoji, shared }
+//   DELETE /api/social/collections/:id      the collection (the posts stay saved)
+//   POST   /api/social/collections/:id/posts { post, on } put a post in or take it out (in = saved)
+//   GET    /api/social/collections/:id      yours, or one shared with a link
+//   POST   /api/social/collections/:id/copy a shared one, saved as your own
 //
 // `?as=` acts as a shop you run, the same way Helloo does.
 const mongoose = require('mongoose');
@@ -37,6 +44,7 @@ const SocialSeen = require('../models/SocialSeen');
 const SocialPost = require('../models/SocialPost');
 const SocialMedia = require('../models/SocialMedia');
 const SocialHighlight = require('../models/SocialHighlight');
+const SocialCollection = require('../models/SocialCollection');
 const SocialLink = require('../models/SocialLink');
 const SocialComment = require('../models/SocialComment');
 const CreatorItem = require('../models/CreatorItem');
@@ -979,10 +987,144 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const link = { kind: 'save', from: req.authUser._id, fromSide: 'self', to: post._id, toSide: 'self' };
         await readyFaces();
         if (on) { const r = await SocialLink.updateOne(link, { $setOnInsert: link }, { upsert: true }); if (r.upsertedCount) await SocialPost.updateOne({ _id: post._id }, { $inc: { saveCount: 1 } }); }
-        else { const r = await SocialLink.deleteOne(link); if (r.deletedCount) await SocialPost.updateOne({ _id: post._id, saveCount: { $gt: 0 } }, { $inc: { saveCount: -1 } }); }
+        else { const r = await SocialLink.deleteOne(link); if (r.deletedCount) await SocialPost.updateOne({ _id: post._id, saveCount: { $gt: 0 } }, { $inc: { saveCount: -1 } }); await SocialCollection.updateMany({ owner: req.authUser._id, posts: post._id }, { $pull: { posts: post._id } }); }
         const fresh = await SocialPost.findById(post._id).select('saveCount').lean();
         return res.json({ success: true, saved: on, saves: fresh ? fresh.saveCount : 0 });
       } catch (error) { return fail(res, 'save', error); }
+    });
+
+    // ── COLLECTIONS ─────────────────────────────────────────────────────
+    // Saved posts under names the person chose. Putting a post in a
+    // collection saves it; unsaving a post takes it out of every one.
+    const COLLECTIONS_MAX = 40;
+    const COLLECTION_POSTS_MAX = 500;
+    const cleanName = (v) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 24);
+    const cleanEmoji = (v) => String(v || '').trim().slice(0, 8);
+    const savePost = async (meId, postId) => {
+      const link = { kind: 'save', from: meId, fromSide: 'self', to: postId, toSide: 'self' };
+      await readyFaces();
+      const r = await SocialLink.updateOne(link, { $setOnInsert: link }, { upsert: true });
+      if (r.upsertedCount) await SocialPost.updateOne({ _id: postId }, { $inc: { saveCount: 1 } });
+    };
+    const livePostsOf = async (ids, face) => {
+      if (!ids.length) return [];
+      const rows = await SocialPost.find({ _id: { $in: ids }, removedAt: null, hiddenAt: null, takenBackAt: null, story: { $ne: true } }).lean();
+      const out = await postsOut(rows, face);
+      const byId = new Map(out.map((p) => [p.id, p]));
+      return ids.map((id) => byId.get(String(id))).filter(Boolean);
+    };
+    const collectionOut = (c, cover, extra) => Object.assign({ id: String(c._id), name: c.name, emoji: c.emoji || '', count: (c.posts || []).length, shared: Boolean(c.shared), cover: cover || null, at: c.updatedAt || c.createdAt }, extra || {});
+    const mineCollection = async (req, res) => {
+      const id = oid(req.params.id);
+      const c = id ? await SocialCollection.findOne({ _id: id, owner: req.authUser._id }) : null;
+      if (!c) { res.status(404).json({ success: false, message: 'That collection is not here.' }); return null; }
+      return c;
+    };
+    app.get('/api/social/collections', socialRead, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser;
+        const list = await SocialCollection.find({ owner: me._id }).sort({ updatedAt: -1 }).limit(COLLECTIONS_MAX).lean();
+        const covers = await livePostsOf([...new Set(list.map((c) => (c.posts || [])[0]).filter(Boolean).map(String))].map(oid), req.socialFace);
+        const coverOf = new Map(covers.map((p) => [p.id, p]));
+        const inPost = oid(req.query.post);
+        const saved = await SocialLink.countDocuments({ kind: 'save', from: me._id });
+        const lastSaved = await SocialLink.findOne({ kind: 'save', from: me._id }).sort({ createdAt: -1 }).lean();
+        const allCover = lastSaved ? (await livePostsOf([lastSaved.to], req.socialFace))[0] || null : null;
+        return res.json({
+          success: true,
+          saved, cover: allCover,
+          collections: list.map((c) => collectionOut(c, coverOf.get(String((c.posts || [])[0])) || null, inPost ? { has: (c.posts || []).some((x) => sameId(x, inPost)) } : null)),
+        });
+      } catch (error) { return fail(res, 'collections', error); }
+    });
+    app.post('/api/social/collections', socialWrite, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser;
+        const name = cleanName((req.body || {}).name);
+        if (!name) return res.status(400).json({ success: false, message: 'Give it a name.' });
+        const mine = await SocialCollection.find({ owner: me._id }).select('name').lean();
+        if (mine.length >= COLLECTIONS_MAX) return res.status(400).json({ success: false, message: `Up to ${COLLECTIONS_MAX} collections.` });
+        if (mine.some((c) => c.name.toLowerCase() === name.toLowerCase())) return res.status(409).json({ success: false, code: 'name_taken', message: 'You already have one with that name.' });
+        const c = await SocialCollection.create({ owner: me._id, name, emoji: cleanEmoji((req.body || {}).emoji), posts: [] });
+        const first = oid((req.body || {}).post);
+        if (first) {
+          const post = await SocialPost.findOne({ _id: first, removedAt: null, hiddenAt: null }).select('_id').lean();
+          if (post) { await savePost(me._id, post._id); c.posts = [post._id]; await c.save(); }
+        }
+        return res.json({ success: true, collection: collectionOut(c.toObject ? c.toObject() : c, null, first ? { has: (c.posts || []).length > 0 } : null) });
+      } catch (error) { return fail(res, 'new collection', error); }
+    });
+    app.put('/api/social/collections/:id', socialWrite, requireAuth, async (req, res) => {
+      try {
+        const c = await mineCollection(req, res);
+        if (!c) return undefined;
+        const b = req.body || {};
+        if (b.name !== undefined) {
+          const name = cleanName(b.name);
+          if (!name) return res.status(400).json({ success: false, message: 'Give it a name.' });
+          const others = await SocialCollection.find({ owner: req.authUser._id }).select('name').lean();
+          if (others.some((x) => !sameId(x._id, c._id) && x.name.toLowerCase() === name.toLowerCase())) return res.status(409).json({ success: false, code: 'name_taken', message: 'You already have one with that name.' });
+          c.name = name;
+        }
+        if (b.emoji !== undefined) c.emoji = cleanEmoji(b.emoji);
+        if (b.shared !== undefined) c.shared = b.shared === true;
+        await c.save();
+        return res.json({ success: true, collection: collectionOut(c.toObject ? c.toObject() : c) });
+      } catch (error) { return fail(res, 'collection', error); }
+    });
+    app.delete('/api/social/collections/:id', socialWrite, requireAuth, async (req, res) => {
+      try {
+        const c = await mineCollection(req, res);
+        if (!c) return undefined;
+        await SocialCollection.deleteOne({ _id: c._id, owner: req.authUser._id });
+        return res.json({ success: true });
+      } catch (error) { return fail(res, 'collection', error); }
+    });
+    app.post('/api/social/collections/:id/posts', socialWrite, requireAuth, async (req, res) => {
+      try {
+        const c = await mineCollection(req, res);
+        if (!c) return undefined;
+        const postId = oid((req.body || {}).post);
+        const post = postId ? await SocialPost.findOne({ _id: postId, removedAt: null, hiddenAt: null }).select('_id story').lean() : null;
+        if (!post || post.story) return res.status(404).json({ success: false, message: 'That post is not here.' });
+        const on = (req.body || {}).on !== false;
+        const rest = (c.posts || []).filter((x) => !sameId(x, post._id));
+        if (on) {
+          if (rest.length >= COLLECTION_POSTS_MAX) return res.status(400).json({ success: false, message: `Up to ${COLLECTION_POSTS_MAX} in one collection.` });
+          await savePost(req.authUser._id, post._id);
+          c.posts = [post._id, ...rest];
+        } else c.posts = rest;
+        await c.save();
+        return res.json({ success: true, in: on, count: c.posts.length, saved: true });
+      } catch (error) { return fail(res, 'collection post', error); }
+    });
+    app.get('/api/social/collections/:id', socialRead, requireAuth, async (req, res) => {
+      try {
+        const id = oid(req.params.id);
+        const c = id ? await SocialCollection.findById(id).lean() : null;
+        const mine = Boolean(c && sameId(c.owner, req.authUser._id));
+        if (!c || (!mine && !c.shared)) return res.status(404).json({ success: false, code: 'collection_not_shared', message: 'That collection is private or gone.' });
+        const posts = await livePostsOf(c.posts || [], req.socialFace);
+        const owner = mine ? null : cardOf((await cards([c.owner])).get(String(c.owner)), 'self');
+        return res.json({ success: true, collection: collectionOut(c, posts[0] || null, { mine, owner }), posts });
+      } catch (error) { return fail(res, 'collection', error); }
+    });
+    app.post('/api/social/collections/:id/copy', socialWrite, requireAuth, async (req, res) => {
+      try {
+        const id = oid(req.params.id);
+        const src = id ? await SocialCollection.findById(id).lean() : null;
+        if (!src || sameId(src.owner, req.authUser._id) || !src.shared) return res.status(404).json({ success: false, code: 'collection_not_shared', message: 'That collection is private or gone.' });
+        const me = req.authUser;
+        const mine = await SocialCollection.find({ owner: me._id }).select('name').lean();
+        if (mine.length >= COLLECTIONS_MAX) return res.status(400).json({ success: false, message: `Up to ${COLLECTIONS_MAX} collections.` });
+        let name = src.name; let n = 2;
+        while (mine.some((c) => c.name.toLowerCase() === name.toLowerCase())) name = `${src.name.slice(0, 20)} ${n++}`;
+        const live = await SocialPost.find({ _id: { $in: src.posts || [] }, removedAt: null, hiddenAt: null, takenBackAt: null }).select('_id').lean();
+        const keep = (src.posts || []).filter((x) => live.some((p) => sameId(p._id, x))).slice(0, COLLECTION_POSTS_MAX);
+        for (const p of keep) await savePost(me._id, p);
+        const c = await SocialCollection.create({ owner: me._id, name, emoji: src.emoji || '', posts: keep, copiedFrom: src._id });
+        return res.json({ success: true, collection: collectionOut(c.toObject ? c.toObject() : c) });
+      } catch (error) { return fail(res, 'copy collection', error); }
     });
 
     // Reels, or videos, one after another: the newest first, from everyone

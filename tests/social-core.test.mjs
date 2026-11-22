@@ -65,7 +65,7 @@ function model(name) {
       for (const [k, n] of Object.entries(u.$inc || {})) r[k] = (r[k] || 0) + n;
       return { matchedCount: 1, upsertedCount: 0 };
     },
-    updateMany: async (f, u) => { rows.filter((r) => match(r, f)).forEach((r) => Object.assign(r, u.$set || {})); return {}; },
+    updateMany: async (f, u) => { rows.filter((r) => match(r, f)).forEach((r) => { Object.assign(r, u.$set || {}); for (const [k, v] of Object.entries(u.$pull || {})) r[k] = (r[k] || []).filter((x) => String(x) !== String(v)); }); return {}; },
     deleteOne: async (f) => { const i = rows.findIndex((r) => match(r, f)); if (i >= 0) rows.splice(i, 1); return { deletedCount: i >= 0 ? 1 : 0 }; },
     deleteMany: async (f) => { for (let i = rows.length - 1; i >= 0; i--) if (match(rows[i], f)) rows.splice(i, 1); return {}; },
     aggregate: async () => [],
@@ -79,6 +79,7 @@ const Comment = stub('./models/SocialComment', model('comment'));
 const Seen = stub('./models/SocialSeen', model('seen'));
 const Item = stub('./models/CreatorItem', model('item'));
 const Highlight = stub('./models/SocialHighlight', model('highlight'));
+const Collection = stub('./models/SocialCollection', model('collection'));
 // Who opened what. aggregate() answers the one question social.js asks it:
 // per first picture, how many different people (not its owner) opened it.
 const View = stub('./models/ContentView', Object.assign(model('view'), {}));
@@ -539,4 +540,37 @@ test('a reel connects to its full video: only your own, on the same profile; and
   // The video deleted: the reel no longer points at it.
   await call('delete /api/social/posts/:id', meera, { params: { id: full.id } });
   assert.equal((await call('get /api/social/posts/:id', ravi, { params: { id: reel.id } })).body.post.fullVideo, null);
+});
+
+test('collections: saved posts under your own names, shared with a link, copied by a friend', async () => {
+  const v = await upload(meera, MP4);
+  const reel = (await call('post /api/social/posts', meera, { body: { media: [v.body.id], caption: 'Funny cat', format: 'reel' } })).body.post;
+  const v2 = await upload(meera, MP4);
+  const reel2 = (await call('post /api/social/posts', meera, { body: { media: [v2.body.id], caption: 'How rain forms', format: 'reel' } })).body.post;
+  // Made with its first reel in it: that also saves the reel.
+  const funny = (await call('post /api/social/collections', ravi, { body: { name: ' Funny ', emoji: '😂', post: reel.id } })).body.collection;
+  assert.equal(funny.name, 'Funny'); assert.equal(funny.count, 1);
+  assert.equal((await call('post /api/social/collections', ravi, { body: { name: 'funny' } })).body.code, 'name_taken');
+  const learn = (await call('post /api/social/collections', ravi, { body: { name: 'Learning' } })).body.collection;
+  assert.equal((await call('post /api/social/collections/:id/posts', ravi, { params: { id: learn.id }, body: { post: reel2.id } })).body.count, 1);
+  // The list, with which ones hold a post, and everything saved.
+  const list = (await call('get /api/social/collections', ravi, { query: { post: reel.id } })).body;
+  assert.equal(list.saved, 2);
+  assert.deepEqual(list.collections.map((c) => [c.name, c.has]).sort(), [['Funny', true], ['Learning', false]]);
+  // Private until shared.
+  assert.equal((await call('get /api/social/collections/:id', asha, { params: { id: funny.id } })).status, 404);
+  assert.equal((await call('put /api/social/collections/:id', asha, { params: { id: funny.id }, body: { shared: true } })).status, 404, 'only its owner changes it');
+  await call('put /api/social/collections/:id', ravi, { params: { id: funny.id }, body: { shared: true } });
+  const seen = (await call('get /api/social/collections/:id', asha, { params: { id: funny.id } })).body;
+  assert.equal(seen.collection.mine, false); assert.ok(/Ravi/.test(seen.collection.owner.name)); assert.equal(seen.posts[0].id, reel.id);
+  // A friend saves a copy of it: their own, and the reel is saved for them.
+  const copy = (await call('post /api/social/collections/:id/copy', asha, { params: { id: funny.id } })).body.collection;
+  assert.equal(copy.name, 'Funny'); assert.equal(copy.count, 1); assert.equal(copy.shared, false);
+  assert.equal((await call('get /api/social/collections', asha)).body.saved >= 1, true);
+  // Unsaving a reel takes it out of every collection; deleting a collection keeps the saves.
+  await call('post /api/social/posts/:id/save', ravi, { params: { id: reel.id }, body: { on: false } });
+  assert.equal((await call('get /api/social/collections/:id', ravi, { params: { id: funny.id } })).body.posts.length, 0);
+  await call('delete /api/social/collections/:id', ravi, { params: { id: learn.id } });
+  const after = (await call('get /api/social/collections', ravi)).body;
+  assert.equal(after.collections.length, 1); assert.equal(after.saved, 1);
 });

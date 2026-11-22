@@ -34,6 +34,8 @@ const socialPostSchema = new mongoose.Schema(
     story: { type: Boolean, default: false },
     // How it was made: a post (pictures), a reel (a short video), or a video.
     format: { type: String, enum: ['post', 'reel', 'video'], default: 'post' },
+    // A reel cut from a longer video of the same profile: swipe across to it.
+    fullVideo: { type: mongoose.Schema.Types.ObjectId, ref: 'SocialPost', default: null },
     // People mentioned as "@Name" in the text: who each one is, so the name
     // opens their profile and they are told.
     mentions: { type: [{ _id: false, account: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, side: { type: String, enum: ['self', 'shop'], default: 'self' }, label: { type: String, maxlength: 40 } }], default: [] },

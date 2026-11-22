@@ -520,3 +520,23 @@ test('My activity: where you were mentioned, in a post or a comment', async () =
   const r = await call('get /api/social/my-activity', meera, { query: { type: 'mentions' } });
   assert.ok(r.body.items.some((i) => i.where === 'post' && i.by.name && /Asha/.test(i.by.name)), JSON.stringify(r.body.items.map((i) => [i.where, i.by])));
 });
+
+test('a reel connects to its full video: only your own, on the same profile; and it goes when the video goes', async () => {
+  const v = await upload(meera, MP4);
+  const full = (await call('post /api/social/posts', meera, { body: { media: [v.body.id], caption: 'Full match', format: 'video' } })).body.post;
+  const r = await upload(meera, MP4);
+  const reel = (await call('post /api/social/posts', meera, { body: { media: [r.body.id], caption: 'Best catch', format: 'reel', fullVideo: full.id } })).body.post;
+  assert.equal(reel.fullVideo, full.id, 'connected when posted');
+  const hisV = await upload(ravi, MP4);
+  const his = (await call('post /api/social/posts', ravi, { body: { media: [hisV.body.id], format: 'video' } })).body.post;
+  assert.equal((await call('put /api/social/posts/:id/full-video', meera, { params: { id: reel.id }, body: { video: his.id } })).body.code, 'bad_video', 'not someone else\'s video');
+  assert.equal((await call('put /api/social/posts/:id/full-video', ravi, { params: { id: reel.id }, body: { video: his.id } })).status, 404, 'not someone else\'s reel');
+  const mine = await call('get /api/social/my-videos', meera);
+  assert.ok(mine.body.videos.some((x) => x.id === full.id) && mine.body.videos.every((x) => x.format === 'video'));
+  // Taken off, then on again later.
+  assert.equal((await call('put /api/social/posts/:id/full-video', meera, { params: { id: reel.id }, body: { video: null } })).body.fullVideo, null);
+  assert.equal((await call('put /api/social/posts/:id/full-video', meera, { params: { id: reel.id }, body: { video: full.id } })).body.fullVideo, full.id);
+  // The video deleted: the reel no longer points at it.
+  await call('delete /api/social/posts/:id', meera, { params: { id: full.id } });
+  assert.equal((await call('get /api/social/posts/:id', ravi, { params: { id: reel.id } })).body.post.fullVideo, null);
+});

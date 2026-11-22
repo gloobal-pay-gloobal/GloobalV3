@@ -197,6 +197,9 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     const views = new Map(seenRows.map((r) => [String(r._id), r.n]));
     const ties = await tiesOf(meFace, posts.map((p) => p.author));
     const mentioned = await mentionsOut(posts);
+    // A reel's full video, while it is still up.
+    const fullIds = posts.map((p) => p.fullVideo).filter(Boolean);
+    const fullLive = new Set(fullIds.length ? (await SocialPost.find(visible({ _id: { $in: fullIds }, format: 'video' })).select('_id').lean()).map((x) => String(x._id)) : []);
     return posts.map((p) => ({
       id: String(p._id),
       author: tied(cardOf(byId.get(String(p.author)), p.side), ties),
@@ -207,6 +210,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       mentions: mentioned(p),
       story: Boolean(p.story),
       format: p.format || ((p.media || [])[0] && p.media[0].kind === 'video' ? 'video' : 'post'),
+      fullVideo: p.fullVideo && fullLive.has(String(p.fullVideo)) ? String(p.fullVideo) : null,
       expiresAt: p.expiresAt || null,
       tags: (p.tags || []).map((t) => ({ itemId: String(t.itemId || ''), shop: t.shopSymbolId, title: t.title, price: t.price, currency: t.currency })),
       likes: p.likeCount || 0,
@@ -602,6 +606,34 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     });
 
     // ── POSTS ─────────────────────────────────────────────────────────
+    // A full video of yours (this profile, still up) to connect a reel to.
+    async function ownVideo(meId, side, raw) {
+      const id = oid(raw);
+      if (!id) return null;
+      const v = await SocialPost.findOne(visible({ _id: id, author: meId, side, format: 'video' })).select('_id').lean();
+      return v ? v._id : null;
+    }
+    // Your videos, newest first: to pick the one a reel came from.
+    app.get('/api/social/my-videos', socialRead, requireAuth, async (req, res) => {
+      try {
+        const rows = await SocialPost.find(visible({ author: req.authUser._id, side: req.socialFace.side, format: 'video' })).sort({ createdAt: -1 }).limit(40).lean();
+        return res.json({ success: true, videos: await postsOut(rows, req.socialFace) });
+      } catch (error) { return fail(res, 'my videos', error); }
+    });
+    // Connect one of your reels to its full video (or take it off: null).
+    app.put('/api/social/posts/:id/full-video', socialWrite, requireAuth, async (req, res) => {
+      try {
+        const id = oid(req.params.id);
+        const reel = id ? await SocialPost.findOne({ _id: id, author: req.authUser._id, format: 'reel', removedAt: null }) : null;
+        if (!reel) return res.status(404).json({ success: false, message: 'That reel is not yours.' });
+        const raw = (req.body || {}).video;
+        const video = raw ? await ownVideo(req.authUser._id, reel.side || 'self', raw) : null;
+        if (raw && !video) return res.status(400).json({ success: false, code: 'bad_video', message: 'Pick one of your own videos on this profile.' });
+        await SocialPost.updateOne({ _id: reel._id }, { $set: { fullVideo: video } });
+        return res.json({ success: true, fullVideo: video ? String(video) : null });
+      } catch (error) { return fail(res, 'full video', error); }
+    });
+
     app.post('/api/social/posts', socialWrite, requireAuth, requireOn, async (req, res) => {
       try {
         const me = req.authUser;
@@ -626,9 +658,12 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         if (!me.shopOwnerId) (await User.find({ shopOwnerId: me._id }).select('symbolId').lean()).forEach((s) => mine.push(s.symbolId));
         const tagIds = (Array.isArray(body.tags) ? body.tags : []).slice(0, 5).map(oid).filter(Boolean);
         const items = tagIds.length ? await CreatorItem.find({ _id: { $in: tagIds }, ownerSymbolId: { $in: mine } }).select('_id ownerSymbolId title price currency').lean() : [];
+        const side = req.socialSide === 'shop' ? 'shop' : 'self';
+        const fullVideo = format === 'reel' ? await ownVideo(me._id, side, body.fullVideo) : null;
         const post = await SocialPost.create({
+          fullVideo,
           author: me._id,
-          side: req.socialSide === 'shop' ? 'shop' : 'self',
+          side,
           media: media.map((m) => ({ id: m._id, kind: m.kind })),
           caption: String(body.caption || '').slice(0, 2200),
           hashtags: hashtagsOf(body.caption),

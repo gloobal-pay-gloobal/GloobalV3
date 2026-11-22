@@ -17,6 +17,9 @@ const hellooCallSchema = new mongoose.Schema(
     conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'HellooConversation', default: null },
     video: { type: Boolean, default: false },
     status: { type: String, enum: ['ringing', 'answered', 'ended', 'missed', 'declined', 'cancelled'], default: 'ringing' },
+    // When the callee's phone got it and began to ring ("Ringing" for the
+    // caller, instead of "Calling…").
+    reachedAt: { type: Date, default: null },
     answeredAt: { type: Date, default: null },
     endedAt: { type: Date, default: null },
     seconds: { type: Number, default: 0 },

@@ -118,6 +118,28 @@ function secondsFor(balance, perMinute) {
 // mandate for that call. Set from server.js once the token helpers exist.
 let callMoney = null;
 function configureHellooMoney(d) { callMoney = d; }
+// Reply from a notification: the phone's notification has no sign-in, so the
+// push carries a token good for one chat, as one side, for two days. It can
+// only send a text into that chat (POST /api/helloo/quick-reply).
+const REPLY_TTL_MS = 2 * 24 * 3600 * 1000;
+function replyTokenFor(accountId, chatId, as) {
+  if (!callMoney || !callMoney.AUTH_TOKEN_SECRET) return '';
+  const body = Buffer.from(JSON.stringify({ u: String(accountId), c: String(chatId), a: String(as || 'self'), e: Date.now() + REPLY_TTL_MS })).toString('base64url');
+  const sig = require('crypto').createHmac('sha256', callMoney.AUTH_TOKEN_SECRET).update(`reply:${body}`).digest('base64url');
+  return `${body}.${sig}`;
+}
+function readReplyToken(token) {
+  if (!callMoney || !callMoney.AUTH_TOKEN_SECRET) return null;
+  const [body, sig] = String(token || '').split('.');
+  if (!body || !sig) return null;
+  const crypto = require('crypto');
+  const want = Buffer.from(crypto.createHmac('sha256', callMoney.AUTH_TOKEN_SECRET).update(`reply:${body}`).digest('base64url'));
+  const got = Buffer.from(sig);
+  if (want.length !== got.length || !crypto.timingSafeEqual(want, got)) return null;
+  let t = null; try { t = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); } catch (e) { return null; }
+  if (!t || !t.u || !t.c || !(Number(t.e) > Date.now())) return null;
+  return t;
+}
 function callMandateHeader(callId) { const at = Date.now(); return `${callId}.${at}.${signCallMandate(callId, at)}`; }
 function signCallMandate(callId, at) {
   return require('crypto').createHmac('sha256', callMoney.AUTH_TOKEN_SECRET).update(`call:${callId}:${at}`).digest('base64url');
@@ -850,6 +872,8 @@ function createHelloo(deps) {
         total: call.seconds ? callCost(Math.min(call.seconds, call.paid.maxSeconds || call.seconds), call.paid.perMinute) : 0,
       } : null,
       status: call.status,
+      // The callee's phone has it and is ringing.
+      reached: Boolean(call.reachedAt),
       at: call.createdAt,
       answeredAt: call.answeredAt || null,
       seconds: call.seconds || 0,
@@ -1044,6 +1068,9 @@ function createHelloo(deps) {
           title: nameOn(sender, storedSide(conversation, sender._id)),
           body: previewOf(message),
           url: `/?chat=${encodeURIComponent(String(conversation._id))}&as=${theirs.side === 'self' ? 'self' : encodeURIComponent(String(otherId))}`,
+          // Reply from the notification: good for this chat only, for two days.
+          replyToken: replyTokenFor(otherId, conversation._id, theirs.side === 'self' ? 'self' : String(otherId)),
+          replyApi: process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL || '',
           tag: `helloo-chat-${String(conversation._id)}`,
           timestamp: Date.now(),
         },
@@ -1527,6 +1554,31 @@ function createHelloo(deps) {
     // reads its own body (server.js skips the global parser for it).
     // 12 MB: a clip of up to 8 MB, as base64. Every kind still checks its own size.
     const voiceParser = require('express').json({ limit: '12mb' });
+
+    // A reply typed into the notification itself. The token says which
+    // chat and which side; the message goes through the ordinary route, as
+    // that person, so every rule (blocks, reach, paid) still applies.
+    app.post('/api/helloo/quick-reply', hellooWrite, async (req, res) => {
+      try {
+        const t = readReplyToken((req.body || {}).token);
+        if (!t) return res.status(401).json({ success: false, code: 'reply_expired', message: 'Open Helloo to reply.' });
+        const text = String((req.body || {}).text || '').trim().slice(0, 4000);
+        if (!text) return res.status(400).json({ success: false, message: 'Type something to send.' });
+        const account = await User.findById(t.u).select('_id shopOwnerId').lean();
+        const owner = account ? await User.findById(account.shopOwnerId || account._id) : null;
+        if (!owner || !callMoney) return res.status(401).json({ success: false, code: 'reply_expired', message: 'Open Helloo to reply.' });
+        const r = await fetch(`http://127.0.0.1:${callMoney.PORT}/api/helloo/chats/${encodeURIComponent(t.c)}/messages?as=${encodeURIComponent(t.a)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${callMoney.issueAuthToken(owner)}`, 'X-Forwarded-For': '127.0.0.1' },
+          body: JSON.stringify({ kind: 'text', text, clientId: `nr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}` }),
+        });
+        const j = await r.json().catch(() => ({}));
+        return res.status(r.status).json(j && typeof j === 'object' ? { success: Boolean(j.success), message: j.message || undefined, code: j.code || undefined } : { success: false });
+      } catch (error) {
+        console.error('Helloo quick reply error:', error);
+        return res.status(500).json({ success: false, message: 'Could not send that.' });
+      }
+    });
 
     app.post('/api/helloo/chats/:id/messages', hellooWrite, requireAuth, voiceParser, async (req, res) => {
       try {
@@ -2579,6 +2631,18 @@ function createHelloo(deps) {
         const call = id ? await HellooCall.findById(id).lean() : null;
         if (!call || !(sameId(call.callerId, me) || sameId(call.calleeId, me))) return res.status(404).json({ success: false, message: 'That call is not here.' });
         const isCallee = sameId(call.calleeId, me);
+        // The callee's phone got the call and is ringing: the caller sees
+        // "Ringing" instead of "Calling…". Said once.
+        if (action === 'ringing') {
+          if (!isCallee) return res.status(400).json({ success: false, message: 'Only the person called rings.' });
+          const done = await HellooCall.findOneAndUpdate({ _id: id, status: 'ringing', reachedAt: null }, { $set: { reachedAt: new Date() } }, { returnDocument: 'after', lean: true });
+          if (done) {
+            const people = await cardsFor([call.callerId, call.calleeId]);
+            const chat = (await chatsOfCalls([done])).get(String(done.conversationId));
+            emit(call.callerId, { type: 'call-update', call: callOut(done, call.callerId, people, chat) });
+          }
+          return res.json({ success: true });
+        }
         if (action === 'answer') {
           if (!isCallee) return res.status(400).json({ success: false, message: 'Only the person called can answer.' });
           const done = await HellooCall.findOneAndUpdate({ _id: id, status: 'ringing' }, { $set: { status: 'answered', answeredAt: new Date() } }, { returnDocument: 'after', lean: true });
@@ -2784,4 +2848,4 @@ function createHelloo(deps) {
   return { mount, attachLive, VOICE_PATH, emit, cardsFor, media: { takeBack: (id, me) => (takeBackMediaNow ? takeBackMediaNow(id, me) : false) }, faces: { card, faced, sideOf, nameOn, callsOut, pictureOut }, chats: { openChat, reachRule, callRule, reachFor, releaseOut } };
 }
 
-module.exports = { createHelloo, HELLOO_VOICE_PATH: VOICE_PATH, stickerMine, configureHellooMoney, readCallMandate, callMandateCovers, callCost, secondsFor, CALL_MANDATE_HEADER };
+module.exports = { createHelloo, HELLOO_VOICE_PATH: VOICE_PATH, stickerMine, configureHellooMoney, replyTokenFor, readReplyToken, readCallMandate, callMandateCovers, callCost, secondsFor, CALL_MANDATE_HEADER };

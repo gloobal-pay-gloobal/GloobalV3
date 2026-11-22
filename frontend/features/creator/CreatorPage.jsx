@@ -600,7 +600,13 @@ function CreatorPage({
        not re-centred on the sky above it. Faded into the page at the
        bottom so the mark sits on the join rather than on a hard edge. */
   }{coverKind ? <div data-shop-cover={coverKind} style={{
-    margin: "0 -18px", height: skin.style === "glass" ? 210 : 150, position: "relative", overflow: "hidden",
+    margin: "4px -8px 0", height: skin.style === "glass" ? 210 : 150, position: "relative", overflow: "hidden",
+    // A card with soft round corners all the way round, like the Social
+    // cover — no straight cut under the top bar — and edges clipped cleanly
+    // on every phone (the mask keeps Safari and older Android from drawing
+    // a rounded edge jagged).
+    borderRadius: 28,
+    isolation: "isolate", WebkitMaskImage: "-webkit-radial-gradient(white, black)", transform: "translateZ(0)",
     background: coverKind === "pattern" ? shopPatternCss(theme.pattern, theme.color, theme.dark)
       : coverKind === "gradient" ? `linear-gradient(160deg, ${theme.hero.from} 0%, ${theme.hero.to} 70%)` : "none",
     transition: "background 0.3s ease, height 0.3s ease"
@@ -613,7 +619,9 @@ function CreatorPage({
     }}
   /> : null}<span style={{
     position: "absolute", inset: 0,
-    background: `linear-gradient(180deg, rgba(${T.inkRgb},${coverKind === "photo" ? "0.10" : "0"}) 0 30%, transparent 55%, ${theme.page} 100%)`
+    // A light shade at the top of a photo; no fade into the page now that
+    // the cover is a rounded card of its own.
+    background: `linear-gradient(180deg, rgba(${T.inkRgb},${coverKind === "photo" ? "0.10" : "0"}) 0 30%, transparent 60%)`
   }} /></div> : null}{
     /* ── THE SHOP'S OWN CARD ──────────────────────────────────────────
        Mark beside name on a card in the shop's colour — the same shape as

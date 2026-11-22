@@ -105,6 +105,7 @@ function ShopCoverPicker({ cover, onPick, onMove, onRemove, onError, accent }) {
 
   return <div><div style={{
     position: "relative", borderRadius: 18, overflow: "hidden",
+    isolation: "isolate", WebkitMaskImage: "-webkit-radial-gradient(white, black)", transform: "translateZ(0)",
     height: 150, background: T.surfaceAlt
   }}>{photo
     ? <img

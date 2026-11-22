@@ -775,6 +775,19 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     });
 
     // ── PROFILE ───────────────────────────────────────────────────────
+    // Just a profile's cover, for Helloo's profile pages: the same picture
+    // the person or shop set on Social. Nothing while that profile is off.
+    app.get('/api/social/cover/:gloobalId', socialRead, requireAuth, async (req, res) => {
+      try {
+        const u = await User.findOne({ symbolId: String(req.params.gloobalId) }).select(CARD).lean();
+        if (!u) return res.json({ success: true, cover: null });
+        const hasShop = Boolean(u.creatorProfile && u.creatorProfile.handle);
+        const side = sideOf(u, req.query.side === 'shop' && hasShop ? 'shop' : 'self');
+        const own = sameId(u._id, req.authUser._id) || sameId(u.shopOwnerId, req.socialOwner && req.socialOwner._id) || sameId(u._id, req.socialOwner && req.socialOwner._id);
+        if (!own && !(await isOn(u, side))) return res.json({ success: true, cover: null });
+        return res.json({ success: true, cover: aboutOf(u, side).cover });
+      } catch (error) { return fail(res, 'cover', error); }
+    });
     app.get('/api/social/profile/:gloobalId', socialRead, requireAuth, async (req, res) => {
       try {
         const me = req.authUser;

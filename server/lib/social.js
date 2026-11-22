@@ -216,6 +216,10 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
     // A reel's full video, while it is still up.
     const fullIds = posts.map((p) => p.fullVideo).filter(Boolean);
     const fullLive = new Set(fullIds.length ? (await SocialPost.find(visible({ _id: { $in: fullIds }, format: 'video' })).select('_id').lean()).map((x) => String(x._id)) : []);
+    // What a post is selling right now: its tagged items that are still on
+    // the shop's list and not marked sold out.
+    const tagIds = posts.flatMap((p) => (p.tags || []).map((t) => t.itemId)).filter(Boolean);
+    const onSale = new Set(tagIds.length ? (await CreatorItem.find({ _id: { $in: tagIds }, soldOut: { $ne: true } }).select('_id').lean()).map((x) => String(x._id)) : []);
     return posts.map((p) => ({
       id: String(p._id),
       author: tied(cardOf(byId.get(String(p.author)), p.side), ties),
@@ -228,7 +232,9 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
       format: p.format || ((p.media || [])[0] && p.media[0].kind === 'video' ? 'video' : 'post'),
       fullVideo: p.fullVideo && fullLive.has(String(p.fullVideo)) ? String(p.fullVideo) : null,
       expiresAt: p.expiresAt || null,
-      tags: (p.tags || []).map((t) => ({ itemId: String(t.itemId || ''), shop: t.shopSymbolId, title: t.title, price: t.price, currency: t.currency })),
+      tags: (p.tags || []).map((t) => ({ itemId: String(t.itemId || ''), shop: t.shopSymbolId, title: t.title, price: t.price, currency: t.currency, live: onSale.has(String(t.itemId || '')) })),
+      // Selling through this post now: the pay button shows only then.
+      selling: (p.tags || []).some((t) => onSale.has(String(t.itemId || ''))),
       likes: p.likeCount || 0,
       comments: p.commentCount || 0,
       views: views.get(String((p.media || [])[0] && p.media[0].id)) || 0,

@@ -147,6 +147,12 @@ test('a post uses only your own uploads and tags only your own shop items', asyn
   assert.equal(r.status, 200);
   post = r.body.post;
   assert.deepEqual(post.tags.map((t) => t.title), ['Masala chai']);
+  // Selling while the item is on the list and not sold out; a plain post never is.
+  assert.equal(post.selling, true);
+  ownItem.soldOut = true;
+  assert.equal((await call('get /api/social/posts/:id', ravi, { params: { id: post.id } })).body.post.selling, false, 'sold out: not selling');
+  ownItem.soldOut = false;
+  assert.equal((await call('get /api/social/posts/:id', ravi, { params: { id: post.id } })).body.post.selling, true);
   assert.equal(post.topic, 'food');
   const reuse = await call('post /api/social/posts', asha, { body: { media: [mine.body.id] } });
   assert.equal(reuse.body.code, 'bad_media', 'an upload is used once');

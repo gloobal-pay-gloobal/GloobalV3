@@ -1687,6 +1687,8 @@ var GloobalApi = {
   // A chat with the owner (Helloo), text only, read and sent from Rent.
   async hellooOpenChat(withId) { const r = await gloobalApiClient.post("/api/helloo/chats", { with: withId }); return r && r.chat; },
   async hellooMessages(chatId) { const r = await gloobalApiClient.get(`/api/helloo/chats/${encodeURIComponent(chatId)}/messages?limit=50`); return (r && r.messages) || []; },
+  // Someone who hasn't saved you: a message request instead (Helloo's Requests).
+  async hellooAsk(toAccountId, text) { const r = await gloobalApiClient.post("/api/helloo/asks", { to: toAccountId, kind: "message", text }); return r && r.ask; },
   async hellooSend(chatId, text) {
     const clientId = `rent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const r = await gloobalApiClient.post(`/api/helloo/chats/${encodeURIComponent(chatId)}/messages`, { kind: "text", text, clientId });

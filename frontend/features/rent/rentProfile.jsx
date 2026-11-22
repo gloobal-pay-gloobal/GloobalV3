@@ -351,26 +351,65 @@ function RentListingPage({ id, onClose, onToast }) {
 // It is the very chat Helloo shows (one chat per pair on the server), so
 // "Open in Helloo" lands on it there.
 var GLOOBAL_HELLOO_SITE = "https://gloobalhelloo.netlify.app";
+// The Helloo chat with a shop or a person, opened right inside GLOOBAL (a
+// shop page's Message, the Bazaar map, a rent listing, a used thing). The
+// very same chat as in Helloo: what is sent here is there, and back.
 function RentChatSheet({ withSymbolId, name, opening, onClose }) {
   const [chat, setChat] = useState92(null);
   const [msgs, setMsgs] = useState92([]);
   const [text, setText] = useState92(opening || "");
   const [err, setErr] = useState92("");
+  // What Helloo says when a plain message can't go: "ask" (they haven't
+  // saved you: send a request), "paid" (they charge), or "asked" (sent).
+  const [gate, setGate] = useState92(null);
+  const [busy, setBusy] = useState92(false);
   const listRef = useRef51(null);
   const refresh = async (c) => { try { setMsgs(await GloobalApi.hellooMessages(c.id)); } catch (e) { /* keep what is shown */ } };
   useEffect89(() => {
     let live = true; let poll = null;
-    GloobalApi.hellooOpenChat(withSymbolId).then((c) => { if (!live) return; setChat(c); refresh(c); poll = setInterval(() => refresh(c), 5000); }).catch((e) => { if (live) setErr((e && e.message) || "Couldn't open the chat."); });
+    GloobalApi.hellooOpenChat(withSymbolId).then((c) => { if (!live) return; setChat(c); refresh(c); poll = setInterval(() => refresh(c), 4000); }).catch((e) => { if (live) setErr((e && e.message) || "Couldn't open the chat."); });
     return () => { live = false; if (poll) clearInterval(poll); };
   }, [withSymbolId]);
   useEffect89(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [msgs]);
   const send = async () => {
-    const t = text.trim(); if (!t || !chat) return;
-    setErr("");
-    try { await GloobalApi.hellooSend(chat.id, t); setText(""); refresh(chat); } catch (e) { setErr((e && e.message) || "Couldn't send it."); }
+    const t = text.trim(); if (!t || !chat || busy) return;
+    setErr(""); setBusy(true);
+    try { await GloobalApi.hellooSend(chat.id, t); setText(""); setGate(null); refresh(chat); }
+    catch (e) {
+      const code = e && e.body && e.body.code; const rule = (e && e.body && e.body.rule) || {};
+      if (code === "reach_closed" && !rule.never) setGate({ kind: "ask", text: t.slice(0, 120) });
+      else if (code === "reach_payment_required") setGate({ kind: "paid", price: rule.price, currency: rule.currency });
+      else setErr((e && e.message) || "Couldn't send it.");
+    }
+    setBusy(false);
+  };
+  const ask = async () => {
+    if (!chat || !chat.person || busy) return;
+    const t = (gate && gate.text ? gate.text : text).trim();
+    if (t.length < 3) { setErr("Say who you are in a few words, then send the request."); return; }
+    setErr(""); setBusy(true);
+    try { await GloobalApi.hellooAsk(chat.person.accountId, t.slice(0, 120)); setGate({ kind: "asked" }); setText(""); }
+    catch (e) { const code = e && e.body && e.body.code; if (code === "not_needed") { setGate(null); await send(); } else setErr((e && e.message) || "Couldn't send the request."); }
+    setBusy(false);
   };
   const theirId = chat && chat.person && chat.person.accountId;
-  return <div data-testid="rent-chat" style={{ position: "fixed", inset: 0, zIndex: 360, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}><div onClick={onClose} aria-hidden="true" style={{ position: "absolute", inset: 0, background: `rgba(${T.inkRgb},0.42)` }} /><div style={{ position: "relative", height: "78vh", background: T.bg, borderRadius: "24px 24px 0 0", display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px 10px" }}><RpChat size={18} color={T.accent} /><b style={{ flex: 1, fontSize: 15, color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</b>{chat ? <a data-testid="chat-open-helloo" href={`${GLOOBAL_HELLOO_SITE}/?chat=${encodeURIComponent(chat.id)}`} target="_blank" rel="noopener" style={{ flexShrink: 0, padding: "6px 11px", borderRadius: 999, background: T.surfaceAlt, color: T.accent, fontSize: 12, fontWeight: 800, textDecoration: "none" }}>Open in Helloo</a> : null}<button type="button" aria-label="Close" onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><RpX size={15} color={T.inkSoft} /></button></div><div ref={listRef} style={{ flex: 1, overflowY: "auto", padding: "4px 14px", display: "flex", flexDirection: "column", gap: 6 }}>{!chat && !err ? <div style={{ textAlign: "center", color: T.inkFaint, fontSize: 12.5, padding: 20 }}>Opening…</div> : null}{chat && msgs.length === 0 ? <div style={{ textAlign: "center", color: T.inkFaint, fontSize: 12.5, padding: 20 }}>Say hello. They reply here, or in Helloo.</div> : null}{msgs.filter((m) => m.kind === "text").map((m) => { const theirs = m.from === theirId; return <div key={m.id} data-testid="rent-chat-msg" data-mine={theirs ? "0" : "1"} style={{ alignSelf: theirs ? "flex-start" : "flex-end", maxWidth: "80%", background: theirs ? T.surface : T.accent, color: theirs ? T.ink : "#fff", borderRadius: 16, padding: "8px 12px", fontSize: 13.5, fontWeight: 600, boxShadow: T.shadowCard, overflowWrap: "anywhere" }}>{m.text}</div>; })}</div>{err ? <div role="alert" style={{ fontSize: 12, fontWeight: 700, color: T.negative, padding: "0 16px 6px" }}>{err}</div> : null}<div style={{ display: "flex", gap: 8, padding: "8px 12px calc(12px + env(safe-area-inset-bottom, 0px))" }}><input data-testid="rent-chat-input" value={text} onChange={(e) => setText(e.target.value.slice(0, 1000))} onKeyDown={(e) => { if (e.key === "Enter") send(); }} placeholder="Message" style={{ ...rpInput, flex: 1, color: T.ink, boxShadow: T.shadowCard }} /><button type="button" data-testid="rent-chat-send" aria-label="Send" onClick={send} disabled={!chat || !text.trim()} style={{ width: 46, borderRadius: 14, border: "none", background: T.gradButton, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><RpSend size={18} /></button></div></div></div>;
+  // Open the same chat in Helloo, on the same side it is on here.
+  const hellooHref = chat ? `${GLOOBAL_HELLOO_SITE}/?chat=${encodeURIComponent(chat.id)}${chat.side === "shop" ? "" : "&as=self"}` : "";
+  const other = { photo: "Photo", video: "Video", voice: "Voice message", sticker: "Sticker", pay: "Payment", request: "Payment request", post: "Social post", call: "Call", file: "File" };
+  const bubble = (m) => {
+    const theirs = m.from === theirId;
+    const words = m.kind === "text" ? m.text : `${other[m.kind] || "Message"} · open in Helloo`;
+    return <div key={m.id} data-testid="rent-chat-msg" data-mine={theirs ? "0" : "1"} data-kind={m.kind} style={{ alignSelf: theirs ? "flex-start" : "flex-end", maxWidth: "80%", background: theirs ? T.surface : T.accent, color: theirs ? T.ink : "#fff", borderRadius: 16, padding: "8px 12px", fontSize: 13.5, fontWeight: 600, fontStyle: m.kind === "text" ? "normal" : "italic", opacity: m.kind === "text" ? 1 : 0.85, boxShadow: T.shadowCard, overflowWrap: "anywhere" }}>{words}</div>;
+  };
+  const note = (t, action) => <div data-testid="rent-chat-gate" style={{ margin: "0 12px 8px", padding: "10px 12px", borderRadius: 14, background: T.surfaceAlt, fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45, display: "flex", alignItems: "center", gap: 10 }}><span style={{ flex: 1 }}>{t}</span>{action}</div>;
+  const pill = (label, onClick, href, testid) => href
+    ? <a data-testid={testid} href={href} target="_blank" rel="noopener" style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 999, background: T.accent, color: "#fff", fontSize: 12, fontWeight: 800, textDecoration: "none" }}>{label}</a>
+    : <button type="button" data-testid={testid} onClick={onClick} disabled={busy} style={{ flexShrink: 0, padding: "7px 12px", borderRadius: 999, border: "none", background: T.accent, color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>{busy ? "…" : label}</button>;
+  return <div data-testid="rent-chat" style={{ position: "fixed", inset: 0, zIndex: 360, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}><div onClick={onClose} aria-hidden="true" style={{ position: "absolute", inset: 0, background: `rgba(${T.inkRgb},0.42)` }} /><div style={{ position: "relative", height: "78vh", background: T.bg, borderRadius: "24px 24px 0 0", display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px 10px" }}><RpChat size={18} color={T.accent} /><b style={{ flex: 1, fontSize: 15, color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</b>{chat ? <a data-testid="chat-open-helloo" href={hellooHref} target="_blank" rel="noopener" style={{ flexShrink: 0, padding: "6px 11px", borderRadius: 999, background: T.surfaceAlt, color: T.accent, fontSize: 12, fontWeight: 800, textDecoration: "none" }}>Open in Helloo</a> : null}<button type="button" aria-label="Close" onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><RpX size={15} color={T.inkSoft} /></button></div><div ref={listRef} style={{ flex: 1, overflowY: "auto", padding: "4px 14px", display: "flex", flexDirection: "column", gap: 6 }}>{!chat && !err ? <div style={{ textAlign: "center", color: T.inkFaint, fontSize: 12.5, padding: 20 }}>Opening…</div> : null}{chat && msgs.length === 0 ? <div style={{ textAlign: "center", color: T.inkFaint, fontSize: 12.5, padding: 20 }}>Say hello. They reply here, or in Helloo.</div> : null}{msgs.map(bubble)}</div>
+    {gate && gate.kind === "ask" ? note(`${name} hasn't saved you yet. Send this as a message request — free. You can chat once they accept.`, pill("Send request", ask, "", "rent-chat-ask")) : null}
+    {gate && gate.kind === "asked" ? note("Request sent. You'll be able to message once they accept — in Helloo or here.", null) : null}
+    {gate && gate.kind === "paid" ? note(`${name} charges ${gate.price ? `${Number(gate.price).toFixed(2)} CEL | ${gate.currency || ""} ` : ""}to be messaged. Pay and send in Helloo.`, pill("Open Helloo", null, hellooHref, "rent-chat-paid")) : null}
+    {err ? <div role="alert" style={{ fontSize: 12, fontWeight: 700, color: T.negative, padding: "0 16px 6px" }}>{err}</div> : null}<div style={{ display: "flex", gap: 8, padding: "8px 12px calc(12px + env(safe-area-inset-bottom, 0px))" }}><input data-testid="rent-chat-input" value={text} onChange={(e) => setText(e.target.value.slice(0, 1000))} onKeyDown={(e) => { if (e.key === "Enter") (gate && gate.kind === "ask" ? ask() : send()); }} placeholder={gate && gate.kind === "ask" ? "Say who you are" : "Message"} style={{ ...rpInput, flex: 1, color: T.ink, boxShadow: T.shadowCard }} /><button type="button" data-testid="rent-chat-send" aria-label="Send" onClick={() => (gate && gate.kind === "ask" ? ask() : send())} disabled={!chat || (!text.trim() && !(gate && gate.kind === "ask")) || busy} style={{ width: 46, borderRadius: 14, border: "none", background: T.gradButton, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><RpSend size={18} /></button></div></div></div>;
 }
 
 // The card on Rent's home: start a rent profile, or open yours.

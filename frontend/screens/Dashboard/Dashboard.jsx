@@ -2174,6 +2174,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // above it can go to an outside bank. Read again whenever the balance
   // moves, so the two halves on the card never disagree with the figure.
   const [essentialsHeld, setEssentialsHeld] = useState83(null);
+  // A used thing's seller, messaged from GLOOBAL: the same Helloo chat.
+  const [usedChat, setUsedChat] = useState83(null);
   useEffect78(() => {
     let live = true;
     const load = () => GloobalApi.getEssentials().then((r) => { if (live) setEssentialsHeld(r); });
@@ -4228,12 +4230,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         setMoreQueryLast(dot > 0 ? text.slice(dot + 1) : "");
       }}
       onUsedPay={onPayPerson ? (seller, amount) => onPayPerson({ gloobalId: seller.gloobalId, name: seller.name, countryIso: seller.countryIso || (dialCountry && dialCountry.iso), prefillAmount: amount }) : undefined}
+      onUsedChat={(seller, item) => seller && (seller.gloobalId || seller.accountId) ? setUsedChat({ id: seller.accountId || seller.gloobalId, name: seller.name || "Seller", opening: item && item.title ? `Hi, is "${item.title}" still there?` : "" }) : null}
       onToast={showToast2}
       onOpen={async (shop, intent) => {
         const found = await GloobalApi.resolveCreatorHandle(shop.handle || "");
         if (found) { setPayUses(recordPayUse(myGloobalId, found.symbolId)); setOpenCreatorPay(Boolean(intent && intent.pay)); setOpenCreator(found); } else showToast2("Could not open that shop just now.");
       }}
-    />{
+    />{usedChat && typeof RentChatSheet === "function" ? <RentChatSheet withSymbolId={usedChat.id} name={usedChat.name} opening={usedChat.opening} onClose={() => setUsedChat(null)} /> : null}{
       /* ── ONLINE BRANDS ─────────────────────────────────────────────────
          The fixed list of big brands. Shown when a typed name matches one;
          otherwise folded into one line at the end, so it is reachable

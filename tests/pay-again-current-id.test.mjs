@@ -165,7 +165,7 @@ describe("Pay again asks before it opens", () => {
     // Money is about to go to an ID the payer has never seen. A resolve that
     // swapped one for the other would be the app deciding who gets paid.
     const handler = modal.slice(modal.indexOf("const handlePayAgain = async"), modal.indexOf("// Which way the money went"));
-    assert.match(handler, /setPayAgainState\(\{ status: "changed", was: receipt\.id, now/);
+    assert.match(handler, /setPayAgainState\(\{\s*status: "changed",\s*was: receipt\.id,\s*now/);
     // The handler opens the screen in exactly one place, and that place is
     // behind `!answer.changed`. Anything else would be the app deciding.
     const opens = [...handler.matchAll(/openSendMoney\(/g)];
@@ -249,7 +249,7 @@ describe("in the app", () => {
       const panel = page.getByTestId("receipt-id-changed");
       await panel.waitFor({ timeout: 20000 });
       const shown = (await panel.innerText()).replace(/\s+/g, " ");
-      assert.match(shown, /Gloobal ID has changed/);
+      assert.match(shown, /GLOOBAL ID has changed/i);
       assert.equal((await page.getByTestId("receipt-id-was").innerText()).replace(/\s+/g, ""), B.symbolId);
       assert.equal((await page.getByTestId("receipt-id-now").innerText()).replace(/\s+/g, ""), NEW_ID);
 

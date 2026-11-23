@@ -480,7 +480,9 @@ async function loginAsAnotherAccount(page, account) {
   for (const digit of account.pin) {
     await page.getByLabel(`Digit ${digit}`, { exact: true }).click({ force: true });
   }
-  await page.getByLabel("Log in", { exact: true }).click({ force: true });
+  // The pad sends itself on the sixth digit; a tap here is only for an
+  // older build that still waits for it.
+  await page.getByLabel("Log in", { exact: true }).click({ force: true, timeout: 2500 }).catch(() => {});
   await page.getByLabel("Send", { exact: true }).waitFor({ timeout: 30000 });
 }
 
@@ -513,6 +515,15 @@ async function sendPayment(page, { sender, receiver, sends, expectBlocked = fals
   await amountField.waitFor({ timeout: 25000 });
   await padFill(page, amountField, String(sends));
   await page.waitForTimeout(800);
+
+  // Location is asked for before the pay button is offered now
+  // (payLocation.jsx): with it refused, the screen says so and offers
+  // "Check again" in place of Send — the block this case exists to see.
+  if (expectBlocked && !(await page.getByRole("button", { name: /^(Send|Simulate)\s/ }).count())) {
+    await page.getByText(/location/i).first().waitFor({ timeout: 14000 });
+    const screen = await text(page);
+    return { quoted: null, receiverQuote: null, confirmText: "", screen, everShown: screen };
+  }
 
   // The pay button carries the sender-currency quote: "Send ₹3,021.41".
   // What the panel under the box promises the payee, before anything is

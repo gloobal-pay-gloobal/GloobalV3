@@ -50,7 +50,10 @@ after(async () => {
 // getUserMedia call happens.
 async function openScanner(page) {
   await page.getByLabel("Scanner", { exact: true }).click({ force: true });
-  await page.getByRole("button", { name: "Allow Access", exact: true }).click({ force: true, timeout: 20000 });
+  // A grant already on record skips our explainer (f291712), so the button
+  // is only there when the browser has not answered yet.
+  const allow = page.getByRole("button", { name: "Allow Access", exact: true });
+  await allow.waitFor({ timeout: 6000 }).then(() => allow.click({ force: true }), () => {});
   await page.waitForTimeout(2200);
 }
 

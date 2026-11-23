@@ -38,7 +38,7 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { openPage, teardown, login, API_ORIGIN, ACCOUNTS, skipPaymentUnlock } from "./browser-harness.mjs";
+import { openPage, teardown, login, API_ORIGIN, ACCOUNTS, skipPaymentUnlock, padFill } from "./browser-harness.mjs";
 
 const PAYER = ACCOUNTS.india;
 const PAYEE = ACCOUNTS.britain;
@@ -116,7 +116,7 @@ async function pay(page, { sender, receiver, receiverGets }) {
 
   const field = page.getByLabel(`Amount the receiver gets, in their own currency (${receiver.currency})`);
   await field.waitFor({ timeout: 25000 });
-  await field.fill(String(receiverGets));
+  await padFill(page, field, String(receiverGets));
   await page.waitForTimeout(700);
 
   await page.getByRole("button", { name: /^(Send|Simulate)\s/ }).last().click({ force: true });
@@ -272,7 +272,7 @@ describe("the link the receipt's Share button produces", () => {
     // A real rendered receipt, not an empty canvas.
     assert.ok(payload.fileSize > 5000, `the picture was only ${payload.fileSize} bytes`);
     assert.ok(payload.url.startsWith(`${API_ORIGIN}/t/`), `no link in the share: ${payload.url}`);
-    assert.equal(payload.title, "Gloobal receipt");
+    assert.equal(payload.title, "GLOOBAL receipt");
     // And NOT the summary the other button used to send. It rode along here
     // for a while and it was the receipt written out twice — the picture
     // above it already prints the amount, the counterparty, the date and the

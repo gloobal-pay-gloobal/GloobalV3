@@ -5313,7 +5313,17 @@ function geoCacheSet(key, value) {
   GEO_CACHE.set(key, { at: Date.now(), value });
 }
 
+// Nominatim asks for at most one request a second from one application.
+// Every call to it waits its turn here, one second after the last began.
+let geoNominatimNext = 0;
+async function geoNominatimWait() {
+  const now = Date.now();
+  const at = Math.max(now, geoNominatimNext);
+  geoNominatimNext = at + 1000;
+  if (at > now) await new Promise((resolve) => setTimeout(resolve, at - now));
+}
 async function geoFetchJson(url) {
+  if (String(url).includes('nominatim.openstreetmap.org')) await geoNominatimWait();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), GEO_TIMEOUT_MS);
   try {

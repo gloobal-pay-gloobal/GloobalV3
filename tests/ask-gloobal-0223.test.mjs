@@ -117,7 +117,7 @@ describe("the screens", () => {
     assert.match(app, /\{ key: "ask", section: "You", group: "post", label: "Help & Support", locked: !everRegistered, onPress: \(\) => goToDashboardDestination\("help"\) \}/);
     assert.match(code("frontend/components/common/appMap.jsx"), /ask: MapAskIcon/);
     const dash = code("frontend/screens/Dashboard/Dashboard.jsx");
-    assert.match(dash, /\["Complaints & reports"\], PROFILE_ROWS\.slice\(4\)/, "no separate Ask GLOOBAL row");
+    assert.match(dash, /"Complaints & reports"\], PROFILE_ROWS\.slice\(4\)/, "no separate Ask GLOOBAL row");
     assert.doesNotMatch(dash, /label === "Ask GLOOBAL"/);
     assert.match(dash, /deepLinkTarget === "help"\) \{ setActiveTab\("profile"\); setProfileDetail\("Help & Support"\); \}/);
     assert.match(code("frontend/features/support/helpSupport.jsx"), /<AskHelpBox \/>/, "Ask GLOOBAL at the top of Help & Support");

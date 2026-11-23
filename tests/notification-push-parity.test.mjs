@@ -349,7 +349,7 @@ describe("the banner names the figure the server recorded", () => {
       await page.getByRole("button", { name: "Search", exact: true }).click({ force: true });
       const field = page.getByLabel(`Amount the receiver gets, in their own currency (${B.currency})`);
       await field.waitFor({ timeout: 25000 });
-      await field.fill("20");
+      await harness.padFill(page, field, "20");
       await page.waitForTimeout(700);
       await page.getByRole("button", { name: /^(Send|Simulate)\s/ }).last().click({ force: true });
       const sheet = page.getByRole("dialog", { name: "Choose how to pay" });

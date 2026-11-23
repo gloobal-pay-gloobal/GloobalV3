@@ -18,6 +18,9 @@ import { readSource } from "./harness.mjs";
 
 const backdropSrc = () => readSource("frontend/features/scan/scanBackdrop.js");
 const app = () => readSource("frontend/App.jsx");
+// One scan screen for GLOOBAL and Helloo since update 13: what the person
+// sees while aiming lives here; App.jsx passes the payee in.
+const scanScreen = () => readSource("frontend/features/scan/GloobalScanScreen.jsx");
 const server = () => readSource("server/server.js");
 
 function backdrop(names) {
@@ -114,11 +117,15 @@ test("none of them is the app's own violet", () => {
 
 // ── BLACK IS STILL RIGHT, BUT ONLY WHILE AIMING ─────────────────────────
 test("the screen is black for the camera and light for the card", () => {
-  const src = app();
-  assert.match(src, /background: scanPayee \? scanPageTint\(scanPayee\.gloobalId\) : "#000"/,
+  // The shared screen: black while aiming, the payee's tint once a code lands.
+  const screen = scanScreen();
+  assert.match(screen, /background: light && tint \? tint : "#000"/,
     "the scan overlay is either always black or always coloured");
+  assert.match(screen, /const light = Boolean\(result\);/);
+  // …and GLOOBAL hands it the payee's tint.
+  assert.match(app(), /tint=\{scanPayee \? scanPageTint\(scanPayee\.gloobalId\) : null\}/);
   // A dark frame is what lets somebody see the picture they are aiming.
-  assert.match(src, /BLACK WHILE AIMING, LIGHT ONCE IT LANDS/);
+  assert.match(screen, /Black while aiming/);
 });
 
 // ── THE COLOUR IS ON THE CARD, NOT BEHIND IT ────────────────────────────
@@ -174,7 +181,8 @@ test("Pay is white on the card, and its text passes on white", () => {
   // A violet button on a teal card is two unrelated colours arguing over
   // the most important control on the screen.
   const src = app();
-  assert.match(src, /background: "#FFFFFF", color: scanBackdropFor\(scanPayee\.gloobalId\)\.from/);
+  // The surface token: white in the light theme (its value is checked below).
+  assert.match(src, /background: T\.surface, color: scanBackdropFor\(scanPayee\.gloobalId\)\.from/);
   const { SCAN_BACKDROPS } = backdrop(["SCAN_BACKDROPS"]);
   const lum = (hex) => {
     const n = parseInt(hex.slice(1), 16);
@@ -198,7 +206,7 @@ test("the GLOOBAL ID keeps a white ground under it", () => {
   const at = src.indexOf("THE ID KEEPS ITS OWN WHITE GROUND");
   assert.ok(at > 0, "the id lost its own ground");
   const block = src.slice(at, at + 900);
-  assert.match(block, /background: "#FFFFFF", borderRadius: 999/);
+  assert.match(block, /background: T\.surface, borderRadius: 999/);
   assert.match(block, /<ColoredGloobalId id=\{scanPayee\.gloobalId\} \/>/,
     "the id is no longer drawn by the app's own component");
 });
@@ -207,9 +215,9 @@ test("the title is readable on both grounds", () => {
   // White over the camera, where it needs a shadow to survive whatever
   // the lens is pointed at; ink once the page goes light, where white
   // would simply be gone.
-  const src = app();
-  assert.match(src, /color: scanPayee \? T\.ink : "#FFFFFF"/);
-  assert.match(src, /textShadow: scanPayee \? "none" : "0 1px 8px rgba\(0,0,0,0\.5\)"/);
+  const src = scanScreen();
+  assert.match(src, /color: light \? T\.ink : "#FFFFFF"/);
+  assert.match(src, /textShadow: light \? "none" : "0 1px 8px rgba\(0,0,0,0\.5\)"/);
 });
 
 test("the backdrop is in the build", () => {
@@ -440,7 +448,9 @@ test("the map button stays off the confirm card", () => {
   // code resolves — so the map came straight back over the card.
   const src = app();
   assert.match(src, /function ScanOverlayBlocksMap/);
-  assert.match(src, /return <><ScanOverlayBlocksMap \/><div style=\{\{\s*\n\s*position: "fixed", inset: 0, zIndex: 400/);
+  assert.match(src, /return <><ScanOverlayBlocksMap \/><GloobalScanScreen\s*\n\s*fixed/);
+  // The shared screen's own default layer is the one the map stands aside for.
+  assert.match(scanScreen(), /zIndex = 400/);
 });
 
 

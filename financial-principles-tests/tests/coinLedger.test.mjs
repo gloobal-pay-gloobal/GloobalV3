@@ -82,21 +82,19 @@ test("the browser's ticker and the server's are the same string", async () => {
   // and is DERIVED from COIN_TICKER rather than written out again. That is a
   // stronger arrangement than the one this test was built to guard: there is
   // no second literal left to drift from the first.
+  // Since the coin's code and its name were split (GEU is what is stored
+  // and compared; CEL is what is printed), there are two strings to keep
+  // in step instead of one, and each is declared once on each side.
   const domainSrc = readFileSync(join(ROOT, "backend", "data", "currencies.js"), "utf8");
-  const browserTicker = domainSrc.match(/var COIN_TICKER = "([^"]+)"/);
-  assert.ok(browserTicker, "the browser no longer declares the coin ticker");
-  assert.match(domainSrc, /var COIN_CURRENCY = COIN_TICKER;/,
-    "the browser's COIN_CURRENCY is a second literal again instead of the ticker");
+  const browserCode = domainSrc.match(/var COIN_CURRENCY = "([^"]+)"/);
+  const browserName = domainSrc.match(/var COIN_TICKER = "([^"]+)"/);
+  assert.ok(browserCode && browserName, "the browser no longer declares the coin's code and name");
+  const serverName = serverSrc.match(/const COIN_TICKER = '([^']+)'/);
+  assert.ok(serverName, "server/lib/coinTicker.js no longer declares COIN_TICKER");
 
-  assert.equal(browserTicker[1], serverTicker[1],
-    `the ledger in the browser posts ${browserTicker[1]} while the database stores ${serverTicker[1]}`);
-  assert.equal(serverTicker[1], COIN_TICKER, "both moved, and this file did not");
-
-  // And the ticker every screen prints comes from the same decision.
-  const currenciesSrc = readFileSync(join(ROOT, "backend", "data", "currencies.js"), "utf8");
-  const printed = currenciesSrc.match(/var COIN_TICKER = "([^"]+)"/);
-  assert.ok(printed, "currencies.js no longer declares COIN_TICKER");
-  assert.equal(printed[1], serverTicker[1], "the screens print a different ticker than the one stored");
+  assert.equal(browserCode[1], serverTicker[1],
+    `the ledger in the browser posts ${browserCode[1]} while the database stores ${serverTicker[1]}`);
+  assert.equal(browserName[1], serverName[1], "the screens print a different name than the server writes");
 });
 
 test("the coin account is denominated in GEU, separately from the bank account", () => {

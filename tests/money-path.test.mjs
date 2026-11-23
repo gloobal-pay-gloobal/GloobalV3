@@ -488,8 +488,10 @@ describe("money direction is coloured the same way everywhere", () => {
   const theme = readSource("frontend/constants/theme.js");
 
   test("the shared constants exist and point at green in, red out", () => {
-    assert.match(theme, /var TXN_IN_COLOR = T\.positive;/);
-    assert.match(theme, /var TXN_OUT_COLOR = T\.negative;/);
+    // Getters on T since the themes (cd829e4), so a theme change reaches
+    // every list; the old load-time vars could not follow one.
+    assert.match(theme, /Object\.defineProperty\(T, "txnIn", \{ enumerable: true, get\(\) \{ return GLOOBAL_PALETTE_ACTIVE\.positive; \} \}\);/);
+    assert.match(theme, /Object\.defineProperty\(T, "txnOut", \{ enumerable: true, get\(\) \{ return GLOOBAL_PALETTE_ACTIVE\.negative; \} \}\);/);
   });
 
   const listSources = [
@@ -503,10 +505,10 @@ describe("money direction is coloured the same way everywhere", () => {
   for (const [file, minUses] of listSources) {
     test(`${file.split("/").pop()} colours amounts from the shared constants`, () => {
       const source = readSource(file);
-      const uses = (source.match(/TXN_(IN|OUT)_COLOR/g) || []).length;
+      const uses = (source.match(/T\.txn(In|Out)\b/g) || []).length;
       assert.ok(
         uses >= minUses,
-        `expected at least ${minUses} use(s) of TXN_IN_COLOR/TXN_OUT_COLOR, found ${uses}`
+        `expected at least ${minUses} use(s) of T.txnIn/T.txnOut, found ${uses}`
       );
     });
   }
@@ -645,7 +647,7 @@ describe("the Send and Receive tiles carry a direction dot", () => {
   test("red on Send, green on Receive — the same two colours as every amount", () => {
     assert.match(
       tile,
-      /background: key === "send" \? TXN_OUT_COLOR : TXN_IN_COLOR/,
+      /background: key === "send" \? T\.txnOut : T\.txnIn/,
       "the dot must read from the shared direction colours, not its own literals"
     );
   });

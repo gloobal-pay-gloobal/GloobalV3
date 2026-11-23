@@ -56,7 +56,7 @@ test("Other cannot be saved without its words, and the words are sent", () => {
 test("creators already in Other are asked once, and never blocked", () => {
   const dash = read("frontend/screens/Dashboard/Dashboard.jsx");
   assert.match(dash, /creatorProfile\.category === "other" && !creatorProfile\.otherWords && <div data-testid="other-words-card"/);
-  assert.match(dash, /GloobalApi\.saveCreatorProfile\(myGloobalId, \{ otherWords: otherWordsDraft\.trim\(\) \}\)/);
+  assert.match(dash, /GloobalApi\.saveCreatorProfile\(creatorSymbol, \{ otherWords: otherWordsDraft\.trim\(\) \}\)/);
 });
 
 test("the filter sheet offers shared words under Other", () => {

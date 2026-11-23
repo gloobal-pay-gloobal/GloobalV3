@@ -162,7 +162,11 @@ test("App.jsx restore effect gates the dashboard on a live token and App lock", 
 test("no page lifecycle handler clears the session", () => {
   for (const file of [APP, SOURCE]) {
     const src = readFileSync(file, "utf8");
-    assert.doesNotMatch(src, /addEventListener\(\s*["'](pagehide|beforeunload|unload)["']/,
-      `${file} must not hook page teardown`);
+    // One teardown hook is allowed, and only this one: gloobalMarkAway
+    // writes WHEN the app was left (the app-lock's grace period reads it)
+    // and touches nothing else. Any other handler is the regression.
+    const hooks = src.match(/addEventListener\(\s*["'](pagehide|beforeunload|unload)["'][^)]*\)/g) || [];
+    const others = hooks.filter((h) => !/^addEventListener\("pagehide", gloobalMarkAway\)$/.test(h));
+    assert.deepEqual(others, [], `${file} must not hook page teardown`);
   }
 });

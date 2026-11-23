@@ -23,7 +23,7 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { buildOnce, openPage, login, teardown, ACCOUNTS } from "./browser-harness.mjs";
+import { buildOnce, openPage, login, teardown, ACCOUNTS, padFill } from "./browser-harness.mjs";
 import { readSource } from "./harness.mjs";
 
 const SENDER = ACCOUNTS.india;
@@ -48,7 +48,7 @@ async function pay(page, receiverGets = 500, { beforeSend } = {}) {
   await page.getByRole("button", { name: "Search", exact: true }).click({ force: true });
   const field = page.getByLabel(`Amount the receiver gets, in their own currency (${RECEIVER.currency})`);
   await field.waitFor({ timeout: 25000 });
-  await field.fill(String(receiverGets));
+  await padFill(page, field, String(receiverGets));
   await page.waitForTimeout(700);
   if (beforeSend) await beforeSend();
   await page.getByRole("button", { name: /^(Send|Simulate)\s/ }).last().click({ force: true });

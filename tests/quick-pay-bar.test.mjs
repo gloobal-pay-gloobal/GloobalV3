@@ -52,7 +52,9 @@ test("found goes straight to Send; you cannot pay yourself", () => {
 test("the globe still opens Coverage, and a paste checks straight away", () => {
   const s = bar();
   assert.match(s, /onClick=\{onOpenCoverage\}\s*aria-label="Gloobal coverage"/);
-  assert.match(s, /animation: "quickPayGlobe 12s linear infinite"/);
+  // Drawn globes that turn over in the side's own ink (globeIcons.jsx),
+  // not the scrolling Earth texture.
+  assert.match(s, /<GloobalGlobeFlip size=\{36\} \/>/);
   assert.match(s, /\.quickpay-globe-spin \{ animation: none !important; \}/);
   assert.match(s, /setText\(pasted\);\s*lookUp\(pasted\);/);
   assert.match(readSource("frontend/screens/Dashboard/Dashboard.jsx"), /<QuickPayBar\s+myGloobalId=\{myGloobalId\}/);
@@ -63,8 +65,11 @@ test("one smart pad: digits and ID symbols together, letters on their own key", 
   assert.match(s, /inputMode="none"/);
   assert.match(s, /onFocus=\{\(\) => \{ if \(!nameMode\) setPadOpen\(true\); \}\}/);
   assert.doesNotMatch(s, /QUICK_PAY_MODES/, "the three tabs are back");
-  assert.match(s, /var QUICK_PAY_PAD_ROWS = \[/);
-  assert.match(s, /\["name", "0", "back", "\\u25CF", "\\u25A0"\]/);
+  // A dialler now: plain digits, hold 0 for +, and the bottom-left key
+  // still opens the letters for a creator name. ID symbols are pasted or
+  // scanned, not typed here.
+  assert.match(s, /var QUICK_PAY_MOBILE_ROWS = \[/);
+  assert.match(s, /\["name", "0", "back"\]/);
   assert.match(s, /if \(key === "name"\) \{ setText\(""\); setPadOpen\(false\); setNameField\("first"\); setNameMode\(true\); return; \}/);
   assert.match(s, /<CreatorNameKeyboard\s+open\s+header=\{/);
   assert.match(readSource("frontend/features/creator/nameKeyboard.jsx"), />\{header\}\{/);

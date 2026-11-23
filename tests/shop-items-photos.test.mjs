@@ -49,7 +49,7 @@ test("the client sends known photos as references and new ones whole", () => {
   assert.deepEqual(out[0].photos, [`ref:${"a".repeat(24)}:1`, NEW, `ref:${"a".repeat(24)}:0`]);
   assert.deepEqual(out[1].photos, [`ref:${"b".repeat(24)}:0`]);
   assert.match(api, /async saveCreatorItems\(symbolId, items, current\)/);
-  assert.match(dash, /GloobalApi\.saveCreatorItems\(myGloobalId, next, current\)/);
+  assert.match(dash, /GloobalApi\.saveCreatorItems\(creatorSymbol, next, current\)/);
 });
 
 test("the server's reason reaches the screen", () => {

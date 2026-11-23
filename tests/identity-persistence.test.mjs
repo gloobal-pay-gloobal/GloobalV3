@@ -45,8 +45,10 @@ describe("1. the referral link identifies the account, not the persona", () => {
     );
     assert.match(
       referralLinkExpression,
-      /\$\{GLOOBAL_API_BASE\}\/r\//,
-      "it must still point at the backend's /r/ route"
+      // On the app's own domain now (GLOOBAL_PAY_ORIGIN; App.jsx reads
+      // /r/<code> on load), so a friend never waits on a sleeping server.
+      /\$\{referralLinkBase\}\/r\//,
+      "it must still point at an /r/ route"
     );
   });
 

@@ -79,7 +79,9 @@ async function openScanner(config, pageOptions = {}) {
   // before touching the camera, so there is no getUserMedia call and no
   // control row until this is tapped.
   await tap(opened.page.getByRole("button", { name: "Scanner", exact: true }));
-  await tap(opened.page.getByRole("button", { name: "Allow Access", exact: true }));
+  // Skipped by the app when a grant is already on record (f291712).
+  const allow = opened.page.getByRole("button", { name: "Allow Access", exact: true });
+  await allow.waitFor({ timeout: 6000 }).then(() => tap(allow), () => {});
 
   // The <video> only exists on the running branch. Waiting on the upload
   // button instead would go green on the camera-ERROR card, which draws one
@@ -120,186 +122,14 @@ const sends = (api) => api.calls.filter((c) => c.path === "/api/transactions/sen
 
 // ---------------------------------------------------------------------------
 
-describe("the zoom control is drawn only when the lens reports a range", () => {
-  test("a lens reporting min and max gets a zoom button", async () => {
-    const { page, context, api } = await openScanner(FULL);
-    assert.equal(await zoomButton(page).count(), 1, "a zoom-capable lens must offer zoom");
-    assert.equal(await zoomLabel(page), "Zoom, currently 1x");
-    assert.equal(sends(api), 0);
-    await context.close();
-  });
-
-  test("a lens with no zoom capability gets no zoom button at all", async () => {
-    // The torch is asserted alongside on purpose: it proves the control row
-    // rendered, so the missing zoom button is the gate working rather than
-    // the whole row being absent.
-    const { page, context, api } = await openScanner({ torch: true, focusMode: ["continuous"] });
-    assert.equal(await torchButton(page).count(), 1, "the row itself must have rendered");
-    assert.equal(await zoomButton(page).count(), 0, "a lens that cannot zoom must show no zoom control");
-    assert.equal(sends(api), 0);
-    await context.close();
-  });
-
-  test("zoom reported as a bare boolean is treated as no zoom, not guessed at", async () => {
-    // Some engines report zoom as `true` rather than a range. A control built
-    // on a guessed range would ask for values the lens never offered.
-    const { page, context } = await openScanner({ torch: true, zoomRaw: true, focusMode: ["continuous"] });
-    assert.equal(await torchButton(page).count(), 1);
-    assert.equal(await zoomButton(page).count(), 0);
-    await context.close();
-  });
-
-  test("a range whose max does not exceed its min is no range", async () => {
-    const { page, context } = await openScanner({ torch: true, zoomRaw: { min: 2, max: 2 } });
-    assert.equal(await torchButton(page).count(), 1);
-    assert.equal(await zoomButton(page).count(), 0);
-    await context.close();
-  });
-
-  test("there is no disabled zoom button hiding anywhere", async () => {
-    // A dead control mid-scan is worse than no control. Checked on the lens
-    // that HAS zoom, because that is where a disabled state could lurk.
-    const { page, context } = await openScanner(FULL);
-    assert.equal(await page.locator("button[disabled]").count(), 0, "no control in the scanner may be disabled");
-    await context.close();
-  });
-});
-
-describe("what the zoom button actually sends", () => {
-  test("one advanced entry, holding zoom and nothing else", async () => {
-    const { page, context } = await openScanner(FULL);
-    await tapControl(page, zoomButton(page), "zoom");
-
-    const calls = await callsFor(page, "zoom");
-    assert.equal(calls.length, 1, "one tap, one constraint");
-    const call = calls[0];
-    assert.deepEqual(Object.keys(call), ["advanced"], `the call carried more than advanced: ${JSON.stringify(call)}`);
-    assert.equal(call.advanced.length, 1, "a batched call is rejected whole by real devices");
-    assert.deepEqual(
-      Object.keys(call.advanced[0]),
-      ["zoom"],
-      `zoom was batched with another key: ${JSON.stringify(call.advanced[0])}`
-    );
-    await context.close();
-  });
-
-  test("every requested value is inside the range the lens reported", async () => {
-    const { page, context } = await openScanner(FULL);
-    // All three stops and the wrap, so nothing is only true for the first tap.
-    for (let i = 0; i < 4; i += 1) await tapControl(page, zoomButton(page), "zoom");
-
-    const asked = (await entriesFor(page, "zoom")).map((a) => a.zoom);
-    assert.equal(asked.length, 4);
-    for (const value of asked) {
-      assert.ok(Number.isFinite(value), `a non-numeric zoom was requested: ${value}`);
-      assert.ok(value >= 1 && value <= 8, `${value} is outside the lens's own 1..8`);
-    }
-    await context.close();
-  });
-
-  test("the label follows getSettings(), not the request, when the lens settles elsewhere", async () => {
-    // The case a control that trusts its own request gets wrong: the device
-    // resolves, and lands on 3 when it was asked for 4.5. A button reading
-    // 4.5x over a 3x picture is the same lie as an ON torch over a dark flash.
-    const { page, context } = await openScanner({ ...FULL, settles: { zoom: 3 } });
-    assert.equal(await zoomLabel(page), "Zoom, currently 1x");
-
-    await tapControl(page, zoomButton(page), "zoom");
-
-    const asked = (await entriesFor(page, "zoom")).map((a) => a.zoom);
-    assert.equal(asked[0], 4.5, "the midpoint of 1..8 is what it should have asked for");
-    assert.equal((await lensState(page)).zoom, 3, "the fake lens must have settled elsewhere");
-    assert.equal(await zoomLabel(page), "Zoom, currently 3x", "the label must report the lens, not the request");
-    await context.close();
-  });
-
-  test("a lens that reports no zoom back falls back to what it was asked", async () => {
-    // Some engines accept the constraint and report nothing in getSettings.
-    // There is no readback to trust, so the request is the best available
-    // answer — and it is still clamped rather than taken on faith.
-    const { page, context } = await openScanner({ ...FULL, unreported: ["zoom"] });
-    assert.equal(await zoomLabel(page), "Zoom, currently 1x");
-    await tapControl(page, zoomButton(page), "zoom");
-    assert.equal(await zoomLabel(page), "Zoom, currently 4.5x");
-    await context.close();
-  });
-
-  test("a refusing lens does not move the label, and does not throw", async () => {
-    const { page, context, errors, api } = await openScanner({ ...FULL, rejects: ["zoom"] });
-    assert.equal(await zoomLabel(page), "Zoom, currently 1x");
-
-    await tapControl(page, zoomButton(page), "zoom");
-    assert.equal((await callsFor(page, "zoom")).length, 1, "it must still have asked");
-    assert.equal((await lensState(page)).zoom, 1, "the fake lens must not have moved");
-    assert.equal(await zoomLabel(page), "Zoom, currently 1x", "a refusal must leave the label where the lens is");
-
-    // And it must survive being pressed again rather than wedging.
-    await tapControl(page, zoomButton(page), "zoom");
-    assert.equal(await zoomLabel(page), "Zoom, currently 1x");
-
-    assert.deepEqual(errors.filter((e) => e.startsWith("pageerror")), [], "a rejected constraint must not throw");
-    assert.equal(sends(api), 0);
-    await context.close();
-  });
-
-  test("a lens that resolves and does nothing leaves the label where the lens is", async () => {
-    const { page, context } = await openScanner({ ...FULL, ignores: ["zoom"] });
-    await tapControl(page, zoomButton(page), "zoom");
-    assert.equal((await lensState(page)).zoom, 1);
-    assert.equal(await zoomLabel(page), "Zoom, currently 1x");
-    await context.close();
-  });
-});
-
-describe("the label is a multiple of the lens's own minimum", () => {
-  test("a device reporting 100..800 reads 1x, 4.5x, 8x", async () => {
-    // The whole reason the label is not the raw value: "100" on a button
-    // means nothing to anybody, and this device's 100 is another device's 1.
-    const { page, context } = await openScanner({
-      torch: true,
-      zoom: { min: 100, max: 800, step: 1 },
-      focusMode: ["continuous"]
-    });
-    assert.equal(await zoomLabel(page), "Zoom, currently 1x");
-
-    await tapControl(page, zoomButton(page), "zoom");
-    assert.equal(await zoomLabel(page), "Zoom, currently 4.5x");
-
-    await tapControl(page, zoomButton(page), "zoom");
-    assert.equal(await zoomLabel(page), "Zoom, currently 8x", "the top of 100..800 is 8x");
-
-    const asked = (await entriesFor(page, "zoom")).map((a) => a.zoom);
-    assert.deepEqual(asked, [450, 800], "the numbers sent are the LENS's units, not the label's");
-    await context.close();
-  });
-
-  test("stepping cycles min, middle, max and wraps back to min", async () => {
-    const { page, context } = await openScanner(FULL);
-    const seen = [await zoomLabel(page)];
-    for (let i = 0; i < 3; i += 1) {
-      await tapControl(page, zoomButton(page), "zoom");
-      seen.push(await zoomLabel(page));
-    }
-    assert.deepEqual(seen, [
-      "Zoom, currently 1x",
-      "Zoom, currently 4.5x",
-      "Zoom, currently 8x",
-      "Zoom, currently 1x"
-    ]);
-    assert.equal((await lensState(page)).zoom, 1, "the lens must be back at the bottom too");
-    await context.close();
-  });
-
-  test("a lens reporting no step still steps, on a computed fallback", async () => {
-    const { page, context } = await openScanner({ torch: true, zoom: { min: 1, max: 5 }, focusMode: ["continuous"] });
-    assert.equal(await zoomLabel(page), "Zoom, currently 1x");
-    await tapControl(page, zoomButton(page), "zoom");
-    assert.equal(await zoomLabel(page), "Zoom, currently 3x");
-    await tapControl(page, zoomButton(page), "zoom");
-    assert.equal(await zoomLabel(page), "Zoom, currently 5x");
-    await context.close();
-  });
-});
+// ── THE ZOOM BUTTON IS GONE ──────────────────────────────────────────────
+//
+// af0ea4e replaced the zoom control (its marks, its reading and its button)
+// with a pinch: two fingers on the camera zoom it like a photo, and a
+// trackpad pinch on a laptop. The tests that pressed a zoom button and read
+// its label went with it; the lens arithmetic they also covered (asking the
+// lens first, cropping in software where it refuses) is unchanged and is
+// checked in scanner-optics.test.mjs.
 
 describe("the flashlight, pressed rather than grepped", () => {
   test("the button is drawn only where the lens reports a torch", async () => {
@@ -309,7 +139,7 @@ describe("the flashlight, pressed rather than grepped", () => {
     await withTorch.context.close();
 
     const without = await openScanner({ zoom: { min: 1, max: 8 }, focusMode: ["continuous"] });
-    assert.equal(await zoomButton(without.page).count(), 1, "the row itself must have rendered");
+    assert.equal(await without.page.getByLabel("Upload a QR code from your gallery", { exact: true }).count(), 1, "the row itself must have rendered");
     assert.equal(await torchButton(without.page).count(), 0, "a lens with no torch must show no torch control");
     await without.context.close();
   });
@@ -400,8 +230,12 @@ describe("the control row fits the phones people hold", () => {
         const found = Array.from(document.querySelectorAll('div[aria-hidden="true"]'))
           .flatMap((wrapper) => Array.from(wrapper.children))
           .filter((el) => {
+            // The ring that replaced the white border (the aperture,
+            // "ours, not every scanner's"): a square with a 34px radius whose
+            // edge is drawn by an SVG inside it, dimming the surround with
+            // one spread shadow.
             const s = getComputedStyle(el);
-            return s.borderRadius === "26px" && s.borderTopStyle === "solid";
+            return s.borderRadius === "34px" && /100vmax|\d{3,}px/.test(s.boxShadow) && el.querySelector("svg");
           });
         if (found.length !== 1) return { count: found.length };
         const r = found[0].getBoundingClientRect();
@@ -418,12 +252,10 @@ describe("the control row fits the phones people hold", () => {
         `the framing square runs off the top or bottom at ${height}px: ${JSON.stringify(square)}`
       );
 
-      // Upload, torch and zoom: all three are drawn on this lens, in that
-      // document order.
+      // Upload and torch (zoom is a pinch now, with no control of its own).
       const controls = [
         ["Upload", page.getByLabel("Upload a QR code from your gallery", { exact: true })],
-        ["Torch", torchButton(page)],
-        ["Zoom", zoomButton(page)]
+        ["Torch", torchButton(page)]
       ];
       const boxes = [];
       for (const [label, locator] of controls) {
@@ -452,8 +284,8 @@ describe("the control row fits the phones people hold", () => {
 
       // And they are pressable where they are: a control inside the viewport
       // that another layer swallows is still an unusable control.
-      await tapControl(page, zoomButton(page), "zoom");
-      assert.equal(await zoomLabel(page), "Zoom, currently 4.5x", `the zoom did not respond at ${width}x${height}`);
+      await tapControl(page, torchButton(page), "torch");
+      assert.equal(await page.getByLabel("Turn off flashlight", { exact: true }).count(), 1, `the torch did not respond at ${width}x${height}`);
 
       assert.equal(sends(api), 0);
       await context.close();
@@ -484,8 +316,7 @@ describe("the control row fits the phones people hold", () => {
 
     for (const [label, locator] of [
       ["Upload", page.getByLabel("Upload a QR code from your gallery", { exact: true })],
-      ["Torch", torchButton(page)],
-      ["Zoom", zoomButton(page)]
+      ["Torch", torchButton(page)]
     ]) {
       const box = await locator.boundingBox();
       assert.ok(box, `${label} has no box at 640x360`);
@@ -496,8 +327,7 @@ describe("the control row fits the phones people hold", () => {
       );
     }
 
-    await tapControl(page, zoomButton(page), "zoom");
-    assert.equal(await zoomLabel(page), "Zoom, currently 4.5x");
+    await tapControl(page, torchButton(page), "torch");
     assert.equal(sends(api), 0);
     await context.close();
   });
@@ -509,9 +339,7 @@ describe("the guarantee the controls must not break", () => {
     // scanning and uploading resolve a payee and open Send Money. Nothing on
     // the scanner pays anybody, and a control row is not an excuse.
     const { page, context, api, errors } = await openScanner(FULL);
-    await tapControl(page, zoomButton(page), "zoom");
     await tapControl(page, torchButton(page), "torch");
-    await tapControl(page, zoomButton(page), "zoom");
     await tapControl(page, torchButton(page), "torch");
     await page.waitForTimeout(800);
 
@@ -543,7 +371,8 @@ describe("the guarantee the controls must not break", () => {
     await page.waitForSelector("#root *", { timeout: 15000 });
     await login(page, A);
     await tap(page.getByRole("button", { name: "Scanner", exact: true }));
-    await tap(page.getByRole("button", { name: "Allow Access", exact: true }));
+    const allow = page.getByRole("button", { name: "Allow Access", exact: true });
+    await allow.waitFor({ timeout: 6000 }).then(() => tap(allow), () => {});
 
     const upload = page.getByLabel("Upload a QR code from your gallery", { exact: true });
     await upload.waitFor({ timeout: 20000 });

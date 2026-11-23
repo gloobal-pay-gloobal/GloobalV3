@@ -34,15 +34,14 @@ describe("a PIN is not printed under the pad", () => {
   const auth = strip(readSource(AUTH));
 
   test("every screen that masks its boxes also silences the pad", () => {
-    // Three of them: setting a PIN, signing in with one, and the modal
-    // that stands in for a fingerprint. All three mask the boxes above
-    // the pad, so all three must stop the pad repeating the value.
-    const calls = auth.split("<PhoneDialPad").slice(1).map((tail) => tail.slice(0, tail.indexOf("/>")));
-    assert.equal(calls.length, 3, `expected three PIN pads, found ${calls.length}`);
-    for (const call of calls) {
-      assert.match(call, /showValue=\{false\}/,
-        `a PIN screen prints its PIN under the pad: ${call.slice(0, 80)}`);
-    }
+    // One PIN screen everywhere since 8e73a13: setting a PIN, signing in and
+    // the fingerprint stand-in all draw GloobalPinPanel, which has no value
+    // line under its keys at all — a typed digit shows only in its own slot,
+    // and only when the person has asked to see it.
+    assert.equal(auth.split("<PhoneDialPad").length - 1, 0, "a PIN screen is back on the phone pad, which prints its value");
+    assert.ok((auth.match(/<GloobalPinPanel/g) || []).length >= 2, "the PIN screens no longer share one panel");
+    const panel = strip(readSource("frontend/components/inputs/pinPanel.jsx"));
+    assert.match(panel, /\{ch \? \(revealed\s*\n?\s*\? <span/, "a digit is drawn without being asked for");
   });
 
   test("the digits still show where the digits are the point", () => {

@@ -81,7 +81,9 @@ describe("it degrades to a smaller truth, never an invented one", () => {
 
 describe("the endpoint publishes counts and nothing else", () => {
   const at = server.indexOf("app.get('/api/creator-share/distribution'");
-  const route = server.slice(at, server.indexOf("app.get('/api/stats'", at));
+  // To the next route, whatever it is: routes added after it (Coverage,
+  // 0250) are not part of the distribution.
+  const route = server.slice(at, server.indexOf("\napp.", at + 10));
 
   test("the route exists", () => {
     assert.ok(at > 0, "distribution endpoint not found");

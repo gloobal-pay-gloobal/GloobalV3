@@ -135,9 +135,10 @@ describe("Personal Details reads the account, not the form", () => {
     // Mobile row when it has been given something, so an account with no
     // recorded number shows no row instead of showing its country's prefix
     // as though that were a phone number.
+    // Personal Details is its own screen now (PersonalDetailsScreen.jsx).
     assert.match(
-      readSource("frontend/screens/Dashboard/Dashboard.jsx"),
-      /\.\.\.\(mobileNumber \? \[\["Mobile", mobileNumber\]\] : \[\]\)/
+      readSource("frontend/features/identity/PersonalDetailsScreen.jsx"),
+      /mobileNumber \? factRow\(PdPhoneIcon, "Mobile", mobileShown,/
     );
   });
 });
@@ -205,8 +206,15 @@ describe("the screen, after signing in the way the founder signs in", () => {
     const text = await page.evaluate(() => (document.body.innerText || "").replace(/\n+/g, " | "));
     const shown = (text.match(/Mobile \| ([^|]+)\|/) || [])[1];
     assert.ok(shown, `there is no Mobile row at all:\n${text.slice(-400)}`);
-    // Measured before the fix: "+91".
-    assert.equal(shown.trim(), ACCOUNTS.india.mobileNumber);
+    // Measured before the fix: "+91". The number is masked until the eye is
+    // tapped now, so it is the real number's own last digits that show…
+    assert.ok(shown.trim().endsWith(ACCOUNTS.india.mobileNumber.slice(-3)), `not this account's number: ${shown}`);
+    assert.ok(shown.replace(/\D/g, "").length > 3, `only a dial code: ${shown}`);
+    // …and the whole of it once revealed.
+    await page.getByRole("button", { name: "Show mobile number" }).click({ force: true });
+    await page.waitForTimeout(400);
+    const after = (await page.evaluate(() => (document.body.innerText || "").replace(/\n+/g, " | "))).match(/Mobile \| ([^|]+)\|/)[1];
+    assert.equal(after.replace(/\D/g, ""), ACCOUNTS.india.mobileNumber.replace(/\D/g, ""));
   });
 
   test("nothing threw", async () => {

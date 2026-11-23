@@ -23,10 +23,12 @@ const { encode: uqrEncode } = await import(
 
 // The module itself — plain JS, run as written.
 const SRC = readSource("frontend/components/common/gloobalAnimalQr.js");
+// One animal takes the theme's accent (cd829e4), read when the module loads,
+// so the theme object comes in with it — the default theme's violet here.
 const Q = new Function(
-  "uqrEncode",
+  "uqrEncode", "T",
   `${SRC}\nreturn { GLOOBAL_QR_ANIMALS, GLOOBAL_ANIMAL_QR_SIZE, gloobalAnimalQrLayout, gloobalAnimalQrPaint, gloobalAnimalQrInk, gloobalAnimalQrFind };`
-)(uqrEncode);
+)(uqrEncode, { accent: "#7C3AED" });
 
 // A minimal 2D context over an RGBA buffer: enough of fillRect / arc / fill
 // for gloobalAnimalQrPaint, so the pixels tested are the pixels it paints.
@@ -115,7 +117,11 @@ const MARK = (() => {
   const constants = ["GLOOBAL_QR_QUIET_ZONE", "GLOOBAL_QR_CORNER_EDGE", "GLOOBAL_QR_CORNER_R", "GLOOBAL_QR_DISC_MAX_LUM"]
     .map((name) => CARD_SRC.slice(CARD_SRC.indexOf(`var ${name} = `), CARD_SRC.indexOf(";", CARD_SRC.indexOf(`var ${name} = `)) + 1))
     .join("\n");
+  // The mark is switched off in the app for now (GLOOBAL_QR_CORNER_MARK_ON,
+  // at the founder's request). It is painted ON here, so the day it is
+  // switched back every code is already known to scan with it.
   return new Function(`
+    var GLOOBAL_QR_CORNER_MARK_ON = true;
     ${constants}
     ${lift("gloobalQrCornerBadge")}
     ${lift("gloobalQrDiscInk")}

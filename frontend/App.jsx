@@ -32,6 +32,12 @@ var SHOW_PHONE_HERO_CIRCLE = false;
 // Two grounds, because it appears on both a white permission page and on
 // top of live video, and a control that is legible on one is invisible on
 // the other.
+// The amount the other phone asked for by sound, in both names like every
+// other figure (the display lens): the payee's money, read by this viewer.
+function ScanAskedFigure({ amount, currency, own = null, size }) {
+  const lens = useGeuLens();
+  return <GeuFigure amount={amount} currency={currency} lens={lens} own={own || currency} size={size} />;
+}
 function ScanSendButton({ onClick, overVideo = false, label = "Send" }) {
   return <button
     onClick={onClick}
@@ -5086,7 +5092,7 @@ function GloobalId() {
     </span>
   </div> : null}{scanAskedAmount && <div data-testid="scan-asked-amount" style={{ display: "inline-flex", alignItems: "baseline", gap: 6, background: "rgba(255,255,255,0.18)", borderRadius: 16, padding: "10px 18px", marginBottom: 18, color: scanDetailsShown ? scanBackdropFor(scanPayee.gloobalId).from : "#fff" }}>
     <span style={{ fontSize: 12.5, fontWeight: 700, opacity: 0.85 }}>Asking for</span>
-    <span style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{fmtMoney(Number(scanAskedAmount), COUNTRY_CURRENCY[String(scanPayee.countryIso || dialCountry.iso || "").toUpperCase()] || "INR")}</span>
+    <span style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}><ScanAskedFigure amount={Number(scanAskedAmount)} currency={COUNTRY_CURRENCY[String(scanPayee.countryIso || dialCountry.iso || "").toUpperCase()] || "INR"} own={COUNTRY_CURRENCY[String(dialCountry.iso || "").toUpperCase()] || null} size={26} /></span>
   </div>}</>;
   })()}<button
     onClick={handleSendToScanned}

@@ -93,7 +93,9 @@ async function firstLogin(page, account) {
   for (const digit of account.pin) {
     await page.getByLabel(`Digit ${digit}`, { exact: true }).click({ force: true, timeout: 8000 });
   }
-  await page.getByLabel("Log in", { exact: true }).first().click({ force: true, timeout: 12000 });
+  // The pad sends itself on the sixth digit; a tap here is only for an
+  // older build that still waits for it.
+  await page.getByLabel("Log in", { exact: true }).first().click({ force: true, timeout: 2500 }).catch(() => {});
   await page.getByLabel("Send", { exact: true }).waitFor({ timeout: 40000 });
 }
 
@@ -119,9 +121,16 @@ const balanceLine = (page) =>
 // message the real bug would produce ("expected €3,120.55, saw null"),
 // which is how it went unnoticed: the suite was still reporting the
 // hydration bug it was written to catch, long after that bug was fixed.
+// The balance now reads in both names, "900.00 CEL │ $" (the display lens):
+// the figure is the account's own money, and the sign after the bar says
+// which. Read as figure + sign, the shape the cases below expect; a plain
+// "900.00$" (lens off) still matches the second pattern.
 const shownMoney = (page) =>
   page.evaluate(() => {
-    const m = document.body.innerText.match(/[\d,]+(?:\.\d{1,2})?(?:[₹¥£$€]| ?[A-Z]{3}\b)/);
+    const t = document.body.innerText;
+    const pair = t.match(/([\d,]+(?:\.\d{1,2})?)\s*CEL\s*[│|]\s*([₹¥£$€])/);
+    if (pair) return pair[1] + pair[2];
+    const m = t.match(/[\d,]+(?:\.\d{1,2})?(?:[₹¥£$€]| ?[A-Z]{3}\b)/);
     return m ? m[0] : null;
   });
 
@@ -222,7 +231,7 @@ describe("a slow server is a loading state, not a wrong number", () => {
 
       // And when it lands, the real figure.
       await page.waitForFunction(
-        () => /3,120\.55€/.test(document.body.innerText),
+        () => /3,120\.55(?:€|\s*CEL\s*[│|]\s*€)/.test(document.body.innerText),
         undefined,
         { timeout: 30000 }
       );

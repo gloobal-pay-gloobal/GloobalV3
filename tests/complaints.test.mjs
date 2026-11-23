@@ -190,7 +190,7 @@ test("the receipt: Complain only on payments I sent, with the reason sheet", () 
 
 test("the profile row, the map entry and the push all lead to the case", () => {
   // 0238: Ask GLOOBAL joined the same list, right after it.
-  assert.match(dash, /\["Complaints & reports"(?:, "Ask GLOOBAL")?\]/);
+  assert.match(dash, /\[(?:"[^"]+", )*"Complaints & reports"(?:, "Ask GLOOBAL")?\]/);
   assert.match(dash, /label === "Complaints & reports"\s*\? setShowComplaints\(true\)/);
   assert.match(dash, /deepLinkTarget\.complaint/);
   assert.match(app, /key: "complaints", section: "You"/);

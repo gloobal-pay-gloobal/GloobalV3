@@ -153,7 +153,9 @@ describe("the card is built from what the server recorded", () => {
     // the real function rather than as source text: a table is only worth
     // having if what it answers is what the card shows.
     assert.match(card, /function gloobalNotifWhoLabel\(meta, row\)/);
-    const labelOf = (meta, row) => (pagesOfCard(meta, "", row).find((p) => p.key === "who") || {}).label;
+    // The row carries its metadata, as a real one does: since 0239 a
+    // "payment" row with none is a notice (a rent request), not money.
+    const labelOf = (meta, row) => (pagesOfCard(meta, "", { ...row, metadata: meta }).find((p) => p.key === "who") || {}).label;
     assert.equal(labelOf({ direction: "sent", counterpartyName: "R" }, { type: "share" }), "Creator Share to");
     assert.equal(labelOf({ direction: "received", counterpartyName: "R" }, { type: "share" }), "Creator Share from");
     assert.equal(labelOf({ direction: "sent", counterpartyName: "R" }, { type: "payment" }), "To");
@@ -706,7 +708,7 @@ describe("both sides of one payment state one rate", () => {
   // The third argument is the ROW. Which pages a notification has depends
   // on its type now — a card is drawn for every kind, and only the money
   // ones have a conversion page at all.
-  const rateOf = (meta) => (pagesOf(meta, "", { type: "payment" }).find((p) => p.key === "money") || {}).note;
+  const rateOf = (meta) => (pagesOf(meta, "", { type: "payment", metadata: meta }).find((p) => p.key === "money") || {}).note;
 
   test("the payer and the payee are told the same rate", () => {
     assert.equal(rateOf(sent), rateOf(received),

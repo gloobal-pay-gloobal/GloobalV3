@@ -32,7 +32,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
-import { ACCOUNTS, buildOnce, login, openPage, teardown, skipPaymentUnlock } from "./browser-harness.mjs";
+import { ACCOUNTS, buildOnce, login, openPage, teardown, skipPaymentUnlock, padFill } from "./browser-harness.mjs";
 
 const SHOTS = process.env.GLOOBAL_RECEIPT_SHOTS || "";
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
@@ -213,7 +213,7 @@ async function pay(page, { sender, receiver, receiverGets }) {
 
   const field = page.getByLabel(`Amount the receiver gets, in their own currency (${receiver.currency})`);
   await field.waitFor({ timeout: 25000 });
-  await field.fill(String(receiverGets));
+  await padFill(page, field, String(receiverGets));
   await page.waitForTimeout(700);
 
   await page.getByRole("button", { name: /^(Send|Simulate)\s/ }).last().click({ force: true });
@@ -334,6 +334,10 @@ describe("no face, and no request for one", () => {
     const { page, context, api } = await openInstrumented(A, { photos: { [B.symbolId]: RED } });
     await login(page, A);
     await pay(page, { sender: A, receiver: B, receiverGets: 500 });
+    // From here on is the receipt's own doing. (The payment screen before it
+    // shows the payee's face on purpose, so a read made while paying is not
+    // the receipt's.)
+    const callsBeforeReceipt = api.calls.length;
 
     const receipt = await readReceipt(page);
     assert.equal(receipt.name, B.fullName);
@@ -350,7 +354,7 @@ describe("no face, and no request for one", () => {
     // to fifteen seconds for this exact request to appear; the same budget is
     // spent here proving it does not.
     await page.waitForTimeout(2000);
-    const photoRead = api.calls.some((c) => decodeURIComponent(c.path) === `/api/users/${B.symbolId}/photo`);
+    const photoRead = api.calls.slice(callsBeforeReceipt).some((c) => decodeURIComponent(c.path) === `/api/users/${B.symbolId}/photo`);
     assert.ok(!photoRead, "the receipt asked the server for the payee's photo");
 
     // And the photo is nowhere on the page, in storage, or on the record.

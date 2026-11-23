@@ -102,7 +102,7 @@ describe("who shares, in Pay & Services", () => {
   test("every row carries the share, and a shop with none says not yet", () => {
     assert.match(b, /<BazaarShareTag pct=\{s\.sharePct\} \/>/);
     assert.match(b, /"not yet"/);
-    assert.match(code("frontend/features/bazaar/bazaarMap.jsx"), /<BazaarShareTag pct=\{pickedPin\.shop\.sharePct\} \/>/);
+    assert.match(code("frontend/features/bazaar/bazaarMap.jsx"), /<BazaarShareTag pct=\{shop\.sharePct\} \/>/);
   });
 
   test("Shares most is a sort, on both ends", () => {

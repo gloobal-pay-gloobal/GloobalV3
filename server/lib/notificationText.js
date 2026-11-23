@@ -186,7 +186,7 @@ function paymentBannerText({ direction, amount, currency, counterpartyName }) {
     }),
     body: counterpartyName
       ? `${sent ? 'To' : 'From'} ${counterpartyName}`
-      : (sent ? 'Your Gloobal payment went through.' : 'Money has landed in your Gloobal account.'),
+      : (sent ? 'Your GLOOBAL payment went through.' : 'Money has landed in your GLOOBAL account.'),
   };
 }
 
@@ -220,7 +220,7 @@ function shareBannerText({ direction, amount, currency, counterpartyName }) {
     }),
     body: counterpartyName
       ? `Creator Share ${sent ? 'to' : 'from'} ${counterpartyName}`
-      : (sent ? 'A Creator Share went back to whoever paid you.' : 'A Creator Share has landed in your Gloobal account.'),
+      : (sent ? 'A Creator Share went back to whoever paid you.' : 'A Creator Share has landed in your GLOOBAL account.'),
   };
 }
 
@@ -262,10 +262,10 @@ function coinWhoLabel({ movement, sent }) {
 function coinBannerText({ movement, direction, amount, currency, counterpartyName }) {
   const sent = direction === 'sent';
   const fallback = movement === 'mint'
-    ? 'Gloobal Coin bought'
+    ? 'GLOOBAL Coin bought'
     : movement === 'redeem'
-      ? 'Gloobal Coin sold'
-      : (sent ? 'Gloobal Coin sent' : 'Gloobal Coin received');
+      ? 'GLOOBAL Coin sold'
+      : (sent ? 'GLOOBAL Coin sent' : 'GLOOBAL Coin received');
   return {
     title: bannerAmountTitle({ sent, amount, currency, fallback }),
     body: counterpartyName

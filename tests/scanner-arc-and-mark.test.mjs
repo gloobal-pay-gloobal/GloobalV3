@@ -33,6 +33,9 @@ import { readSource } from "./harness.mjs";
 const SCANNER = "frontend/components/common/qrScanner.jsx";
 const ICONS = "frontend/components/common/icons.jsx";
 const APP = "frontend/App.jsx";
+// The scan screen itself, shared by GLOOBAL and Helloo since update 13.
+// App.jsx keeps the lookup and passes the payee's card and tint in.
+const SCAN = "frontend/features/scan/GloobalScanScreen.jsx";
 const SEND = "frontend/screens/SendMoney/SendMoney.jsx";
 const DASH = "frontend/screens/Dashboard/Dashboard.jsx";
 const NAV = "frontend/components/buttons/navButtons.jsx";
@@ -73,8 +76,8 @@ const raw = (p) => readSource(p);
 // than the shape, and renaming four of them to say "rail" would have made
 // a diff nobody could read out of a change that touched no arithmetic.
 const src = readSource(SCANNER);
-const arc = new Function(`${src.slice(src.indexOf("var ZOOM_ARC_SNAP_PX"), src.indexOf("function ZoomRail("))}
-  return { ZOOM_ARC_SNAP_PX, ZOOM_ARC_MARKS, ZOOM_RAIL_INSET, zoomArcRatio, zoomArcPosition, zoomArcLevel, zoomArcMarks };`)();
+// (The zoom rail and its scale were removed for a pinch, af0ea4e; their
+// arithmetic went with them, so nothing of it is loaded here.)
 
 const TEN = { min: 1, max: 10 };
 const DEVICE_UNITS = { min: 100, max: 800 };
@@ -111,7 +114,8 @@ describe("one mark for scanning, everywhere", () => {
     assert.match(app, /@keyframes scanMarkCycle/, "the cycle is not defined");
     const at = app.indexOf("@keyframes scanMarkCycle");
     const block = app.slice(at, at + 400);
-    const colours = block.match(/color: #[0-9A-Fa-f]{6}/g) || [];
+    // The first stop is the theme's own accent (0248), the rest fixed hues.
+    const colours = block.match(/color: (?:#[0-9A-Fa-f]{6}|\$\{T\.accent\})/g) || [];
     assert.ok(new Set(colours).size >= 3, `only ${new Set(colours).size} colours in the cycle`);
     const duration = app.match(/\.scan-mark-cycle \{ animation: scanMarkCycle (\d+)s/);
     assert.ok(duration, "the cycle has no duration");
@@ -140,203 +144,6 @@ describe("one mark for scanning, everywhere", () => {
   });
 });
 
-describe("the zoom arc covers the range the old stops skipped", () => {
-  test("the ends are the lens's own ends", () => {
-    assert.ok(near(arc.zoomArcPosition(1, TEN), 0));
-    assert.ok(near(arc.zoomArcPosition(10, TEN), 1));
-    assert.ok(near(arc.zoomArcLevel(0, TEN), 1));
-    assert.ok(near(arc.zoomArcLevel(1, TEN), 10));
-  });
-
-  test("the middle is 3.2x, not 5.5x", () => {
-    // The whole complaint, as an assertion. A linear track spends half its
-    // length between 5.5x and 10x; doubling is what reads as one step, so
-    // equal distances along the arc double the magnification.
-    const middle = arc.zoomArcLevel(0.5, TEN);
-    assert.ok(near(middle, Math.sqrt(10), 0.01), `the middle of the arc is ${middle}x`);
-    assert.ok(middle < 4, "the arc is still linear");
-  });
-
-  test("every zoom between 1x and 2x is now reachable", () => {
-    // Under the old three stops this whole span had nothing in it.
-    const reachable = [];
-    for (let t = 0; t <= 1.0001; t += 0.01) {
-      const level = arc.zoomArcLevel(t, TEN);
-      if (level < 2) reachable.push(level);
-    }
-    assert.ok(reachable.length > 25, `only ${reachable.length} positions below 2x`);
-  });
-
-  test("a level and its position are inverses, on any lens", () => {
-    for (const range of [TEN, DEVICE_UNITS, SHORT]) {
-      for (const t of [0, 0.17, 0.4, 0.5, 0.83, 1]) {
-        const back = arc.zoomArcPosition(arc.zoomArcLevel(t, range), range);
-        assert.ok(near(back, t, 1e-9), `${t} round-tripped to ${back}`);
-      }
-    }
-  });
-
-  test("a lens reporting device units is still labelled in multiples", () => {
-    // A device reporting 100..800 means 1x..8x. Nothing may hard-code a
-    // multiplier, and "100" on a control means nothing to anybody.
-    assert.ok(near(arc.zoomArcRatio(DEVICE_UNITS), 8));
-    assert.ok(near(arc.zoomArcLevel(0, DEVICE_UNITS), 100));
-    assert.deepEqual(arc.zoomArcMarks(DEVICE_UNITS).map((m) => m.times), [1, 2, 3, 5]);
-  });
-
-  test("a short lens is only offered the marks it can reach", () => {
-    // A 1–2.5x lens must not be given a 10x mark it cannot move to: a dead
-    // control is worse than no control, and worst of all mid-scan.
-    const marks = arc.zoomArcMarks(SHORT).map((m) => m.times);
-    assert.deepEqual(marks, [1, 2]);
-    for (const mark of arc.zoomArcMarks(SHORT)) {
-      assert.ok(mark.t >= 0 && mark.t <= 1, `the ${mark.times}x mark sits off the track`);
-    }
-  });
-
-  test("a lens that cannot zoom draws nothing", () => {
-    for (const dead of [null, { min: 1, max: 1 }, { min: 0, max: 0 }]) {
-      assert.equal(arc.zoomArcRatio(dead), 0, `${JSON.stringify(dead)} produced a track`);
-    }
-    assert.match(code(SCANNER), /if \(!range \|\| !zoomArcRatio\(range\)\) return null;/,
-      "the arc renders for a lens with no zoom");
-  });
-
-  test("a level outside the lens's own range cannot push the handle off the track", () => {
-    for (const silly of [-5, 0, 0.2, 99, 1e6]) {
-      const t = arc.zoomArcPosition(silly, TEN);
-      assert.ok(t >= 0 && t <= 1, `${silly} put the handle at ${t}`);
-    }
-  });
-
-  test("the rail is read bottom-up, with 1x at the floor", () => {
-    // t runs 0..1 from the minimum to the maximum, and the rail turns
-    // that into a distance DOWN from the top — so t=0 must land at the
-    // bottom. Getting this backwards would put 10x under the thumb at
-    // rest, which is the one position nobody scans from.
-    const s = raw(SCANNER);
-    const at = s.indexOf("const topOf = (t) =>");
-    assert.ok(at > 0, "the rail's position helper is gone");
-    const topOf = new Function("ZOOM_RAIL_INSET", `${s.slice(at, s.indexOf(";", at) + 1)}
-      return topOf;`)(arc.ZOOM_RAIL_INSET);
-    const pct = (t) => parseFloat(topOf(t));
-    assert.ok(pct(0) > pct(1), "the rail runs top-down, so 1x is at the ceiling");
-    assert.ok(near(pct(0), (1 - arc.ZOOM_RAIL_INSET) * 100, 1e-9), "1x does not sit at the bottom inset");
-    assert.ok(near(pct(1), arc.ZOOM_RAIL_INSET * 100, 1e-9), "the maximum does not sit at the top inset");
-    // And everything stays inside the square at every t, which is what
-    // the inset is for: a mark at exactly 0% sits on the ring itself.
-    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
-      assert.ok(pct(t) >= arc.ZOOM_RAIL_INSET * 100 - 1e-9 && pct(t) <= (1 - arc.ZOOM_RAIL_INSET) * 100 + 1e-9,
-        `t=${t} put a mark at ${pct(t)}%`);
-    }
-  });
-
-  test("the handle goes where the thumb went, and stays", () => {
-    // ── THIS TEST USED TO PIN THE BUG ────────────────────────────────
-    //
-    // It asserted that a lens which refuses "leaves the handle where it
-    // actually is" — setZoomLevel(currentZoomOf(...)) in the refusal
-    // branch. Sound reasoning: a rail that cannot move should not
-    // pretend it did.
-    //
-    // It was also, exactly, the founder's fourth report. The handle was
-    // painted at the thumb and then pulled back one frame later, so on a
-    // device whose lens refuses the two writes cancelled out: "rail is
-    // there, nothing moves."
-    //
-    // The rail is an INSTRUCTION now, not a readout. It is obeyed —
-    // optically where the lens can, in software where it cannot — so the
-    // level is set once and never corrected downward by the hardware.
-    const s = raw(SCANNER);
-    const at = s.indexOf("const applyZoom");
-    assert.ok(at > 0, "the zoom handler is gone");
-    const end = s.indexOf("}, [zoomRange]);", at);
-    assert.ok(end > at, "the zoom handler has no end");
-    const body = s.slice(at, end);
-    assert.ok(
-      body.indexOf("setZoomLevel(wanted)") < body.indexOf("await track.applyConstraints"),
-      "the handle only moves once the lens has answered"
-    );
-    assert.doesNotMatch(body, /setZoomLevel\(currentZoomOf\(/,
-      "the handle is being pulled back to the lens again");
-  });
-
-  test("a resolved constraint is not evidence that the lens moved", () => {
-    // ── THE CAUSE THE OTHER THREE FIXES SAT ON TOP OF ────────────────
-    //
-    // One line of the Media Capture spec: ADVANCED CONSTRAINTS ARE
-    // BEST-EFFORT, and applyConstraints RESOLVES whether or not the
-    // camera could honour them.
-    //
-    // So `await applyConstraints({ advanced: [{ zoom }] })` came back
-    // successfully on a lens with no zoom at all. The code read that as
-    // "the lens took it", every refusal path below was dead, and the
-    // deferred read-back could not help either: it compared against
-    // getSettings().zoom, which on such a device is undefined.
-    //
-    // The deferral that 0099 added is kept — the read genuinely is stale
-    // on Chrome for Android, which is why it cannot happen in the same
-    // tick. What changed is what the answer is FOR. It used to nudge the
-    // handle; it now decides whether the lens moved at all.
-    const s = raw(SCANNER);
-    const at = s.indexOf("const applyZoom");
-    const body = s.slice(at, s.indexOf("}, [zoomRange]);", at));
-    assert.match(body, /zoomSettleRef\.current = setTimeout\(/, "the read-back is back in the same tick");
-    assert.match(body, /ADVANCED CONSTRAINTS ARE BEST-EFFORT/,
-      "the reason a resolved promise proves nothing should stay written down");
-    // No zoom in settings at all means this lens does not zoom.
-    assert.match(body, /if \(!Number\.isFinite\(got\) \|\| got <= 0\) \{ toSoftware\(\); return; \}/);
-    // A lens sitting a long way from where it was asked to go ignored us.
-    assert.match(body, /if \(Math\.abs\(got - wanted\) > span \* 0\.1\) \{ toSoftware\(\); return; \}/);
-    // And where it did land somewhere real, the handle follows it — the
-    // honesty this file has always argued for.
-    assert.match(body, /setZoomLevel\(got\);/);
-  });
-
-  test("a lens that will not zoom is not asked twice", () => {
-    // When the camera reported no range of its own, the one on screen is
-    // ours. There is nothing to ask, and asking costs a round trip per
-    // pick of a drag on the device least able to spare it.
-    // Comments stripped: the note above this guard quotes the very call
-    // it has to come before, so a raw read finds the prose first.
-    const s = code(SCANNER);
-    const at = s.indexOf("const applyZoom");
-    const body = s.slice(at, s.indexOf("}, [zoomRange]);", at));
-    assert.match(body, /if \(zoomRange === ZOOM_SOFT_RANGE \|\| !track/);
-    assert.ok(
-      body.indexOf("zoomRange === ZOOM_SOFT_RANGE") < body.indexOf("await track.applyConstraints"),
-      "the software range still goes through the camera first"
-    );
-  });
-
-  test("zoom is tried in both constraint shapes before giving up", () => {
-    // `advanced` is what Chrome documents. Some engines only honour zoom
-    // as a plain constraint and reject the advanced form outright — so a
-    // lens that can zoom does nothing at all, and reports no error
-    // anywhere a person can see.
-    const s = raw(SCANNER);
-    const body = s.slice(s.indexOf("const applyZoom"), s.indexOf("}, [zoomRange]);", s.indexOf("const applyZoom")));
-    assert.match(body, /applyConstraints\(\{ advanced: \[\{ zoom: wanted \}\] \}\)/);
-    assert.match(body, /applyConstraints\(\{ zoom: wanted \}\)/);
-  });
-
-  test("a zoom range that arrives late still gets a rail", () => {
-    // getCapabilities() is read the moment the stream is handed over, and
-    // on Chrome for Android it can come back WITHOUT zoom on a track that
-    // has it — the lens has not finished opening. The rail is drawn only
-    // when a range exists, so a late capability meant no zoom control for
-    // the whole session on a camera that could zoom perfectly well.
-    const s = raw(SCANNER);
-    assert.match(s, /CAPABILITIES CAN ARRIVE LATE/);
-    // It may only ever IMPROVE what is there: a real range replaces the
-    // software one, since optical beats software and this is the only
-    // chance to take it — but it can never remove a control, and it will
-    // not swap the range out from under a thumb that has already zoomed.
-    assert.match(s, /if \(!lateRange\) return had;/);
-    assert.match(s, /if \(had && had !== ZOOM_SOFT_RANGE\) return had;/);
-    assert.match(s, /if \(digitalZoomRef\.current !== 1\) return had;/);
-  });
-});
 
 describe("one screen for the camera, asked for or not", () => {
   test("the framing square is one component, shared by both states", () => {
@@ -345,17 +152,17 @@ describe("one screen for the camera, asked for or not", () => {
     const s = code(SCANNER);
     assert.match(s, /function QrFrameGuide\(\{ children, rail = null, hunting = false \}\)/);
     assert.equal((s.match(/<QrFrameGuide/g) || []).length, 1, "the scanner draws more than one frame");
-    assert.match(raw(APP), /<QrFrameGuide>/, "the permission state draws its own square");
+    assert.match(raw(SCAN), /<QrFrameGuide>/, "the permission state draws its own square");
   });
 
   test("the screen is one ground and one title throughout", () => {
-    const s = raw(APP);
-    const at = s.indexOf('zIndex: 400');
+    const s = raw(SCAN);
+    const at = s.indexOf('zIndex = 400');
     assert.ok(at > 0, "the scan overlay is gone");
     // Wider than it was: the background line now carries the comment
     // explaining why black is right for the camera and wrong for the
     // card that replaces it.
-    const shell = s.slice(at, at + 1400);
+    const shell = s.slice(at, at + 2600);
     assert.match(shell, /: "#000"/, "the screen is still white before permission");
     // And it is black ONLY while aiming. Once a code resolves, a white
     // confirmation card floating on black reads as an error dialog.
@@ -363,11 +170,12 @@ describe("one screen for the camera, asked for or not", () => {
     // white with a trace of the payee's hue, and the hue itself goes on
     // the card — the founder inverted the first build, where the field
     // was coloured and the card was white.
-    assert.match(shell, /background: scanPayee \? scanPageTint\(scanPayee\.gloobalId\) : "#000"/);
+    assert.match(shell, /background: light && tint \? tint : "#000"/);
+    assert.match(raw(APP), /tint=\{scanPayee \? scanPageTint\(scanPayee\.gloobalId\) : null\}/);
     assert.doesNotMatch(shell, /DashboardAmbientBg/, "the dashboard's background is back on the scanner");
     // The title is now true before permission too: there is a square on
     // screen and this is the only thing saying what it is for.
-    assert.doesNotMatch(s, /\{scanLive && <span style=\{\{ display: "flex", flexDirection: "column", minWidth: 0 \}\}/,
+    assert.doesNotMatch(s, /\{live && <span style=\{\{ display: "flex", flexDirection: "column", minWidth: 0 \}\}/,
       "the title is hidden until the camera is up");
   });
 
@@ -384,10 +192,11 @@ describe("one screen for the camera, asked for or not", () => {
     // A prompt somebody taps away without reading is a denial that takes a
     // trip into browser settings to undo. Ours explains first; the real
     // request happens when QrCameraScanner mounts.
-    const s = raw(APP);
-    assert.match(s, /onClick=\{\(\) => setScanCameraAccessGranted\(true\)\}/,
+    assert.match(raw(APP), /onAllowCamera=\{\(\) => setScanCameraAccessGranted\(true\)\}/,
       "Allow Access now does something other than reveal the camera");
-    assert.match(s, /\{scanLive && <QrCameraScanner/, "the camera mounts before it is allowed");
+    const s = raw(SCAN);
+    assert.match(s, /onClick=\{allow\}/);
+    assert.match(s, /\{live && <QrCameraScanner/, "the camera mounts before it is allowed");
   });
 });
 
@@ -406,7 +215,7 @@ describe("one screen for the camera, asked for or not", () => {
 // stack has to fit inside at 390x844, measured rather than assumed.
 describe("nothing on the live scanner sits on anything else", () => {
   const scanner = code(SCANNER);
-  const app = code(APP);
+  const app = code(SCAN);
   const px = (src, label) => {
     const hit = src.match(new RegExp(`bottom: "calc\\((\\d+)px \\+ env\\(safe-area-inset-bottom`, "g")) || [];
     assert.ok(hit.length >= 1, `${label}: no anchored band found`);
@@ -436,35 +245,12 @@ describe("nothing on the live scanner sits on anything else", () => {
     const bands = px(scanner, "scanner");
     assert.equal(bands.length, 1,
       `the scanner anchors ${bands.length} bands to the bottom; the zoom is back in the stack`);
-    assert.match(scanner, /rail=\{zoomRange && !quiet/,
-      "the zoom is no longer passed into the framing square");
+    // No rail at all since af0ea4e: two fingers on the camera zoom it.
+    assert.doesNotMatch(scanner, /function ZoomRail\(/, "the zoom rail is back");
+    assert.match(scanner, /pinch/, "the pinch zoom is gone");
   });
 
-  test("and it sits on the square's own right-hand edge", () => {
-    // The scale IS that edge now — the ring behind it has a gap exactly
-    // here. Centred on it: 72 wide at right:-36.
-    const at = scanner.indexOf("function ZoomRail");
-    const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
-    assert.match(rail, /right: -36,/);
-    assert.match(rail, /width: 72,/);
-    assert.match(rail, /touchAction: "none"/,
-      "a vertical drag will scroll the page instead of zooming");
-  });
 
-  test("the scale stays on the screen at the narrowest width", () => {
-    // The widest thing on it is the 34px thumb and the 34px end buttons,
-    // centred on a 72px host whose right edge is 36px past the square.
-    // At 360 the square is 72vw = 259.2, so the host spans 180+129.6-36
-    // to that plus 72 — and has to end on the screen.
-    const at = scanner.indexOf("function ZoomRail");
-    const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
-    assert.match(rail, /width: 34, height: 34/);
-    for (const vw of [320, 360, 390, 430]) {
-      const square = Math.min(vw * 0.72, 300);
-      const hostRight = vw / 2 + square / 2 + 36;
-      assert.ok(hostRight <= vw, `at ${vw}px the scale ends at ${hostRight}, off the screen`);
-    }
-  });
 
   test("the standing hint sits under the camera, and only when there is nothing to say", () => {
     // It was under the camera, moved above the frame, and has moved back.
@@ -472,9 +258,9 @@ describe("nothing on the live scanner sits on anything else", () => {
     // the band below held the control row, the zoom arc AND any message
     // the screen had to say. The arc is gone — the zoom is inside the
     // square now — so that band holds the control row and nothing else.
-    assert.match(app, /\{scanLive && !scanPayee && !scanError && !scanRetry && !scanResolving && <div/,
+    assert.match(app, /\{live && !resolving && !error && !retry && <div/,
       "the hint is drawn while the screen is also saying something else");
-    const at = app.indexOf("{scanLive && !scanPayee && !scanError && !scanRetry && !scanResolving && <div");
+    const at = app.indexOf("{live && !resolving && !error && !retry && <div");
     const hint = app.slice(at, at + 700);
     assert.match(hint, /bottom: "calc\(160px \+ env\(safe-area-inset-bottom/,
       "the hint is not anchored under the picture");
@@ -494,7 +280,7 @@ describe("nothing on the live scanner sits on anything else", () => {
     // camera with a square on it; what is NOT obvious is that this reads
     // Gloobal codes and only Gloobal codes.
     assert.doesNotMatch(app, /\n\s*Scan QR\n/, "the old action title is back");
-    assert.match(app, /\n\s*<GloobalWordmark \/> QR\n/);
+    assert.match(app, /<GloobalWordmark \/> QR<\/span>/);
     assert.equal((app.match(/Point at any <GloobalWordmark \/> code/g) || []).length, 1,
       "the instruction is printed twice, or not at all");
     // Centred on the SCREEN, not on the space left beside the back
@@ -511,7 +297,7 @@ describe("nothing on the live scanner sits on anything else", () => {
   test("what the screen has to say sits under the camera", () => {
     // Asked for in those words. The message belongs near the picture it
     // is about, not at the top of the screen.
-    const at = app.indexOf("{(scanResolving || scanError || scanRetry) && <div");
+    const at = app.indexOf("{(resolving || error || retry) && <div");
     assert.ok(at > 0, "the message band is gone");
     const block = app.slice(at, at + 900);
     assert.match(block, /bottom: "calc\(96px \+ env\(safe-area-inset-bottom/,
@@ -524,17 +310,16 @@ describe("nothing on the live scanner sits on anything else", () => {
     // The scanner is PAUSED in exactly those moments, so they are three
     // controls doing nothing, sitting over the sentence that explains why
     // nothing is happening — and they are what the message collided with.
-    assert.match(app, /quiet=\{Boolean\(scanResolving \|\| scanError \|\| scanRetry\)\}/,
+    assert.match(app, /quiet=\{Boolean\(resolving \|\| error \|\| retry\)\}/,
       "the scanner is not told to go quiet while the screen is talking");
     assert.match(scanner, /\{!quiet && <div/, "the control row stays up during a message");
-    assert.match(scanner, /rail=\{zoomRange && !quiet\s*\n\s*\? <ZoomRail/,
-      "the zoom rail stays up during a message");
+
   });
 
   test("so the message and the controls can never share the band", () => {
     // Both are anchored at 96. That is safe only because one is drawn
     // when the other is not, and this is the assertion that keeps it so.
-    const messageAt = app.indexOf("{(scanResolving || scanError || scanRetry) && <div");
+    const messageAt = app.indexOf("{(resolving || error || retry) && <div");
     const message = app.slice(messageAt, messageAt + 900);
     const rowBand = scanner.match(/bottom: "calc\((\d+)px \+ env/);
     const messageBand = message.match(/bottom: "calc\((\d+)px \+ env/);
@@ -543,59 +328,9 @@ describe("nothing on the live scanner sits on anything else", () => {
       "the two now sit at different heights, so one of them is somewhere nobody measured");
   });
 
-  test("the zoom reads on whatever the camera is pointed at", () => {
-    // Everything on the scale carries either a filled ground or a dark
-    // shadow: white on a camera picture is legible against a dark room
-    // and invisible against a hedge.
-    const at = scanner.indexOf("function ZoomRail");
-    const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
-    assert.match(rail, /background: "rgba\(44,16,92,0\.7[28]\)"/,
-      "the marks and buttons lost the ground that makes them readable on a bright picture");
-    assert.match(rail, /background: "#FFFFFF", color: "#4C1D95"/, "the thumb is not a solid object");
-  });
 
-  test("the marks are numbered, and each one is a tap target", () => {
-    // ── THE NUMBERS CAME BACK, AND THIS TIME THEY DO SOMETHING ───────
-    //
-    // An earlier round took them off: "Don't show zoom scale numbers,
-    // just where it is currently." Five pieces of permanent type on the
-    // picture, four of them labelling a place the thumb was not.
-    //
-    // Then the fifth "zoom doesn't move" report, which could not be
-    // reproduced with a real touch drag, and "replace right side camera
-    // boundary with zoom scale". A scale is numbered. And numbered marks
-    // that are BUTTONS are the one input a lost drag cannot take away:
-    // tap 3x, get 3x, whatever is eating the gesture on that phone.
-    const at = scanner.indexOf("function ZoomRail");
-    const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
-    assert.match(rail, /aria-label=\{`Zoom to \$\{mark\.times\}x`\}/);
-    assert.match(rail, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onPick\(zoomArcLevel\(mark\.t, range\)\); \}\}/);
-    assert.match(rail, /endButton\(1, "Zoom in one step", "\+"\)/);
-    assert.match(rail, /endButton\(-1, "Zoom out one step", "\u2212"\)/);
-    assert.match(rail, /\{formatZoom\(level, range\)\}/,
-      "the live reading is gone from the thumb");
-  });
 
-  test("a drag works through touch events as well as pointer events", () => {
-    // If a gesture recogniser on some phone cancels pointer events, the
-    // touch events still arrive. The pointer path stands aside for touch
-    // so a device sending both does not pick twice.
-    const at = scanner.indexOf("function ZoomRail");
-    const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
-    assert.match(rail, /onTouchStart=/);
-    assert.match(rail, /onTouchMove=/);
-    assert.match(rail, /if \(e\.pointerType === "touch"\) return; \/\/ the touch handlers own it/);
-  });
 
-  test("the filled part of the rail ends under the handle", () => {
-    // The arc did this with a dasharray along the curve's own length.
-    // A straight line needs no such thing: the fill is an element from
-    // the handle's position down to the bottom inset.
-    const at = scanner.indexOf("function ZoomRail");
-    const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
-    assert.match(rail, /top: thumbPct, bottom: `\$\{ZOOM_RAIL_INSET \* 100\}%`/,
-      "the rail no longer shows how far up the range you are");
-  });
 });
 
 // ── THE LOOK ────────────────────────────────────────────────────────────
@@ -683,7 +418,7 @@ describe("the aperture is ours, not every scanner's", () => {
     // 0248: the edge is the theme's accent now, lifted for the dark picture.
     assert.match(scanner, /border: lit \? "none" : `1px solid \$\{scannerInkRgba\(0\.35, 0\.55\)\}`/,
       "the round controls went back to a neutral white edge");
-    assert.match(scanner, /boxShadow: lit \? "0 6px 18px rgba\(0,0,0,0\.4\)" : "0 0 18px rgba\(124,58,237,0\.28\)"/);
+    assert.match(scanner, /boxShadow: lit \? "0 6px 18px rgba\(0,0,0,0\.4\)" : `0 0 18px rgba\(\$\{T\.accentRgb\},0\.28\)`/);
   });
 
   test("Send is the brand gradient over the camera too", () => {
@@ -693,7 +428,7 @@ describe("the aperture is ours, not every scanner's", () => {
     assert.doesNotMatch(button, /rgba\(255,255,255,0\.94\)/,
       "the Send button goes white over the camera again");
     assert.match(button, /background: T\.gradButton,/);
-    assert.match(button, /overVideo\s*\n?\s*\? "0 10px 34px rgba\(124,58,237,0\.55\)/,
+    assert.match(button, /overVideo\s*\n?\s*\? `0 10px 34px rgba\(\$\{T\.accentRgb\},0\.55\)/,
       "the Send button has a drop shadow over a camera picture, which has no surface to fall on");
   });
 

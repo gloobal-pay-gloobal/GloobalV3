@@ -151,7 +151,9 @@ describe("Today's Collection is money collected, not share received", () => {
 
   test("My Assets keeps its own settle, which is the one that is allowed", () => {
     const assets = code(readSource("frontend/features/assets/AssetsScreen.jsx"));
-    assert.match(assets, /onClick=\{onRequestSettle\}/);
+    // Through its own confirm sheet now: the button opens it, and Confirm settles.
+    assert.match(assets, /onClick=\{\(\) => \(bankOpen \|\| !onNeedBank \? setConfirmOpen\(true\) : onNeedBank\(\)\)\}/);
+    assert.match(assets, /onConfirm=\{\(\) => \{ setConfirmOpen\(false\); if \(onRequestSettle\) onRequestSettle\(\); \}\}/);
     // The figure, not the formatter's name. This pinned fmtMoney and broke
     // when the display lens arrived — the claim being made here is that My
     // Assets still offers its own settle for the asset total, which is true
@@ -166,7 +168,11 @@ describe("Today's Collection is money collected, not share received", () => {
     // line became two when the figure stopped fitting beside the words —
     // and every time the claim it makes was still true.
     assert.match(assets, /Settle to <GloobalWordmark \/> Bank/);
-    assert.match(assets, /<GeuFigure amount=\{totalAssets\}/);
+    // The figure moved off the button into its confirm sheet: the server's
+    // own claimable total, or this screen's while that is on its way.
+    assert.match(assets, /localTotal=\{totalAssets\}/);
+    assert.match(assets, /const amount = server \? server\.totalClaimable : localTotal;/);
+    assert.match(assets, /<GeuFigure amount=\{amount\}/);
   });
 });
 

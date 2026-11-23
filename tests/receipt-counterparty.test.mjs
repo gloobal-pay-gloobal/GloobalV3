@@ -30,7 +30,7 @@ import {
   buildOnce,
   login,
   openPage,
-  teardown, skipPaymentUnlock } from "./browser-harness.mjs";
+  teardown, skipPaymentUnlock, padFill } from "./browser-harness.mjs";
 import { readSource } from "./harness.mjs";
 
 before(async () => {
@@ -59,7 +59,7 @@ async function pay(page, { sender, receiver, receiverGets }) {
 
   const field = page.getByLabel(`Amount the receiver gets, in their own currency (${receiver.currency})`);
   await field.waitFor({ timeout: 25000 });
-  await field.fill(String(receiverGets));
+  await padFill(page, field, String(receiverGets));
   await page.waitForTimeout(700);
 
   await page.getByRole("button", { name: /^(Send|Simulate)\s/ }).last().click({ force: true });
@@ -261,7 +261,9 @@ describe("a receipt names the other party, on both sides and after a reload", ()
     for (const digit of B.pin) {
       await page.getByLabel(`Digit ${digit}`, { exact: true }).click({ force: true });
     }
-    await page.getByLabel("Log in", { exact: true }).click({ force: true });
+    // The pad sends itself on the sixth digit; a tap here is only for an
+    // older build that still waits for it.
+    await page.getByLabel("Log in", { exact: true }).click({ force: true, timeout: 2500 }).catch(() => {});
     await page.getByLabel("Send", { exact: true }).waitFor({ timeout: 30000 });
 
     await page.getByRole("button", { name: "Profile", exact: true }).click({ force: true });

@@ -61,7 +61,9 @@ async function firstLogin(page, account) {
   for (const digit of account.pin) {
     await page.getByLabel(`Digit ${digit}`, { exact: true }).click({ force: true, timeout: 8000 });
   }
-  await page.getByLabel("Log in", { exact: true }).first().click({ force: true, timeout: 12000 });
+  // The pad sends itself on the sixth digit; a tap here is only for an
+  // older build that still waits for it.
+  await page.getByLabel("Log in", { exact: true }).first().click({ force: true, timeout: 2500 }).catch(() => {});
   await page.getByLabel("Send", { exact: true }).waitFor({ timeout: 40000 });
 }
 

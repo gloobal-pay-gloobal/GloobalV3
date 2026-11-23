@@ -172,7 +172,8 @@ describe("History and the Home activity card", () => {
   const app = readSource("frontend/App.jsx");
 
   test("both columns are sorted at the source they are fed from", () => {
-    assert.match(dash, /return sortTransactionsNewestFirst\(receivedHistory\);/);
+    // Received rows are split by side (Personal / Creator) like sent ones (0245).
+    assert.match(dash, /return sortTransactionsNewestFirst\(receivedHistory\.filter\(\(t\) => \(t\.role \|\| "user"\) === shareRole\)\);/);
     assert.match(dash, /sortTransactionsNewestFirst\(sendHistory\.filter\(\(t\) => \(t\.role \|\| "user"\) === shareRole\)\)/);
   });
 

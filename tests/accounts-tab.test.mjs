@@ -65,7 +65,8 @@ describe("Gloobal Bank is not a peer of the other tiles", () => {
     // Identical squares said the tiles were all the same kind of thing.
     // Bank is the account the rest unlock from.
     const src = dash();
-    assert.match(src, /background: T\.gradButton, boxShadow: "0 14px 30px rgba\(76,29,149,0\.28\)"/);
+    // The theme's own deep accent since the themes (cd829e4).
+    assert.match(src, /background: T\.gradButton, boxShadow: `0 14px 30px rgba\(\$\{T\.accentDeepRgb\}/);
     assert.match(src, /the account everything else here unlocks from/);
   });
 
@@ -92,7 +93,7 @@ describe("the tiles say what they are and what state they are in", () => {
     // flatten preserve-3d, which would kill the flip these icons exist for.
     const src = dash();
     // The flip face fills the whole box now: a tinted box, a big icon.
-    assert.match(src, /frontBackground=\{`\$\{heroColor\}26`\} radius=\{22\}/);
+    assert.match(src, /frontBackground=\{`\$\{heroColor\}26`\} radius=\{30\}/);
     assert.match(code("frontend/components/common/flipIcons.jsx"), /radius = T\.radiusLg/);
     assert.match(code("frontend/components/common/flipIcons.jsx"), /borderRadius: radius,/);
   });
@@ -122,6 +123,7 @@ describe("the tiles say what they are and what state they are in", () => {
   test("two to a row, as a grid", () => {
     const src = dash();
     assert.match(src, /gridTemplateColumns: "repeat\(2, minmax\(0, 1fr\)\)", gap: 14, marginTop: 16/);
-    assert.match(src, /boxHeight=\{96\}/);
+    // Each box a true square (box="100%"), softly rounded like a phone's home screen.
+    assert.match(src, /box="100%"\s*\n\s*radius=\{30\}/);
   });
 });

@@ -175,7 +175,9 @@ async function signInAfterSignOut(page, account) {
   for (const digit of account.pin) {
     await page.getByLabel(`Digit ${digit}`, { exact: true }).click({ force: true });
   }
-  await page.getByLabel("Log in", { exact: true }).click({ force: true });
+  // The pad sends itself on the sixth digit; a tap here is only for an
+  // older build that still waits for it.
+  await page.getByLabel("Log in", { exact: true }).click({ force: true, timeout: 2500 }).catch(() => {});
   await page.getByLabel("Send", { exact: true }).waitFor({ timeout: 30000 });
 }
 

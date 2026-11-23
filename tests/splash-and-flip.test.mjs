@@ -39,7 +39,9 @@ describe("the mark turns slowly enough to read as a turn", () => {
   test("a face is held 3.4s, not 2s", () => {
     // With a 900ms turn, a 2s face meant the box was rotating for nearly
     // half the time it was on screen. That is what reads as "flying".
-    assert.match(flip, /var LIVING_LOGO_FACE_MS = 3400;/);
+    // Since then every flip in the app is slowed by one shared factor
+    // (FLIP_SLOW in theme.js): 3.4s is the base it multiplies.
+    assert.match(flip, /var LIVING_LOGO_FACE_MS = 3400 \* FLIP_SLOW;/);
   });
 
   test("the turn always finishes before the next one is due", () => {
@@ -47,7 +49,9 @@ describe("the mark turns slowly enough to read as a turn", () => {
     // outlasts its face, the box is permanently mid-rotation and the faces
     // stop being distinguishable at all.
     const flipMs = Number(flip.match(/flipMs = (\d+),/)[1]);
-    const faceMs = Number(flip.match(/var LIVING_LOGO_FACE_MS = (\d+);/)[1]);
+    const slow = Number(readSource("frontend/constants/theme.js").match(/var FLIP_SLOW = ([\d.]+);/)[1]);
+    assert.ok(slow >= 1, "flips are never made faster than they were built");
+    const faceMs = Number(flip.match(/var LIVING_LOGO_FACE_MS = (\d+) \* FLIP_SLOW;/)[1]) * slow;
     assert.ok(
       flipMs < faceMs,
       `a ${flipMs}ms turn cannot fit inside a ${faceMs}ms face`
@@ -76,8 +80,8 @@ describe("the mark turns slowly enough to read as a turn", () => {
       glyph / dot <= 0.56,
       `the glyph fills ${Math.round((glyph / dot) * 100)}% of the dot — it must sit inside it, not burst out`
     );
-    assert.match(fn, /transition: "transform 0\.9s/);
-    assert.match(fn, /\}, 1800\);/);
+    assert.match(fn, /transition: `transform \$\{0\.9 \* FLIP_SLOW\}s/);
+    assert.match(fn, /\}, 1800 \* FLIP_SLOW\);/);
   });
 
   test("the mark is the same rounded square on all three screens", () => {
@@ -277,8 +281,8 @@ describe("the splash says what Gloobal is and what it charges", () => {
     // money arriving is green, on every history row and every receipt. The
     // first screen a person sees teaches the colour code they will read for
     // the rest of the app.
-    assert.match(splash, /<span style=\{\{ color: TXN_OUT_COLOR \}\}>Pay<\/span>/);
-    assert.match(splash, /<span style=\{\{ color: TXN_IN_COLOR \}\}>receive<\/span>/);
+    assert.match(splash, /<span style=\{\{ color: T\.txnOut \}\}>Pay<\/span>/);
+    assert.match(splash, /<span style=\{\{ color: T\.txnIn \}\}>receive<\/span>/);
     // Hardcoded hexes here would be the same two colours today and a
     // silent divergence the first time the palette moves.
     const at = splash.indexOf(">Pay<");

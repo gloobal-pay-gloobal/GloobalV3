@@ -200,7 +200,7 @@ test("prompt dismissed: explains, and Enable stays available", async () => {
 
 test("permission denied: settings path, no button", async () => {
   const r = await openSheet({ permissionAnswer: "denied" });
-  assert.match(r.status, /blocked for Gloobal/);
+  assert.match(r.status, /blocked for GLOOBAL/i);
   assert.ok(!r.buttons.includes("Enable") && !r.buttons.includes("Try again"));
 });
 

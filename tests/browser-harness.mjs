@@ -1589,11 +1589,18 @@ export async function revealBalance(page, account) {
 // Currency codes that are letters ("1,450.25 CHF") are spaced; glyphs are
 // tight. Both shapes are matched, and the space is kept — dropping it would
 // make "1,450.25 CHF" and a hypothetical "1,450.25CHF" compare equal.
+// The balance reads in both names now, "10,000.00 CEL │ ₹" (the display
+// lens): the figure is the account's own money and the sign after the bar
+// says which. Returned as figure + sign, the shape the suites compare; a
+// plain "10,000.00₹" (lens off) still matches the second pattern.
 export async function shownBalance(page) {
-  const match = await page.evaluate(
-    () => document.body.innerText.match(/[\d,]+(?:\.\d+)?(?:[₹¥£$€]| ?[A-Z]{3}\b)/)
-  );
-  return match ? match[0] : null;
+  return page.evaluate(() => {
+    const t = document.body.innerText;
+    const pair = t.match(/([\d,]+(?:\.\d+)?)\s*CEL\s*[│|]\s*([₹¥£$€])/);
+    if (pair) return pair[1] + pair[2];
+    const m = t.match(/[\d,]+(?:\.\d+)?(?:[₹¥£$€]| ?[A-Z]{3}\b)/);
+    return m ? m[0] : null;
+  });
 }
 
 export const text = (page) => page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim());

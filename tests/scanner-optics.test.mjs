@@ -95,7 +95,7 @@ describe("2. the resolution survives to the decoder", () => {
   test("the crop is square and centred on the short side", () => {
     // Sizing off the long side would read past the top and bottom of what
     // the person can actually see in the viewfinder.
-    assert.match(code, /Math\.round\(Math\.min\(vw, vh\) \* QR_SCAN_ROI\)/);
+    assert.match(code, /Math\.round\(Math\.min\(vw, vh\) \* QR_SCAN_ROI(?: \/ soft)?\)/);
     assert.match(code, /sx = Math\.round\(\(vw - side\) \/ 2\)/);
     assert.match(code, /sy = Math\.round\(\(vh - side\) \/ 2\)/);
   });

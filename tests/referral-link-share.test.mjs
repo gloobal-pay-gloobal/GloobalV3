@@ -129,7 +129,8 @@ describe("the invite link the Share flow produces", () => {
     await page.waitForFunction(() => (window.__copied || []).length > 0, { timeout: 10000 });
     const copied = await page.evaluate(() => window.__copied[window.__copied.length - 1]);
     assert.ok(copied, "nothing was copied");
-    assert.ok(copied.startsWith(`${API_ORIGIN}/r/`), `not a referral link: ${copied}`);
+    // The app's own address (GLOOBAL_PAY_ORIGIN), not the API server's.
+    assert.ok(copied.startsWith("https://gloobalv3.netlify.app/r/"), `not a referral link: ${copied}`);
   });
 
   test("it carries no percent-encoded Unicode", async () => {

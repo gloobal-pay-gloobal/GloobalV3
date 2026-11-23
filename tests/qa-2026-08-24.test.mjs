@@ -339,7 +339,13 @@ describe("permissions are asked for where they are used, and never claimed", () 
     const owners = [
       ["frontend/components/common/qrScanner.jsx", /mediaDevices\.getUserMedia\(/, "the camera belongs to the QR scanner"],
       ["backend/domain/provenance/LocationResolver.js", /geolocation\.getCurrentPosition\(/, "location belongs to the provenance resolver"],
-      ["frontend/hooks/usePaymentNotifications.js", /Notification\.requestPermission\(/, "notifications belong to the payment notifier"]
+      ["frontend/hooks/usePaymentNotifications.js", /Notification\.requestPermission\(/, "notifications belong to the payment notifier"],
+      // Added since, each asking only for itself, at the moment it is used:
+      // the selfie when GLOOBAL Bank is opened, the live photo check, and
+      // Sound pay's microphone (an amount and an ID heard between phones).
+      ["frontend/features/bank/bankOpen.jsx", /mediaDevices\.getUserMedia\(/, "the bank-opening selfie asks for the camera itself"],
+      ["frontend/features/identity/liveFaceCheck.jsx", /mediaDevices\.getUserMedia\(/, "the live photo check asks for the camera itself"],
+      ["frontend/features/nearby/soundPay.js", /mediaDevices\.getUserMedia\(/, "Sound pay asks for the microphone itself"]
     ];
     for (const [file, pattern, why] of owners) {
       assert.ok(pattern.test(readSource(file)), `${why} — ${file} must make the request`);
@@ -415,7 +421,10 @@ describe("the production Permissions-Policy allows what the app needs", () => {
     assert.ok(!/geolocation=\(\)/.test(header), "geolocation=() disables location everywhere");
   });
 
-  test("microphone stays off — nothing in the app records audio", () => {
-    assert.ok(/microphone=\(\)/.test(header), "the policy should stay as narrow as the app needs");
+  test("the microphone is this site's alone — Sound pay listens, nothing else may", () => {
+    // It was off while nothing recorded audio. Sound pay hears an amount and
+    // an ID from the other phone, so it is on — for this origin only.
+    assert.ok(/microphone=\(self\)/.test(header), "the policy should stay as narrow as the app needs");
+    assert.ok(!/microphone=\*/.test(header));
   });
 });

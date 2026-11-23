@@ -25,7 +25,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { ACCOUNTS, ROOT_DIR, buildOnce, login, openPage, teardown, text } from "./browser-harness.mjs";
+import { ACCOUNTS, ROOT_DIR, buildOnce, login, openPage, teardown, text, padFill } from "./browser-harness.mjs";
 import { loadDomain } from "./harness.mjs";
 
 const previewDir = path.join(ROOT_DIR, "gloobal-essentials-preview");
@@ -43,7 +43,9 @@ const { parseGloobalPayPayload } = loadDomain(["parseGloobalPayPayload"]);
 // test.
 const SYMBOL_ORDER = ["−", "+", "×", "=", "○", "□", "●", "■"];
 const digitsOf = (id) => Array.from(id).map((c) => SYMBOL_ORDER.indexOf(c)).join("");
-const payUrlOf = (account) => `https://gloobalv3.netlify.app/p/${digitsOf(account.symbolId)}`;
+// The personal Receive screen draws the PERSON's link, /u/ (gloobalPayLink.js);
+// /p/ is the older unmarked form, still read but no longer drawn.
+const payUrlOf = (account) => `https://gloobalv3.netlify.app/u/${digitsOf(account.symbolId)}`;
 
 // A = the payer / viewer, B = the payee. Different countries on purpose, so
 // a payee currency taken from the payer would show.
@@ -217,7 +219,7 @@ async function waitForText(page, pattern, timeout = 20000) {
 
 async function openReceive(page) {
   await tap(page.getByRole("button", { name: "Receive", exact: true }));
-  await page.getByRole("heading", { name: "Your Gloobal QR", exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole("heading", { name: /^Your GLOOBAL QR$/i }).waitFor({ timeout: 20000 });
   await page.locator(QR_SVG).first().waitFor({ state: "visible", timeout: 20000 });
 }
 
@@ -239,7 +241,8 @@ async function uploadToScanner(page, buffer, name = "qr.png") {
   await picker.last().setInputFiles({ name, mimeType: "image/png", buffer });
 }
 
-// The confirm card's own buttons: the ones that sit beside "Scan again".
+// The confirm card's own buttons: the ones on the scan screen beside Pay.
+// ("Scan again" left the card in 6df3b64; Back returns to scanning.)
 async function confirmCardButton(page, label) {
   const handle = await page.waitForFunction(
     (label) => {
@@ -248,7 +251,7 @@ async function confirmCardButton(page, label) {
         buttons.find(
           (b) =>
             b.textContent.trim() === label &&
-            Array.from(b.parentElement.querySelectorAll("button")).some((s) => s.textContent.trim() === "Scan again") &&
+            Boolean(b.closest('[data-testid="gloobal-scan-screen"]')) &&
             Array.from(b.parentElement.querySelectorAll("button")).some((s) => s.textContent.trim() === "Pay")
         ) || null
       );
@@ -263,8 +266,7 @@ function hasConfirmCard(page) {
   return page.evaluate(() =>
     Array.from(document.querySelectorAll("button")).some(
       (b) =>
-        b.textContent.trim() === "Pay" &&
-        Array.from(b.parentElement.querySelectorAll("button")).some((s) => s.textContent.trim() === "Scan again")
+        b.textContent.trim() === "Pay" && Boolean(b.closest('[data-testid="gloobal-scan-screen"]'))
     )
   );
 }
@@ -317,12 +319,12 @@ describe("the Receive sheet shows one scannable QR for the signed-in account", (
 
       assert.equal(await page.locator(QR_SVG).count(), 1, "exactly one Gloobal QR");
       const body = await text(page);
-      assert.match(body, /Your Gloobal QR/);
+      assert.match(body, /Your GL\S*BAL QR/i); // the wordmark draws its Os as marks
       assert.ok(body.replace(/\s+/g, "").includes(account.symbolId), `the Gloobal ID must be shown; got ${body.slice(0, 400)}`);
 
       const decoded = readQrFromPng(await screenshotQr(page));
       assert.equal(decoded, payUrlOf(account), "the pixels on screen must carry this account's pay link");
-      assert.deepEqual(parseGloobalPayPayload(decoded), { gloobalId: account.symbolId });
+      assert.deepEqual(parseGloobalPayPayload(decoded), { gloobalId: account.symbolId, side: "person" });
       decodedFromScreen.set(label, parseGloobalPayPayload(decoded).gloobalId);
       await context.close();
     });
@@ -364,7 +366,7 @@ describe("the Receive sheet shows one scannable QR for the signed-in account", (
   test("Share saves a PNG that decodes to the same pay link", async () => {
     const png = await sharedPngFor(B);
     assert.equal(readQrFromPng(png), payUrlOf(B));
-    assert.deepEqual(parseGloobalPayPayload(readQrFromPng(png)), { gloobalId: B.symbolId });
+    assert.deepEqual(parseGloobalPayPayload(readQrFromPng(png)), { gloobalId: B.symbolId, side: "person" });
   });
 });
 
@@ -412,12 +414,7 @@ describe("scanning a Gloobal QR hands off to Send Money and sends nothing", () =
     await confirmCardButton(page, "Pay");
     assert.match(await text(page), new RegExp(B.fullName));
 
-    await (await confirmCardButton(page, "Scan again")).click({ force: true });
-    const leftCard = Date.now() + 10000;
-    while ((await hasConfirmCard(page)) && Date.now() < leftCard) await page.waitForTimeout(200);
-    assert.equal(await hasConfirmCard(page), false, "Scan again must return to scanning");
-    // After "Scan again" the overlay is the live camera view, which has no
-    // gallery control — the second upload goes in through a reopened scanner.
+    // Out and back in, then the same picture again.
     await closeScanner(page);
     await openScanner(page);
     await uploadToScanner(page, png);
@@ -440,11 +437,11 @@ describe("the scanner refuses what is not a payable Gloobal QR, and says why", (
     const blank = await page.screenshot();
     const cases = [
       { name: "an image with no QR", png: blank, expect: /No QR code found in that image\./ },
-      { name: "a pay link on another host", png: qrPng("https://evil.example/p/012345670123"), expect: /This isn['’]t a Gloobal QR code\./ },
-      { name: "a UPI code", png: qrPng("upi://pay?pa=x@y"), expect: /This is a UPI QR\. Gloobal can['’]t pay UPI codes\./ },
-      { name: "your own QR", png: qrPng(payUrlOf(A)), expect: /This is your own Gloobal QR\./ },
+      { name: "a pay link on another host", png: qrPng("https://evil.example/p/012345670123"), expect: /This isn['’]t a GLOOBAL QR code\./ },
+      { name: "a UPI code", png: qrPng("upi://pay?pa=x@y"), expect: /This is a UPI QR\. GLOOBAL can['’]t pay UPI codes\./ },
+      { name: "your own QR", png: qrPng(payUrlOf(A)), expect: /This is your own GLOOBAL QR\./ },
       // "=" × 12 → digits 333333333333: well formed, and nobody in the fake has it.
-      { name: "a well-formed ID nobody has", png: qrPng("https://gloobalv3.netlify.app/p/333333333333"), expect: /No Gloobal account uses this QR\./ }
+      { name: "a well-formed ID nobody has", png: qrPng("https://gloobalv3.netlify.app/p/333333333333"), expect: /No GLOOBAL account uses this QR\./ }
     ];
 
     for (const c of cases) {
@@ -509,7 +506,7 @@ describe("a /p/<digits> link opens Send Money", () => {
 
     const amountField = page.getByLabel(`Amount the receiver gets, in their own currency (${payee.currency})`);
     await amountField.waitFor({ timeout: 25000 });
-    await amountField.fill("5000001");
+    await padFill(page, amountField, "5000001");
     await page.waitForTimeout(800);
     await tap(page.getByRole("button", { name: /^(Send|Simulate)\s/ }).last());
 
@@ -575,7 +572,7 @@ describe("there is one QR surface, not two", () => {
     assert.equal(await page.locator(QR_SVG).count(), 1, "exactly one QR while Receive is open");
     assert.equal(await page.locator("svg[aria-label*='QR' i], canvas[aria-label*='QR' i], img[alt*='QR' i]").count(), 1);
     await tap(page.getByRole("button", { name: "Close", exact: true }).last());
-    await page.getByRole("heading", { name: "Your Gloobal QR", exact: true }).waitFor({ state: "detached", timeout: 20000 });
+    await page.getByRole("heading", { name: /^Your GLOOBAL QR$/i }).waitFor({ state: "detached", timeout: 20000 });
 
     await openScanner(page);
     await noLegacy("Scanner");

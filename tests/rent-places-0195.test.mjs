@@ -77,7 +77,10 @@ describe("Rent, on the server", () => {
   test("the send route takes a mandate only for the place it was given for", () => {
     const srv = code(SERVER);
     assert.match(srv, /rentMandate = await rent\.readRentMandate\(req\);/);
-    assert.match(srv, /if \(!rentMandate && !cleanPin\)/);
+    // Every payment that is not a standing instruction is authorised
+    // (PIN, or the phone's fingerprint / face check since 0253).
+    assert.match(srv, /const standing = rentMandate \|\| adMandate \|\| callMandate;/);
+    assert.match(srv, /if \(!standing\) \{\s*\n\s*const decided = await paymentFace\.authorize\(\{/);
     assert.match(srv, /rent\.mandateCovers\(rentMandate, \{ senderId: sender\._id, receiverSymbolId: receiver\.symbolId, amount: amountForMandate \}\)/);
   });
 

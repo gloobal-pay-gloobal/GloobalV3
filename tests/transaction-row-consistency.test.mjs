@@ -156,7 +156,7 @@ describe("direction survives the arrow being dropped", () => {
     // mixed and covered by the loop above.
     for (const file of [LIST_FILES["Gloobal Bank Recent Transactions"]]) {
       const src = code(file);
-      assert.match(src, /color=\{\w+ \? TXN_IN_COLOR : TXN_OUT_COLOR\}/);
+      assert.match(src, /color=\{[\w." =]+ \? T\.txnIn : T\.txnOut\}/);
       assert.match(src, /sign=\{\w+ \? "\+" : "[−−]"\}/);
     }
   });

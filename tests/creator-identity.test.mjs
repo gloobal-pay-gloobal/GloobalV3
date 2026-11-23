@@ -272,14 +272,18 @@ describe("two creators cannot hold the same name", () => {
     // typing the same name at the same moment are both told it is free.
     // The index is what decides, and the save has to turn ITS refusal
     // into the same message rather than a 500.
-    assert.match(readSource(MODEL), /handle: \{\s*\n\s*type: String,\s*\n\s*trim: true,\s*\n\s*default: null,\s*\n\s*index: \{ unique: true, sparse: true \}/,
+    // A partial unique index on strings (User.js): unique among the handles
+    // that exist, any number of people with none.
+    assert.match(readSource(MODEL), /\{ 'creatorProfile\.handle': 1 \},\s*\n\s*\{ name: 'creatorProfile\.handle_unique_named', unique: true, partialFilterExpression: \{ 'creatorProfile\.handle': \{ \$type: 'string' \} \} \}/,
       "the handle has no unique index, so uniqueness is only ever advisory");
     assert.match(server, /if \(writeError\?\.code === 11000\) \{\s*\n\s*return res\.status\(409\)\.json\(\{\s*\n\s*success: false, code: 'handle_taken'/,
       "a duplicate-key refusal from the index is not turned into an answer");
   });
 
-  test("sparse, or every account without one collides with every other", () => {
-    assert.match(readSource(MODEL), /sparse: true/);
+  test("partial on strings, or every account without one collides with every other", () => {
+    // A sparse index still indexes the stored null; only a partial filter
+    // on strings lets any number of people have no handle.
+    assert.match(readSource(MODEL), /partialFilterExpression: \{ 'creatorProfile\.handle': \{ \$type: 'string' \} \}/);
   });
 });
 
@@ -479,7 +483,9 @@ describe("a creator who skipped is a real creator", () => {
     // The founder's choice, against my recommendation. Tested as a
     // requirement so that nobody later 'fixes' it into a wall.
     assert.match(strip(setup), /Set this up later/);
-    assert.match(dash, /onSkip=\{skipCreatorSetup\}/);
+    // Through the Back-aware close (0204), which is a skip until a name exists.
+    assert.match(dash, /onSkip=\{requestCloseCreatorSetup\}/);
+    assert.match(dash, /useBackClose\(showCreatorSetup, \(\) => closeCreatorSetup\(\)\)/);
   });
 
   test("closing it is the same as skipping it", () => {
@@ -488,7 +494,7 @@ describe("a creator who skipped is a real creator", () => {
     // 0199: closing goes through closeCreatorSetup, which is a skip until
     // a name exists and only a close after.
     assert.match(dash, /const closeCreatorSetup = \(\) => \{\s*if \(creatorSetupDone\(creatorProfile\)\) setShowCreatorSetup\(false\);\s*else skipCreatorSetup\(\);/);
-    assert.match(dash, /onClose=\{closeCreatorSetup\}/,
+    assert.match(dash, /onClose=\{requestCloseCreatorSetup\}/,
       "dismissing the screen means something different from skipping it");
   });
 
@@ -604,7 +610,7 @@ test("the creator row is on both sides of the profile", () => {
     dash,
     // 0153 put "Complaints & reports" after Notifications; the Creator
     // Profile row still follows Personal Details for everybody.
-    /\}\{PROFILE_ROWS\.slice\(0, 1\)\s*\n?\s*\.concat\(\["Creator Profile"\], (?:shareRole === "merchant" \? \["My shops"\] : \[\], )?PROFILE_ROWS\.slice\(1, 4\), \["Complaints & reports"(?:, "Ask GLOOBAL")?\], PROFILE_ROWS\.slice\(4\)\)\.map/,
+    /\}\{PROFILE_ROWS\.slice\(0, 1\)\s*\n?\s*\.concat\(\["Creator Profile"\], (?:shareRole === "merchant" \? \["My shops"\] : \[\], )?PROFILE_ROWS\.slice\(1, 4\), \[(?:"[^"]+", )*"Complaints & reports"(?:, "Ask GLOOBAL")?\], PROFILE_ROWS\.slice\(4\)\)\.map/,
     "the row must not be gated on shareRole"
   );
   assert.ok(

@@ -322,7 +322,12 @@ function PersonalDetailsScreen({
   const dial = (dialCountry && dialCountry.dialCode) || "";
   const mobileShown = (() => {
     const m = String(mobileNumber || "");
-    const rest = dial && m.startsWith(dial) ? m.slice(dial.length) : m.replace(/^\+/, "");
+    // A number stored with its country code but no "+" (older accounts:
+    // "919000000001") still has the code taken off, or it showed twice.
+    const dialDigits = dial.replace(/\D/g, "");
+    const rest = dial && m.startsWith(dial) ? m.slice(dial.length)
+      : dialDigits && !m.startsWith("+") && m.startsWith(dialDigits) && m.length - dialDigits.length >= 6 ? m.slice(dialDigits.length)
+      : m.replace(/^\+/, "");
     const lead = dial ? `${dial} ` : (m.startsWith("+") ? "+" : "");
     if (showMobile || rest.length < 6) return `${lead}${rest}`;
     return `${lead}${rest.slice(0, 2)}••• ••${rest.slice(-3)}`;

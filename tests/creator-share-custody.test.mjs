@@ -205,7 +205,8 @@ describe("a claim pays two things out of two accounts", () => {
     // Gloobal's.
     assert.match(claim, /await releaseFromCustody\(\{/);
     assert.match(claim, /reason: 'creator_share_principal',/);
-    const release = slice(claim, "if (totalPrincipal > 0) {", "if (totalInterest > 0) {");
+    // The interest branch also checks the rounded figure is above zero now.
+    const release = slice(claim, "if (totalPrincipal > 0) {", "if (totalInterest > 0 && ");
     assert.ok(!/recordDisbursement/.test(release), "the principal is being paid as a disbursement");
   });
 

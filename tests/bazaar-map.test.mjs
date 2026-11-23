@@ -83,8 +83,13 @@ test("an owner places the pin, and can't confirm from too far out", () => {
   assert.match(addr, /for \(const k of \["area", "city", "state", "pin"\]\) if \(parts\[k\]\) next\[k\] = parts\[k\];/);
 });
 
-test("place search and address reads share one request a second", () => {
+test("address reads keep to one request a second, and place search stays off until its route exists", () => {
   const s = readSource("server/server.js");
-  assert.match(s, /app\.get\('\/api\/geo\/search', lookupLimit, requireAuth,/);
   assert.match(s, /if \(String\(url\)\.includes\('nominatim\.openstreetmap\.org'\)\) await geoNominatimWait\(\);/);
+  // Searching for a place needs an outside service not chosen yet (kept for
+  // later with the other outside services): no route, so the buttons that
+  // open it are not drawn.
+  const hasRoute = /app\.get\('\/api\/geo\/search'/.test(s);
+  const ready = /var GLOBAL_PLACE_SEARCH_READY = true;|var GLOOBAL_PLACE_SEARCH_READY = true;/.test(readSource("frontend/features/bazaar/gloobalMap.jsx"));
+  assert.equal(ready, hasRoute, "place search is offered without a route, or the route exists and the search is still hidden");
 });

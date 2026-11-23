@@ -43,7 +43,10 @@ const B = ACCOUNTS.japan;
 // expected pay link is not computed by the code under test.
 const SYMBOL_ORDER = ["−", "+", "×", "=", "○", "□", "●", "■"];
 const digitsOf = (id) => Array.from(id).map((c) => SYMBOL_ORDER.indexOf(c)).join("");
-const payUrlOf = (account) => `https://gloobalv3.netlify.app/p/${digitsOf(account.symbolId)}`;
+// The PERSON's link (/u/), as the personal Receive screen draws it. The
+// unmarked /p/ form resolves to the account's shop when it has one
+// ("scanning a shop gives you the shop"), and B here has one.
+const payUrlOf = (account) => `https://gloobalv3.netlify.app/u/${digitsOf(account.symbolId)}`;
 
 const QR_SVG = 'svg[aria-label="Gloobal QR code"]';
 const PHOTO_CAP = 200000;
@@ -212,15 +215,14 @@ async function scanQrOf(page, account) {
   await picker.last().setInputFiles({ name: "qr.png", mimeType: "image/png", buffer: qrPng(payUrlOf(account)) });
 }
 
-// The confirm card: the element whose direct children include both the Pay
-// and the Scan again buttons.
+// The confirm card: the element holding the Pay button on the scan screen.
+// (It used to sit beside "Scan again", which left the card in 6df3b64.)
 async function waitForCard(page) {
   await page.waitForFunction(
     () =>
       Array.from(document.querySelectorAll("button")).some(
         (b) =>
-          b.textContent.trim() === "Pay" &&
-          Array.from(b.parentElement.children).some((s) => s.tagName === "BUTTON" && s.textContent.trim() === "Scan again")
+          b.textContent.trim() === "Pay" && Boolean(b.closest('[data-testid="gloobal-scan-screen"]'))
       ),
     undefined,
     { timeout: 20000 }
@@ -231,8 +233,7 @@ function cardState(page) {
   return page.evaluate(() => {
     const pay = Array.from(document.querySelectorAll("button")).find(
       (b) =>
-        b.textContent.trim() === "Pay" &&
-        Array.from(b.parentElement.children).some((s) => s.tagName === "BUTTON" && s.textContent.trim() === "Scan again")
+        b.textContent.trim() === "Pay" && Boolean(b.closest('[data-testid="gloobal-scan-screen"]'))
     );
     if (!pay) return null;
     const card = pay.parentElement;

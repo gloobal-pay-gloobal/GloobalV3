@@ -320,12 +320,15 @@ describe("CEL appears nowhere money moves", () => {
     // construction — that is what makes the unit here CEL under the local
     // lens and the account's own symbol under the CEL one, matching every
     // row on the screen below.
-    assert.match(dash, /const balanceBarUnit = geuLensBarUnit\(ccyCode, displayLens, ccyCode\);/);
+    // (0228: through geuLensUnitPair, the same names geuLensBarMoney uses;
+    // the half after the bar is its `trail`.)
+    assert.match(dash, /const balanceBarUnit = geuLensUnitPair\(ccyCode, displayLens, ccyCode\)\.trail;/);
     assert.match(dash, /const balanceBracket = balanceBarUnit \? `\$\{GEU_LENS_BAR\} \$\{balanceBarUnit\}` : "";/);
     // Inside the visible branch: a masked balance shows dots and must not
     // grow a bracket beside them.
     const at = dash.indexOf("balanceVisible ?");
-    const masked = dash.indexOf("\\u2022\\u2022", at);
+    // A hidden balance is a face now (BalanceMaskSign), not bullets.
+    const masked = dash.indexOf("<BalanceMaskSign", at);
     assert.ok(at > 0 && masked > at, "the balance's visible branch was not found");
     assert.ok(dash.slice(at, masked).includes("{balanceBracket}"),
       "the bracket is outside the branch that only draws when the balance is shown");

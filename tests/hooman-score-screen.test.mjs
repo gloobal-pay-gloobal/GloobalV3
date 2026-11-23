@@ -41,7 +41,8 @@ async function openScore(options = {}) {
   await login(opened.page, ME);
   await opened.page.getByRole("button", { name: "Profile", exact: true }).click({ timeout: 15000 });
   await opened.page.getByLabel(/^Hooman Score, (no score yet|\d+ out of 100)/).click({ timeout: 15000 });
-  await opened.page.getByLabel("Score", { exact: true }).click({ timeout: 10000 });
+  // The circle opens Personal Details now (0245); its Hooman button opens the score.
+  await opened.page.locator('[data-pd-action="hooman"]').click({ timeout: 10000 });
   await opened.page.getByText("Hooman Score", { exact: true }).waitFor({ timeout: 10000 });
   return opened;
 }
@@ -136,7 +137,9 @@ describe("the daily check-in", () => {
       assert.match(await sheet.innerText(), /never changes how much you're paid/);
       assert.equal(hoomanCalls(api, "POST", "/api/hooman/answers").length, 0, "an answer was sent before agreeing");
       await sheet.getByRole("button", { name: "Save my answers" }).click();
-      await page.getByText("Your Hooman Score is saved to your account").waitFor({ timeout: 10000 });
+      // Drawn twice on purpose: the open sheet echoes the dashboard's toast
+      // above itself (Dashboard.jsx), so the top copy is the one seen.
+      await page.getByText("Your Hooman Score is saved to your account").last().waitFor({ timeout: 10000 });
       const sent = hoomanCalls(api, "POST", "/api/hooman/answers");
       assert.equal(sent.length, 1);
       assert.equal(sent[0].body.pillar, "self", "the first card is not the Self pillar");
@@ -231,7 +234,9 @@ describe("saying no, and deleting", () => {
       await page.getByRole("button", { name: "Save to my account" }).click();
       await page.getByTestId("hooman-consent").getByRole("button", { name: "Save my answers" }).click();
       await page.getByTestId("hooman-saving").getByText("Saved to your account", { exact: false }).waitFor({ timeout: 10000 });
-      await page.getByText("Your Hooman Score is saved to your account").waitFor({ timeout: 10000 });
+      // Drawn twice on purpose: the open sheet echoes the dashboard's toast
+      // above itself (Dashboard.jsx), so the top copy is the one seen.
+      await page.getByText("Your Hooman Score is saved to your account").last().waitFor({ timeout: 10000 });
       const pillars = api.state.hooman[ME.symbolId].answers.map((a) => a.pillar).sort();
       assert.deepEqual(pillars, ["community", "self"], "the answers from before agreeing were not saved");
     } finally {

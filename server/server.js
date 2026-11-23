@@ -1459,6 +1459,11 @@ const verifiedId = createVerifiedId({ User, ProfilePhoto });
 // The verified badge's four colours (lib/badges.js), worked out from real
 // followers and verified reach, refreshed in the background.
 const badges = createBadges({ User, SocialLink: require('./models/SocialLink'), SocialPost: require('./models/SocialPost') });
+// Helloo and Social can be switched off on Render (lib/hellooSwitch.js):
+// HELLOO_SOCIAL=off, or HELLOO=off / SOCIAL=off on their own. Default on.
+const hellooSocial = require('./lib/hellooSwitch').hellooSwitch();
+app.use(hellooSocial.middleware);
+if (!hellooSocial.helloo || !hellooSocial.social) console.log(`Helloo ${hellooSocial.helloo ? 'on' : 'OFF'} · Social ${hellooSocial.social ? 'on' : 'OFF'}`);
 const helloo = createHelloo({
   hostProblem: verifiedId.hostProblem,
   badgeTierOf: (u) => badges.tierOf(u),
@@ -15758,4 +15763,4 @@ hellooLib.configureHellooMoney({ AUTH_TOKEN_SECRET, PORT, issueAuthToken });
 rent.startRentAutoSettle();
 // Helloo's live channel shares this port: Render exposes one, and a
 // WebSocket upgrade is just another request on it.
-helloo.attachLive(httpServer);
+if (hellooSocial.helloo) helloo.attachLive(httpServer);

@@ -23,6 +23,8 @@ const mongoose = require('mongoose');
 const BankTransfer = require('../models/BankTransfer');
 const LinkedBankAccount = require('../models/LinkedBankAccount');
 const TransferCase = require('../models/TransferCase');
+// Out to outside banks never more than came in from them (lib/exitGuard.js).
+const exitGuard = require('./exitGuard');
 const { formatMoneyPair } = require('./notificationText');
 
 // How long a test transfer out "takes" at the bank.
@@ -160,6 +162,7 @@ function createBankTransfers({
         { returnDocument: 'after', session }
       );
       if (!claimed) return;
+      await exitGuard.giveBack(t.currency, t.amount, session);
       const before = await User.findById(t.userId).session(session).select('balance').lean();
       await User.updateOne({ _id: t.userId }, { $inc: { balance: t.amount } }, { session });
       await LedgerEntry.create([{
@@ -319,6 +322,7 @@ function createBankTransfers({
             ],
           }], { session });
           await User.updateOne({ _id: user._id }, { $inc: { balance: 1 } }, { session });
+          await exitGuard.noteIn(currency, 1, session);
           await LedgerEntry.create([{
             transactionId: t._id, userId: user._id, source: 'bank_transfer', entryType: 'credit', amount: 1,
             balanceBefore: Number(before.balance), balanceAfter: after, currency,
@@ -430,6 +434,7 @@ function createBankTransfers({
             ],
           }], { session });
           await User.updateOne({ _id: user._id }, { $inc: { balance: amount } }, { session });
+          await exitGuard.noteIn(currency, amount, session);
           await LedgerEntry.create([{
             transactionId: t._id, userId: user._id, source: 'bank_transfer', entryType: 'credit', amount,
             balanceBefore: Number(before.balance), balanceAfter: after, currency,
@@ -514,6 +519,9 @@ function createBankTransfers({
             return null;
           }
           const after = round2(debited.balance);
+          // GLOOBAL as a whole: never more out than came in. Refused here,
+          // the whole write is undone, the debit with it.
+          await exitGuard.takeOut(currency, amount, session);
           const [t] = await BankTransfer.create([{
             userId: user._id, direction: 'out', method: account.kind === 'upi' ? 'upi' : 'imps', amount, currency,
             status: 'processing', referenceId, idempotencyKey: key, linkedAccountId: account._id,
@@ -547,6 +555,9 @@ function createBankTransfers({
         if (!transfer) return res.status(409).json({ success: false, code: 'insufficient', message: 'Not enough in your GLOOBAL balance. Nothing was taken.' });
         return res.status(201).json({ success: true, transfer: publicTransfer(transfer.toObject()) });
       } catch (error) {
+        if (error instanceof exitGuard.ExitGuardError) {
+          return res.status(409).json({ success: false, code: 'exit_guard', message: 'This cannot go to an outside bank right now: money leaving GLOOBAL can never be more than money that came in. You can still spend it on GLOOBAL. Nothing was taken.' });
+        }
         if (error && error.code === 11000) return res.status(409).json({ success: false, code: 'duplicate', message: 'That request was already sent.' });
         console.error('Send to bank error:', error);
         return res.status(500).json({ success: false, message: 'Could not send right now. Nothing was taken.' });

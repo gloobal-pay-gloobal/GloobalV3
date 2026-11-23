@@ -36,7 +36,7 @@ describe("the server keeps the rule", () => {
   test("a draw is GLOOBAL's payout, reason essentials, never more than today's", () => {
     assert.match(ess, /recordDisbursement\(\{\s*user, amount: applied, currency, countryIso, reason: REASON/);
     assert.match(ess, /Math\.min\(requested, Math\.max\(0, limit - usedToday\)\)/);
-    assert.match(code("server/models/Disbursement.js"), /enum: \['seed_interest', 'referral_reward', 'essentials'\]/);
+    assert.match(code("server/models/Disbursement.js"), /enum: \['seed_interest', 'referral_reward', 'essentials'(?:, 'gloobal_cost')?\]/);
   });
   test("a draw needs GLOOBAL Bank", () => assert.match(ess, /code: 'bank_closed'/));
   test("sending out checks balance − used, inside the same transaction as the debit", () => {

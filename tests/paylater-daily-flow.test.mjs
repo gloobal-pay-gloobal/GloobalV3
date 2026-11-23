@@ -277,3 +277,42 @@ test("the milestone scale is worked out from her own record and written to her a
   assert.deepEqual([me.factor, me.milestone.level], [1, 0], "one late repayment brings it back to 1");
   global.hoomanKept = false;
 });
+
+test("GLOOBAL pays a cost: the payee's own share comes back as GLOOBAL's seed, and it grows with the day like any holder's", async () => {
+  stub("./models/Disbursement", { findOne: () => ({ lean: async () => null }) });
+  const { createGloobalCosts, GLOOBAL_SEED_OWNER } = require("./lib/gloobalCosts");
+  const dis = [];
+  const costs = createGloobalCosts({
+    User, AssetSeed, PlatformAccount: Platform, Transaction,
+    withAtomicSession: (work) => work({}),
+    recordDisbursement: async ({ user, amount, currency, reason, metadata }) => {
+      const own = await Platform.forCurrency(currency); own.balance = r2(own.balance - amount);
+      const u = User.rows.find((x) => same(x._id, user._id)); u.balance = r2(u.balance + amount);
+      const [transaction] = await Transaction.create({ type: "disbursement", amount, currency, referenceId: "D" + dis.length, metadata: { reason, ...metadata } });
+      dis.push({ amount, reason, metadata });
+      return { transaction };
+    },
+    resolveOwnCurrency: async () => "INR", accountCountryIso: () => "IN", decimalsFor: () => 2,
+  });
+  const [host] = await User.create({ fullName: "Hosting Co", symbolId: "HOSTCO", balance: 0, cashbackRate: 0.02 });
+  const before = everything();
+  const r = await costs.payCost({ symbolId: "HOSTCO", amount: 1000, key: "nov-hosting" });
+  assert.deepEqual([r.gross, r.share, r.kept, r.rate], [1000, 20, 980, 0.02]);
+  assert.equal(host.balance, 980, "the payee keeps what any payer would leave them");
+  assert.equal(dis[0].reason, "gloobal_cost");
+  const seed = AssetSeed.rows.find((s) => same(s.userId, GLOOBAL_SEED_OWNER));
+  assert.ok(seed && seed.cashback === 20 && seed.principalHeld, "GLOOBAL's own seed, held");
+  assert.equal(everything(), before, "a cost moves money; it makes none and loses none");
+  // GLOOBAL holds 20 of seeds now, so it shares in what PayLater users pay:
+  // a day with 100 collected for holders closes, and GLOOBAL gets its part.
+  await Day.create({ currency: "INR", day: "2020-01-01", toHolders: 100 });
+  await pl.closeDays("INR");
+  const grew = Growth.rows.filter((g) => same(g.userId, GLOOBAL_SEED_OWNER)).reduce((t, g) => t + g.amount, 0);
+  assert.ok(grew > 0, "GLOOBAL's seed did not share in the day");
+  // A payee with no rate set shares nothing back, and nothing is planted.
+  const [plain] = await User.create({ fullName: "Plain", symbolId: "PLAIN", balance: 0 });
+  const p = await costs.payCost({ symbolId: "PLAIN", amount: 50, key: "c2" });
+  assert.deepEqual([p.share, plain.balance], [0, 50]);
+  assert.equal(AssetSeed.rows.filter((s) => same(s.userId, GLOOBAL_SEED_OWNER)).length, 1);
+  await assert.rejects(() => costs.payCost({ symbolId: "NOBODY", amount: 5, key: "c3" }), (e) => e.code === "payee");
+});

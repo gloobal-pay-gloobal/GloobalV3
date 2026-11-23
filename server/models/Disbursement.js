@@ -70,7 +70,10 @@ const disbursementSchema = new mongoose.Schema(
       // `essentials` is a day's My Essentials, paid into the GLOOBAL Bank
       // balance (lib/essentials.js). Never paid back; what an account has
       // drawn stays in GLOOBAL when it sends money out.
-      enum: ['seed_interest', 'referral_reward', 'essentials'],
+      // `gloobal_cost` is GLOOBAL paying one of its own costs (a salary,
+      // hosting, a supplier); what the person shares back of it becomes
+      // GLOOBAL's own seed (lib/gloobalCosts.js).
+      enum: ['seed_interest', 'referral_reward', 'essentials', 'gloobal_cost'],
       required: true,
       index: true,
     },

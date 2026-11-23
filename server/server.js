@@ -9709,6 +9709,17 @@ const paylater = require('./lib/paylaterDaily').createPaylaterDaily({
 });
 paylater.mount(app);
 
+// GLOOBAL's own costs come back as earnings (lib/gloobalCosts.js): when
+// GLOOBAL pays someone, their Creator Share applies as for anybody, and
+// what they share back is GLOOBAL's own seed, growing by the day.
+require('./lib/gloobalCosts').createGloobalCosts({
+  User, AssetSeed, PlatformAccount, Transaction,
+  withAtomicSession: (work) => withAtomicSession(work),
+  recordDisbursement: (args) => require('./lib/disbursement').recordDisbursement(args),
+  resolveOwnCurrency, accountCountryIso, decimalsFor,
+  requireStaff: admin.requireStaff, writeLimit, lookupLimit,
+}).mount(app);
+
 const bankTransfers = require('./lib/bankTransfers').createBankTransfers({
   User, Pin, LedgerEntry, Notification, requireAuth, writeLimit, lookupLimit, credentialLimit,
   pin: { beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },

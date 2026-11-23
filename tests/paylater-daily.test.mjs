@@ -158,3 +158,21 @@ test("checkout: choosing PayLater uses it on the server, in the payment itself",
   assert.match(sheet, /Covers part — the rest from GLOOBAL Bank/);
   assert.match(sheet, /GloobalApi\.getPaylaterDaily\(\)/);
 });
+
+test("the milestone scale: 1.00, then 1.05, then 1.10 — earned by paying back, kept Hooman Score, and lost by paying late", () => {
+  const f = (timings, hoomanKept = true) => m.milestoneFactor({ timings, hoomanKept }).factor;
+  assert.equal(f([]), 1);
+  assert.equal(f(["on_time", "on_time"]), 1);
+  assert.equal(f(["on_time", "early", "on_time"]), 1.05);
+  assert.equal(f(["on_time", "early", "on_time"], false), 1, "Hooman Score not kept: no extra");
+  assert.equal(m.milestoneFactor({ timings: [], hoomanKept: false }).needsHooman, true);
+  const ten = ["early", "early", "early", "early", "early", "on_time", "on_time", "on_time", "on_time", "on_time"];
+  assert.equal(f(ten), 1.1);
+  assert.equal(f(["early", "early", "early", "early", "on_time", "on_time", "on_time", "on_time", "on_time", "on_time"]), 1.05, "10 paid back but only 4 early");
+  assert.equal(f(["late", ...ten]), 1, "a late repayment brings it straight back");
+  // Late long ago (outside the last 20) no longer counts against them.
+  assert.equal(f([...ten, ...ten, "late"]), 1.1);
+  // Handed back unused is not a repayment.
+  assert.equal(f(["returned", "returned", "returned"]), 1);
+  assert.ok(m.milestoneFactor({ timings: ten, hoomanKept: true }).factor <= m.MAX_FACTOR);
+});

@@ -54,6 +54,8 @@ function createPaylaterDaily({
   requireAuth, writeLimit, lookupLimit, withAtomicSession,
   resolveOwnCurrency, releaseFromCustody, mintReference, decimalsFor,
   isBankOpen = async () => true, onHold = async () => null,
+  // Has the person kept their Hooman Score in the last 30 days? (Never its value.)
+  hoomanKept = async () => false,
 }) {
   const dec = (currency) => math.decimalsOf(currency, decimalsFor);
   const minor = (v, currency) => math.toMinor(v, dec(currency));
@@ -88,13 +90,32 @@ function createPaylaterDaily({
   }
   const feeDueOf = (use, now = new Date()) => minor((Number(use.feeCarried) || 0) + math.useFee(use.outstanding, math.daysInUse(use.chargedFrom, now), dec(use.currency)), use.currency);
 
+  // ── THE MILESTONE SCALE ─────────────────────────────────────────────
+  // Worked out from the person's own record and written to their account,
+  // where the limit reads it. Asked whenever the summary is read and when a
+  // repayment closes a use.
+  async function milestoneOf(userId) {
+    const [closed, kept] = await Promise.all([
+      PayLaterUse.find({ userId, closedAt: { $ne: null }, timing: { $in: ['early', 'on_time', 'late'] } }).sort({ closedAt: -1 }).limit(40).select('timing').lean(),
+      Promise.resolve(hoomanKept(userId)).catch(() => false),
+    ]);
+    return math.milestoneFactor({ timings: closed.map((c) => c.timing), hoomanKept: Boolean(kept) });
+  }
+  async function refreshFactor(userId) {
+    const m = await milestoneOf(userId);
+    await User.updateOne({ _id: userId }, { $set: { paylaterFactor: m.factor } });
+    return m;
+  }
+
   async function summary(user, now = new Date()) {
     const currency = await resolveOwnCurrency(user);
     const [principal, growth, uses, today] = await Promise.all([
       heldPrincipal(user._id, currency), growthUnclaimed(user._id, currency), openUses(user._id, currency),
       SeedGrowth.findOne({ userId: user._id, currency }).sort({ day: -1 }).lean(),
     ]);
-    const factor = Math.min(math.MAX_FACTOR, Math.max(1, Number(user.paylaterFactor) || 1));
+    let milestone = null;
+    try { milestone = await refreshFactor(user._id); } catch (e) { milestone = null; }
+    const factor = Math.min(math.MAX_FACTOR, Math.max(1, Number(milestone ? milestone.factor : user.paylaterFactor) || 1));
     const seeds = minor(principal + growth.unclaimed, currency);
     const inUse = minor(uses.reduce((s, u) => s + u.outstanding, 0), currency);
     const costSoFar = minor(uses.reduce((s, u) => s + feeDueOf(u, now), 0), currency);
@@ -119,6 +140,8 @@ function createPaylaterDaily({
       uses: uses.map((u) => ({ id: String(u._id), amount: minor(u.amount, currency), outstanding: minor(u.outstanding, currency), cost: feeDueOf(u, now), days: math.daysInUse(u.chargedFrom, now), openedAt: u.openedAt, dueAt: u.dueAt })),
       // The record milestones are read from.
       record: { early: count('early'), onTime: count('on_time'), late: count('late') },
+      // Where the person is on the milestone scale, and what the next step asks.
+      milestone: milestone ? { level: milestone.level, factor: milestone.factor, needsHooman: milestone.needsHooman, next: milestone.next ? { factor: milestone.next.factor, repaid: milestone.next.repaid, early: milestone.next.early, window: milestone.next.window } : null } : null,
     };
   }
 
@@ -427,7 +450,7 @@ function createPaylaterDaily({
     });
   }
 
-  return { mount, summary, use, useForPayment, returnUse, linkUseToPayment, repay, claimGrowth, closeDays, pool, inUseFor, heldPrincipal, PayLaterError };
+  return { mount, summary, milestoneOf, refreshFactor, use, useForPayment, returnUse, linkUseToPayment, repay, claimGrowth, closeDays, pool, inUseFor, heldPrincipal, PayLaterError };
 }
 
 module.exports = { createPaylaterDaily, PayLaterError };

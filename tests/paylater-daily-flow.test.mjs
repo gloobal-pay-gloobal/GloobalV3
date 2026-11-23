@@ -26,6 +26,7 @@ function match(doc, q) {
         if (op === "$gt") return v > x;
         if (op === "$gte") return v >= x;
         if (op === "$ne") return !same(v, x);
+        if (op === "$in") return x.some((y) => same(v, y));
         throw new Error("op " + op);
       });
     }
@@ -119,6 +120,7 @@ const pl = createPaylaterDaily({
   withAtomicSession: (work) => work({}),
   resolveOwnCurrency: async () => "INR", releaseFromCustody, decimalsFor: () => 2,
   mintReference: () => `REF${++refs}`,
+  hoomanKept: async () => Boolean(global.hoomanKept),
 });
 
 const r2 = (n) => Math.round(n * 100) / 100;
@@ -252,4 +254,26 @@ test("paid with PayLater in one step: it carries what the limit allows, goes bac
   const d = await pl.useForPayment(meena, 500, "pay-3");
   assert.deepEqual([d.used, d.useId], [0, null]);
   assert.equal(everything(), start);
+});
+
+test("the milestone scale is worked out from her own record and written to her account", async () => {
+  const [u] = await User.create({ fullName: "Lata", balance: 0 });
+  await AssetSeed.create({ userId: u._id, currency: "INR", cashback: 1000, principalHeld: true });
+  const custody = await Platform.custodyFor("INR"); custody.balance = r2(custody.balance + 1000);
+  for (const t of ["early", "on_time", "early"]) await Use.create({ userId: u._id, currency: "INR", amount: 10, outstanding: 0, closedAt: new Date(), timing: t, chargedFrom: new Date(), openedAt: new Date(), dueAt: new Date(), idempotencyKey: "m" + Math.random() });
+  global.hoomanKept = false;
+  let me = await pl.summary(u);
+  assert.deepEqual([me.factor, me.limit, me.milestone.needsHooman], [1, 1000, true]);
+  global.hoomanKept = true;
+  me = await pl.summary(u);
+  assert.deepEqual([me.factor, me.limit, me.available, me.milestone.level, me.milestone.next.factor], [1.05, 1050, 1050, 1, 1.1]);
+  assert.equal(User.rows.find((x) => same(x._id, u._id)).paylaterFactor, 1.05, "use() reads it from her account");
+  await assert.rejects(() => pl.use(u, 1050.01, "lata-over"), (e) => e.code === "over_limit");
+  // Custody holds only what was put there; the extra 5% is what holders' seeds cover.
+  custody.balance = r2(custody.balance + 50);
+  assert.deepEqual(await pl.use(u, 1050, "lata-1"), { replay: false, used: 1050 });
+  await Use.create({ userId: u._id, currency: "INR", amount: 10, outstanding: 0, closedAt: new Date(Date.now() + 1000), timing: "late", chargedFrom: new Date(), openedAt: new Date(), dueAt: new Date(), idempotencyKey: "late1" });
+  me = await pl.summary(u);
+  assert.deepEqual([me.factor, me.milestone.level], [1, 0], "one late repayment brings it back to 1");
+  global.hoomanKept = false;
 });

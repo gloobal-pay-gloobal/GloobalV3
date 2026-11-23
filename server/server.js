@@ -9696,6 +9696,16 @@ const paylater = require('./lib/paylaterDaily').createPaylaterDaily({
   mintReference: () => createPrototypeTransactionReference(),
   isBankOpen: (userId) => gloobalBank.isOpen(userId),
   onHold: (userId) => holds.onHold(userId, ['sending']),
+  // The milestone scale asks only whether the Hooman Score was kept in the
+  // last 30 days — never what the answers were (lib/paylaterMath.js).
+  hoomanKept: async (userId) => {
+    const since = new Date(Date.now() - 30 * 86400000);
+    const [consented, answered] = await Promise.all([
+      HoomanProfile.exists({ userId }),
+      HoomanAnswer.exists({ userId, createdAt: { $gte: since } }),
+    ]);
+    return Boolean(consented && answered);
+  },
 });
 paylater.mount(app);
 
@@ -14870,7 +14880,9 @@ app.delete('/api/transactions/:referenceId/tag', writeLimit, requireAuth, async 
 // Nothing is saved until the person agrees (POST /api/hooman/consent), and
 // DELETE /api/hooman removes every answer and the agreement with it.
 //
-// The score never affects money. No payment route reads anything here.
+// The score never affects money. The one thing read from here elsewhere is
+// whether answers were given in the last 30 days (PayLater's milestone scale,
+// lib/paylaterMath.js) — never what they were.
 
 const hoomanAnswersFor = (userId, now = new Date()) => {
   // Two months: Finance (asked monthly) counts its latest answer that long,

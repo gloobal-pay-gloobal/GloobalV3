@@ -150,10 +150,23 @@ function PayLaterLiveCards({ live, ccyCode }) {
       </> : <div style={Object.assign({}, small, { marginTop: 8 })}>The first day will show here once it is over.</div>}
     </div>
 
-    {/* The record milestones will read */}
-    {paidBack > 0 ? <div data-testid="paylater-record" style={Object.assign({}, card, { display: "flex", alignItems: "center", gap: 12 })}>
-      <CheckPl size={22} color={record.late ? T.inkFaint : T.positive} style={{ flexShrink: 0 }} />
-      <span style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.45 }}><b>Repaid {paidBack} {paidBack === 1 ? "time" : "times"}</b><span style={{ display: "block", color: T.inkFaint }}>{record.early} early · {record.onTime} on time · {record.late} late</span></span>
-    </div> : null}
+    {/* The milestone scale: the step you are on, and what the next asks */}
+    <div data-testid="paylater-record" style={card}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <CheckPl size={22} color={record.late ? T.inkFaint : T.positive} style={{ flexShrink: 0 }} />
+        <span style={{ flex: 1, fontSize: 12.5, color: T.ink, lineHeight: 1.45 }}><b>{paidBack > 0 ? `Repaid ${paidBack} ${paidBack === 1 ? "time" : "times"}` : "Nothing repaid yet"}</b>{paidBack > 0 ? <span style={{ display: "block", color: T.inkFaint }}>{record.early} early · {record.onTime} on time · {record.late} late</span> : null}</span>
+        <b data-testid="paylater-factor" style={{ fontSize: 15, fontFamily: T.fontDisplay, color: Number(me.factor) > 1 ? T.positive : T.ink, whiteSpace: "nowrap" }}>{Math.round((Number(me.factor) || 1) * 100)}%</b>
+      </div>
+      <div data-testid="paylater-steps" style={{ display: "flex", gap: 6, marginTop: 12 }}>{[1, 1.05, 1.1].map((f) => <span key={f} style={{ flex: 1, textAlign: "center", borderRadius: 10, padding: "7px 0", fontSize: 12, fontWeight: 800, background: Math.abs((Number(me.factor) || 1) - f) < 0.001 ? T.accent : (Number(me.factor) || 1) > f ? T.accentSoft : T.surfaceAlt, color: Math.abs((Number(me.factor) || 1) - f) < 0.001 ? "#fff" : (Number(me.factor) || 1) > f ? T.accent : T.inkFaint }}>{Math.round(f * 100)}%</span>)}</div>
+      <div style={Object.assign({}, small, { marginTop: 10 })}>{(() => {
+        const ms = me.milestone;
+        if (!ms) return "Your limit is your own seeds.";
+        const next = ms.next;
+        const base = Number(me.factor) > 1 ? `Your limit is ${Math.round(Number(me.factor) * 100)}% of your seeds.` : "Your limit is your own seeds.";
+        if (!next) return `${base} This is the top step for now. A late repayment brings it back to 100%.`;
+        if (ms.needsHooman) return `${base} Keep your Hooman Score check-ins going to start stepping up to ${Math.round(next.factor * 100)}% — only that you answer counts, never what you answer.`;
+        return `${base} ${Math.round(next.factor * 100)}% after ${next.repaid} repayments${next.early ? `, ${next.early} of them early` : ""}, none late in your last ${next.window}.`;
+      })()}</div>
+    </div>
   </>;
 }

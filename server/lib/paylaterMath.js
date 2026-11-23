@@ -121,8 +121,44 @@ function usedShare(inUse, held) {
 
 const dayKey = (d = new Date()) => new Date(d).toISOString().slice(0, 10);
 
+// ── THE MILESTONE SCALE: EXTRA CAPACITY, EARNED ──────────────────────────
+//
+// The founder's rule: "we use what we have in PayLater 1:1 now, slowly we
+// add extra capacity like 5%, 10% … milestones … Hooman Score, repayment on
+// time, before time … they can only take what their own account shows."
+//
+//   1.00   everybody to start with
+//   1.05   3 uses paid back, none late in the last 10, Hooman Score kept
+//   1.10   10 uses paid back, 5 of them early, none late in the last 20,
+//          Hooman Score kept
+//
+// A late repayment in that window brings it straight back to 1.00. "Kept"
+// means the person has answered their Hooman Score check-ins in the last 30
+// days — never what the answers were: the score is how somebody is doing,
+// and nobody is given more or less money for saying they feel low.
+//
+// `timings` is the person's closed uses, newest first: 'early' | 'on_time' |
+// 'late' (a use handed back unused, 'returned', is not a repayment).
+const MILESTONES = [
+  { factor: 1.10, repaid: 10, early: 5, window: 20 },
+  { factor: 1.05, repaid: 3, early: 0, window: 10 },
+];
+function milestoneFactor({ timings = [], hoomanKept = false } = {}) {
+  const repaid = timings.filter((t) => t === 'early' || t === 'on_time' || t === 'late');
+  if (!hoomanKept) return { factor: 1, level: 0, next: MILESTONES[MILESTONES.length - 1], needsHooman: true };
+  for (let i = 0; i < MILESTONES.length; i += 1) {
+    const m = MILESTONES[i];
+    const recent = repaid.slice(0, m.window);
+    if (repaid.length >= m.repaid && repaid.filter((t) => t === 'early').length >= m.early && !recent.includes('late')) {
+      return { factor: Math.min(MAX_FACTOR, m.factor), level: MILESTONES.length - i, next: MILESTONES[i - 1] || null, needsHooman: false };
+    }
+  }
+  return { factor: 1, level: 0, next: MILESTONES[MILESTONES.length - 1], needsHooman: false };
+}
+
 module.exports = {
   DAY_MS, USE_RATE_PER_DAY, TERM_DAYS, SPLIT, MAX_FACTOR,
   toMinor, decimalsOf, daysInUse, useFee, limitFor, availableFor, applyRepayment,
   splitCollected, shareAmongHolders, repaymentTiming, usedShare, dayKey,
+  MILESTONES, milestoneFactor,
 };

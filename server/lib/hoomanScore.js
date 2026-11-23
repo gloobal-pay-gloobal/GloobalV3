@@ -27,7 +27,9 @@
 //     check: on a day its answer was wrong, that day's answers count half.
 //
 // What the score never does: touch money. The Creator Share is paid in full
-// whatever anybody answers. Nothing here is read by any payment route.
+// whatever anybody answers. Nothing here is read by any payment route; the
+// PayLater milestone scale asks only whether answers were given in the last
+// 30 days, never what they were.
 
 const HOOMAN_WINDOW_DAYS = 30;
 const HOOMAN_FINANCE_DAYS = 62;

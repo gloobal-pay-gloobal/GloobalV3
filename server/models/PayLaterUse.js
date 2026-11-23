@@ -19,8 +19,12 @@ const PayLaterUseSchema = new mongoose.Schema(
     dueAt: { type: Date, required: true },
     closedAt: { type: Date, default: null },
     // early | on_time | late, written when it closes: what milestones read.
-    timing: { type: String, enum: ['early', 'on_time', 'late'], default: undefined },
+    timing: { type: String, enum: ['early', 'on_time', 'late', 'returned'], default: undefined },
     idempotencyKey: { type: String, required: true, unique: true },
+    // Taken for one payment (paid with PayLater in one step): the payment's
+    // key while it is being made, and its reference once it has gone through.
+    paymentKey: { type: String, default: null },
+    paymentReferenceId: { type: String, default: null },
     transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction', default: null },
   },
   { timestamps: true }

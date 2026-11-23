@@ -139,3 +139,22 @@ describe("the app reads PayLater from the server", async () => {
   });
   test("it is in the build", () => assert.match(src("build_app.mjs"), /"features\/paylater\/PayLaterLive\.jsx",\s*"features\/paylater\/PayLaterScreen\.jsx"/));
 });
+
+test("checkout: choosing PayLater uses it on the server, in the payment itself", async () => {
+  const fs = await import("node:fs");
+  const server = fs.readFileSync(new URL("../server/server.js", import.meta.url), "utf8");
+  const send = server.slice(server.indexOf("const senderBalanceBefore = accountBalanceOf(sender);") - 2500, server.indexOf("withMongoTransaction(performTransfer)") + 400);
+  assert.match(send, /paylater\.useForPayment\(sender, debitAmount/);
+  assert.match(send, /\/paylater\/i\.test\(cleanPayMethod\) && !rentMandate && !adMandate && !callMandate/);
+  // Before the courtesy balance check, so PayLater's part counts toward it.
+  assert.ok(send.indexOf("paylater.useForPayment") < send.indexOf("const senderBalanceBefore"));
+  // Every way out before the money moves hands it back.
+  const between = send.slice(send.indexOf("const senderBalanceBefore"));
+  assert.equal((between.match(/return res\.status\(4\d\d\)/g) || []).length, (between.match(/await returnPaylaterPart\(\);\s*return res\.status/g) || []).length);
+  assert.match(server, /catch \(transferError\) \{\s*\/\/[^\n]*\n\s*await returnPaylaterPart\(\);/);
+  assert.match(server, /paylater\.linkUseToPayment\(paySplit\.useId, completedTransaction\.referenceId\)/);
+  assert.match(server, /'GLOOBAL PayLater \+ GLOOBAL Bank'/);
+  const sheet = fs.readFileSync(new URL("../frontend/screens/SendMoney/SendMoney.jsx", import.meta.url), "utf8");
+  assert.match(sheet, /Covers part — the rest from GLOOBAL Bank/);
+  assert.match(sheet, /GloobalApi\.getPaylaterDaily\(\)/);
+});

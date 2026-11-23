@@ -1136,6 +1136,19 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   // What the pool still has today. Reactive to the ledger, so drawing on
   // it anywhere updates this row without a reload.
   const essentialsLeft = useEssentialsPoolRemaining(Number(essentialsDailyLimit) || 0);
+  // What PayLater can carry right now — read from the server each time the
+  // sheet opens. PayLater is used by the server as part of the payment
+  // itself (one step), so the row only says whether it carries all of
+  // this, part of it, or nothing.
+  const [paylaterAvailableNow, setPaylaterAvailableNow] = useState15(null);
+  useEffect13(() => {
+    if (!payMethodOpen) return undefined;
+    let alive = true;
+    Promise.resolve(GloobalApi.getPaylaterDaily && GloobalApi.getPaylaterDaily()).then((m) => {
+      if (alive) setPaylaterAvailableNow(m && Number.isFinite(Number(m.available)) ? Number(m.available) : null);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [payMethodOpen]);
   // How much Essentials actually carried of the payment in flight. Read
   // by the receipt; cleared whenever a new payment starts.
   const essentialsAppliedRef = useRef11(0);
@@ -2324,7 +2337,13 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       note: !(essentialsLeft > 0) ? "Nothing left today" : essentialsLeft + 0.005 >= (Number(senderAmount) || 0) ? "Covers all of this today" : "Covers part — the rest from GLOOBAL Bank",
       disabled: !(essentialsLeft > 0)
     },
-    { key: "gpaylater", label: "Gloobal PayLater", displayLabel: <GloobalWordmark suffix=" PayLater" /> },
+    {
+      key: "gpaylater",
+      label: "Gloobal PayLater",
+      displayLabel: <GloobalWordmark suffix=" PayLater" />,
+      note: paylaterAvailableNow === null ? null : !(paylaterAvailableNow > 0) ? "Nothing to use right now" : paylaterAvailableNow + 0.005 >= (Number(senderAmount) || 0) ? "Covers all of this" : "Covers part — the rest from GLOOBAL Bank",
+      disabled: paylaterAvailableNow !== null && !(paylaterAvailableNow > 0)
+    },
     { key: "local", label: "Local Banks" }
   ].map(({ key, label, displayLabel, note, disabled }) => <button
     key={key}

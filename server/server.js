@@ -11487,9 +11487,37 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     // Runs only for a genuinely new payment: a retry of one already made was
     // answered above, from the record, without consulting a balance that the
     // original payment itself has already changed.
+    //
+    // ── PAID WITH PAYLATER, IN ONE STEP ─────────────────────────────────
+    //
+    // "Gloobal PayLater" used to be a label: the money still left the
+    // person's own balance and nothing was in use. Now choosing it uses
+    // PayLater for this payment, here, before the money moves: PayLater
+    // carries what the person's limit allows and their bank carries the
+    // rest. If the payment then does not go through, what was taken goes
+    // straight back at no cost (returnPaylaterPart). Not for payments the
+    // server makes on a standing instruction — nobody chose a method there.
+    let paylaterPart = null;
+    const returnPaylaterPart = async () => {
+      if (!paylaterPart || !paylaterPart.useId || paylaterPart.replay) return;
+      try { await paylater.returnUse(paylaterPart.useId); } catch (returnError) { console.error('PayLater return (non-fatal):', returnError); }
+    };
+    if (/paylater/i.test(cleanPayMethod) && !rentMandate && !adMandate && !callMandate) {
+      try {
+        paylaterPart = await paylater.useForPayment(sender, debitAmount, cleanIdempotencyKey || `ref-${crypto.randomBytes(9).toString('hex')}`);
+        if (paylaterPart.used > 0 && !paylaterPart.replay) {
+          const refreshed = await User.findById(sender._id).select('balance').lean();
+          if (refreshed) sender.balance = refreshed.balance;
+        }
+      } catch (paylaterError) {
+        console.error('PayLater for payment (non-fatal):', paylaterError);
+        paylaterPart = { used: 0, useId: null };
+      }
+    }
     const senderBalanceBefore = accountBalanceOf(sender);
 
     if (senderBalanceBefore < debitAmount) {
+      await returnPaylaterPart();
       return res.status(400).json({
         success: false,
         message: 'Insufficient balance.',
@@ -11511,6 +11539,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     }).sort({ createdAt: -1 });
 
     if (recentDuplicate) {
+      await returnPaylaterPart();
       return res.status(409).json({
         success: false,
         duplicate: true,
@@ -11553,7 +11582,15 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     // draw names one payment: it is linked after the payment completes, and
     // a draw already linked to another payment counts for nothing here.
     let paySplit = null;
-    if (/essentials/i.test(cleanPayMethod)) {
+    if (paylaterPart) {
+      // The same truth for PayLater: what it carried, and what the bank did.
+      const fromPaylater = toMinorUnit(Math.min(paylaterPart.used || 0, debitAmount), senderCurrency);
+      const bank = toMinorUnit(Math.max(0, debitAmount - fromPaylater), senderCurrency);
+      paySplit = {
+        essentials: 0, bank, drawId: null, paylater: fromPaylater, useId: fromPaylater > 0 ? paylaterPart.useId : null,
+        label: fromPaylater <= 0 ? 'GLOOBAL Bank' : bank <= 0 ? 'GLOOBAL PayLater' : 'GLOOBAL PayLater + GLOOBAL Bank',
+      };
+    } else if (/essentials/i.test(cleanPayMethod)) {
       let drawn = 0;
       let drawId = null;
       const drawKey = String(essentialsDrawKey || '').trim().slice(0, 80);
@@ -11621,7 +11658,9 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
           ? paymentItemsClean(items, numericAmount) : null,
         // 0242: the two parts, in the sender's own currency. Null when
         // Essentials was not chosen — the whole of debitAmount is the method.
-        essentialsPart: paySplit ? paySplit.essentials : null,
+        paylaterPart: paySplit && paySplit.paylater ? paySplit.paylater : null,
+        paylaterUseId: paySplit && paySplit.useId ? String(paySplit.useId) : null,
+        essentialsPart: paySplit && !paylaterPart ? paySplit.essentials : null,
         bankPart: paySplit ? paySplit.bank : null,
         essentialsDrawId: paySplit ? paySplit.drawId : null,
         // The sender's own side of this payment, in their own currency —
@@ -12044,6 +12083,8 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     try {
       ({ value: transferred } = await withMongoTransaction(performTransfer));
     } catch (transferError) {
+      // Nothing moved, so nothing stays in use for it.
+      await returnPaylaterPart();
       if (transferError instanceof InsufficientBalanceError) {
         recordAudit({
           userId: sender._id, action: 'transaction.send.failed', status: 'failed',
@@ -12228,6 +12269,9 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     // 0242: the Essentials draw now belongs to this payment. Conditional, so
     // two payments can never both claim one draw; if this one lost that race
     // its record is corrected to say the bank paid all of it.
+    if (paySplit && paySplit.useId) {
+      try { await paylater.linkUseToPayment(paySplit.useId, completedTransaction.referenceId); } catch (linkUseError) { console.error('PayLater use link (non-fatal):', linkUseError); }
+    }
     if (paySplit && paySplit.drawId) {
       try {
         const linked = await Disbursement.updateOne(

@@ -223,3 +223,33 @@ test("part repayments: the cost is paid first, the rest carries; late is recorde
   assert.deepEqual([me.inUse, me.record.late], [0, 1]);
   assert.equal(everything(), r2(3005 + 100));
 });
+
+test("paid with PayLater in one step: it carries what the limit allows, goes back free if the payment fails, and stays once linked", async () => {
+  const meena = await person("Meena", 300);
+  const start = everything();
+  // A 500 payment: PayLater carries 300 (all she has), the bank the rest.
+  const a = await pl.useForPayment(meena, 500, "pay-1");
+  assert.equal(a.used, 300);
+  assert.equal(User.rows.find((u) => same(u._id, meena._id)).balance, 300);
+  assert.equal(await pl.inUseFor(meena._id), 300);
+  // The payment did not go through: it goes straight back, nothing charged.
+  assert.equal(await pl.returnUse(a.useId), true);
+  assert.equal(User.rows.find((u) => same(u._id, meena._id)).balance, 0);
+  assert.equal(await pl.inUseFor(meena._id), 0);
+  assert.equal(everything(), start, "nothing made, nothing lost");
+  assert.equal(await pl.returnUse(a.useId), false, "returned once");
+  // Tried again with the same key: it takes afresh rather than replaying the returned use.
+  const b = await pl.useForPayment(meena, 200, "pay-1");
+  assert.deepEqual([b.used, b.replay], [200, false]);
+  // This time the payment went through: linked, it can no longer be handed back.
+  await pl.linkUseToPayment(b.useId, "REF-PAID");
+  assert.equal(await pl.returnUse(b.useId), false);
+  assert.equal(await pl.inUseFor(meena._id), 200);
+  // 100 left: it carries 100 of a 500 payment, then nothing — and never refuses the payment.
+  const c = await pl.useForPayment(meena, 500, "pay-2");
+  assert.equal(c.used, 100);
+  await pl.linkUseToPayment(c.useId, "REF-PAID-2");
+  const d = await pl.useForPayment(meena, 500, "pay-3");
+  assert.deepEqual([d.used, d.useId], [0, null]);
+  assert.equal(everything(), start);
+});

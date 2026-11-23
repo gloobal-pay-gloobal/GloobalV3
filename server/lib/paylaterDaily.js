@@ -123,34 +123,101 @@ function createPaylaterDaily({
   }
 
   // ── USE ───────────────────────────────────────────────────────────────
-  async function use(user, amountAsked, key) {
+  // `upTo`: take what is available, up to the amount, instead of refusing
+  // when it is more than the limit. A payment asks this way: PayLater
+  // carries what it can and the person's bank carries the rest.
+  async function take(user, amountAsked, idempotencyKey, { upTo = false, paymentKey = null } = {}) {
     const currency = await resolveOwnCurrency(user);
     const amount = minor(amountAsked, currency);
     if (!(amount > 0) || !Number.isFinite(amount)) throw new PayLaterError('amount', 'Enter an amount above zero.', 400);
-    const idempotencyKey = `paylater-use:${user._id}:${key}`;
     const again = await PayLaterUse.findOne({ idempotencyKey }).lean();
-    if (again) return { replay: true, used: minor(again.amount, currency) };
+    if (again) return { replay: true, used: minor(again.amount, currency), useId: again._id, currency };
     if (!(await isBankOpen(user._id))) throw new PayLaterError('bank_closed', 'Open GLOOBAL Bank to use PayLater.');
     if (await onHold(user._id)) throw new PayLaterError('on_hold', 'This account is on hold.', 423);
     const now = new Date();
+    let used = 0; let useId = null;
     await withAtomicSession(async (session) => {
       const fresh = await User.findById(user._id).session(session);
       const factor = Math.min(math.MAX_FACTOR, Math.max(1, Number(fresh.paylaterFactor) || 1));
       const [principal, growth, inUse] = await Promise.all([heldPrincipal(fresh._id, currency, session), growthUnclaimed(fresh._id, currency, session), inUseFor(fresh._id, currency, session)]);
       const available = math.availableFor(principal + growth.unclaimed, inUse, factor, dec(currency));
-      if (amount > available + 1e-9) throw new PayLaterError('over_limit', `You can use up to ${available.toFixed(dec(currency))} right now.`);
+      let taking = amount;
+      if (amount > available + 1e-9) {
+        if (!upTo) throw new PayLaterError('over_limit', `You can use up to ${available.toFixed(dec(currency))} right now.`);
+        taking = minor(available, currency);
+      }
+      if (!(taking > 0)) return;
       const release = await releaseFromCustody({
-        user: fresh, amount, currency, reason: 'paylater_use', session,
+        user: fresh, amount: taking, currency, reason: 'paylater_use', session,
         note: 'PayLater', ledgerNote: 'Used from PayLater',
         metadata: { idempotencyKey },
       });
-      await PayLaterUse.create([{
-        userId: fresh._id, currency, amount, outstanding: amount, chargedFrom: now, openedAt: now,
+      const [row] = await PayLaterUse.create([{
+        userId: fresh._id, currency, amount: taking, outstanding: taking, chargedFrom: now, openedAt: now,
         dueAt: new Date(now.getTime() + math.TERM_DAYS * math.DAY_MS), idempotencyKey,
         transactionId: release.transaction ? release.transaction._id : null,
+        paymentKey,
       }], { session });
+      used = taking; useId = row._id;
     });
-    return { replay: false, used: amount };
+    return { replay: false, used, useId, currency };
+  }
+  async function use(user, amountAsked, key) {
+    const r = await take(user, amountAsked, `paylater-use:${user._id}:${key}`);
+    return { replay: r.replay, used: r.used };
+  }
+
+  // ── PAID WITH PAYLATER, IN ONE STEP ───────────────────────────────────
+  // The payment route asks for the payment's amount before it moves the
+  // money. PayLater carries what it can; nothing here refuses a payment —
+  // a closed bank, a hold or an empty limit simply carry nothing, and the
+  // payment goes on from the person's own balance.
+  async function useForPayment(user, amount, paymentKey) {
+    try {
+      let key = `paylater-pay:${user._id}:${paymentKey}`;
+      // The same payment tried again after it failed: what it took then went
+      // back, so this try takes afresh.
+      const before = await PayLaterUse.findOne({ idempotencyKey: key }).select('timing').lean();
+      if (before && before.timing === 'returned') key = `${key}:${Date.now().toString(36)}`;
+      const r = await take(user, amount, key, { upTo: true, paymentKey });
+      return { used: r.used, useId: r.useId || null, replay: r.replay };
+    } catch (error) {
+      if (error instanceof PayLaterError) return { used: 0, useId: null, code: error.code };
+      throw error;
+    }
+  }
+  // The payment did not happen: what was taken for it goes straight back,
+  // at no cost. Only an untouched use can go back this way.
+  async function returnUse(useId) {
+    if (!useId) return false;
+    return withAtomicSession(async (session) => {
+      const u = await PayLaterUse.findOne({ _id: useId, closedAt: null, paymentReferenceId: null }).session(session);
+      if (!u || (u.feePaid || 0) > 0 || Math.abs(u.outstanding - u.amount) > 1e-9) return false;
+      const amount = minor(u.amount, u.currency);
+      const before = await User.findOneAndUpdate({ _id: u.userId, balance: { $gte: amount - 1e-9 } }, { $inc: { balance: -amount } }, { returnDocument: 'before', session });
+      if (!before) return false;
+      const custody = await PlatformAccount.custodyFor(u.currency, session);
+      await PlatformAccount.updateOne({ _id: custody._id }, { $inc: { balance: amount } }, { session });
+      u.outstanding = 0; u.closedAt = new Date(); u.timing = 'returned';
+      await u.save({ session });
+      const balanceBefore = minor(before.balance, u.currency);
+      const [transaction] = await Transaction.create([{
+        fromUserId: u.userId, toUserId: null, amount, currency: u.currency, type: 'paylater_repay', status: 'success',
+        note: 'PayLater returned', referenceId: mintReference(),
+        metadata: { idempotencyKey: `paylater-return:${u._id}`, principal: amount, cost: 0, returned: true, payMethod: 'GLOOBAL Bank', payLaterRepayment: true },
+      }], { session });
+      await LedgerEntry.create([{
+        transactionId: transaction._id, userId: u.userId, entryType: 'debit', amount,
+        balanceBefore, balanceAfter: minor(balanceBefore - amount, u.currency), currency: u.currency, note: 'PayLater returned — the payment did not go through',
+        metadata: { principal: amount, cost: 0, transactionReferenceId: transaction.referenceId },
+      }], { session, ordered: true });
+      return true;
+    });
+  }
+  // The payment happened: the use names it, so it can never be handed back.
+  async function linkUseToPayment(useId, referenceId) {
+    if (!useId) return;
+    await PayLaterUse.updateOne({ _id: useId, paymentReferenceId: null }, { $set: { paymentReferenceId: referenceId } });
   }
 
   // ── REPAY ─────────────────────────────────────────────────────────────
@@ -360,7 +427,7 @@ function createPaylaterDaily({
     });
   }
 
-  return { mount, summary, use, repay, claimGrowth, closeDays, pool, inUseFor, heldPrincipal, PayLaterError };
+  return { mount, summary, use, useForPayment, returnUse, linkUseToPayment, repay, claimGrowth, closeDays, pool, inUseFor, heldPrincipal, PayLaterError };
 }
 
 module.exports = { createPaylaterDaily, PayLaterError };

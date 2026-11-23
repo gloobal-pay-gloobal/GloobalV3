@@ -1259,6 +1259,35 @@ var GloobalApi = {
       return { applied: 0, code: (body && body.code) || "failed", message: (body && body.message) || (e && e.message) || "" };
     }
   },
+  // Children's Essentials, through their guardian (lib/essentials.js). All
+  // three resolve { ok, code, message, ...summary } and never throw.
+  async addEssentialsChild(name, birthDate) {
+    try {
+      const result = await gloobalApiClient.post("/api/essentials/children", { name, birthDate });
+      return Object.assign({ ok: Boolean(result && result.success) }, result || {});
+    } catch (e) {
+      const body = e && e.body;
+      return { ok: false, code: (body && body.code) || "failed", message: (body && body.message) || "Could not add the child just now." };
+    }
+  },
+  async removeEssentialsChild(id) {
+    try {
+      const result = await gloobalApiClient.delete(`/api/essentials/children/${encodeURIComponent(id)}`);
+      return Object.assign({ ok: Boolean(result && result.success) }, result || {});
+    } catch (e) {
+      const body = e && e.body;
+      return { ok: false, code: (body && body.code) || "failed", message: (body && body.message) || "Could not remove the child just now." };
+    }
+  },
+  async drawEssentialsForChild(childId, amount, idempotencyKey) {
+    try {
+      const result = await gloobalApiClient.post("/api/essentials/draw", { amount, idempotencyKey, forChild: childId });
+      return Object.assign({ ok: Boolean(result && result.success) }, result || { applied: 0 });
+    } catch (e) {
+      const body = e && e.body;
+      return { ok: false, applied: 0, code: (body && body.code) || "failed", message: (body && body.message) || "Could not use Essentials just now. Nothing was moved." };
+    }
+  },
   // PayLater by the day (lib/paylaterDaily.js on the server): what the
   // account has (seeds, limit, in use, what it has cost so far, growth),
   // using it, repaying, and claiming the growth. The three that move money

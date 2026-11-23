@@ -20,6 +20,7 @@ const Pool = stub('./models/EssentialsPool', {
   findOneAndUpdate: async (q, u) => { const r = pools.find((x) => matches(x, q)); if (!r) return null; for (const [k, n] of Object.entries(u.$inc)) r[k] = (r[k] || 0) + n; return r; },
   updateOne: async (q, u, o) => { let r = pools.find((x) => matches(x, q)); if (!r && o.upsert) { r = { ...u.$setOnInsert }; pools.push(r); } for (const [k, n] of Object.entries(u.$inc || {})) r[k] = (r[k] || 0) + n; Object.assign(r, u.$set || {}); },
 });
+stub('./models/EssentialsChild', { find: () => { const q = { sort: () => q, lean: () => q, then: (a, b) => Promise.resolve([]).then(a, b) }; return q; } });
 const adds = [];
 stub('./models/EssentialsPoolAdd', { create: async (d) => { if (adds.some((a) => a.key === d.key)) { const e = new Error('dup'); e.code = 11000; throw e; } adds.push(d); return d; } });
 const paid = [];
@@ -38,7 +39,7 @@ const users = new Map();
 const mkUser = (iso, currency) => { const u = { _id: new mongoose.Types.ObjectId(), iso, currency, balance: 0 }; users.set(String(u._id), u); return u; };
 const User = { findById: (id) => thenable(() => users.get(String(id)) || null) };
 const routes = {};
-const app = { get: (p, ...h) => { routes['GET ' + p] = h.at(-1); }, post: (p, ...h) => { routes['POST ' + p] = h.at(-1); } };
+const app = { get: (p, ...h) => { routes['GET ' + p] = h.at(-1); }, post: (p, ...h) => { routes['POST ' + p] = h.at(-1); }, delete: () => {} };
 const pass = (_q, _s, n) => n && n();
 const ess = createEssentials({
   User, requireAuth: pass, writeLimit: pass, lookupLimit: pass,

@@ -1,7 +1,8 @@
 // src/features/essentials/EssentialsScreen.jsx
 import { useState as useState45 } from "react";
 import { useEffect as useEffect79 } from "react";
-import { Utensils as EssUtensils, Droplet as EssDroplet, Home as EssHome, Sparkles as EssSparkles, CheckCircle2 as EssCheckCircle, Circle as EssCircle, Lock as Lock8, ChevronRight as ChevronRight6 } from "lucide-react";
+import { useState as useState104 } from "react";
+import { Utensils as EssUtensils, Droplet as EssDroplet, Home as EssHome, Sparkles as EssSparkles, CheckCircle2 as EssCheckCircle, Circle as EssCircle, Lock as Lock8, ChevronRight as ChevronRight6, Baby as EssBaby, X as EssX } from "lucide-react";
 
 var ESSENTIALS_COMPONENT_META = [
   { key: "food", label: "Food", icon: EssUtensils, color: "#F59E0B" },
@@ -71,6 +72,69 @@ function EssentialsUsedCard({ summary, figure }) {
       </div>)}</div>
     </div>}
     <div style={{ display: "flex", gap: 10, alignItems: "flex-start", borderRadius: 16, padding: "11px 13px", background: "rgba(14,116,144,0.10)", color: "#155E75", fontSize: 12.5, fontWeight: 700, lineHeight: 1.45 }}><span aria-hidden="true">{"\u21BA"}</span><span>What you use is free and never paid back. When money comes in, the same amount stays in your GLOOBAL Bank — spend it on anything here. Only between GLOOBAL Banks, never to or from an outside bank.</span></div>
+  </div>;
+}
+
+// ── CHILDREN ─────────────────────────────────────────────────────────────
+// A child has no account. Their guardian adds them here and uses each day's
+// Essentials for them; it goes into the guardian's GLOOBAL Bank balance and,
+// like the guardian's own, stays in GLOOBAL on the guardian. One guardian
+// per child, until 18.
+function EssentialsChildrenCard({ summary, figure, onChanged }) {
+  const [adding, setAdding] = useState104(false);
+  const [name, setName] = useState104("");
+  const [born, setBorn] = useState104("");
+  const [busy, setBusy] = useState104("");
+  const [note, setNote] = useState104(null);
+  const [removing, setRemoving] = useState104(null);
+  const children = (summary && summary.children) || [];
+  const done = (r, said) => {
+    setBusy("");
+    if (r && r.ok) { setNote({ ok: true, text: said(r) }); onChanged(r); try { window.dispatchEvent(new Event("gloobal:balanceChanged")); } catch (e) { /* no window */ } }
+    else setNote({ ok: false, text: (r && r.message) || "Could not do that just now." });
+    return r;
+  };
+  const add = async () => {
+    if (busy) return;
+    setBusy("add"); setNote(null);
+    const r = await GloobalApi.addEssentialsChild(name.trim(), born);
+    if (done(r, () => `${name.trim()} added`)?.ok) { setAdding(false); setName(""); setBorn(""); }
+  };
+  const useFor = async (c) => {
+    if (busy) return;
+    setBusy(c.id); setNote(null);
+    done(await GloobalApi.drawEssentialsForChild(c.id, c.leftToday, generateRequestId()), (r) => (Number(r.applied) > 0 ? `Today's Essentials for ${c.name} are in your balance` : `Nothing left today for ${c.name}`));
+  };
+  const remove = async (c) => {
+    if (busy) return;
+    setBusy("x" + c.id); setNote(null); setRemoving(null);
+    done(await GloobalApi.removeEssentialsChild(c.id), () => `${c.name} removed`);
+  };
+  const cap = { fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4 };
+  const input = { width: "100%", boxSizing: "border-box", border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 13px", fontSize: 14, color: T.ink, background: T.surface };
+  return <div data-testid="essentials-children" style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <span style={{ width: 40, height: 40, borderRadius: 12, background: "#2E7A4F1F", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><EssBaby size={18} color="#2E7A4F" /></span>
+      <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 15.5, fontWeight: 800, color: T.ink }}>Children</span><span style={{ display: "block", fontSize: 11.5, color: T.inkSoft, marginTop: 2, lineHeight: 1.4 }}>Each child has their own day. You use it for them, and it stays in <GloobalWordmark /> on you.</span></span>
+    </div>
+    {children.map((c) => <div key={c.id} data-testid="essentials-child" style={{ display: "flex", alignItems: "center", gap: 10, borderTop: `1px solid ${T.line}`, paddingTop: 11 }}>
+      <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span><span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, color: T.inkSoft, marginTop: 2 }}>{c.age === 1 ? "1 yr" : `${c.age} yrs`} · {Number(c.leftToday) > 0 ? <>{figure(c.leftToday, 11.5)} left today</> : "used today"}</span></span>
+      {removing === c.id
+        ? <><button onClick={() => remove(c)} className="v2-tap" disabled={Boolean(busy)} style={{ border: "none", borderRadius: 999, padding: "8px 12px", background: T.negative, color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Remove</button><button onClick={() => setRemoving(null)} className="v2-tap" style={{ border: `1px solid ${T.line}`, borderRadius: 999, padding: "8px 12px", background: T.surface, color: T.ink, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Keep</button></>
+        : <><button onClick={() => useFor(c)} className="v2-tap" disabled={Boolean(busy) || !(Number(c.leftToday) > 0)} data-testid="essentials-child-use" style={{ border: "none", borderRadius: 999, padding: "9px 14px", background: Number(c.leftToday) > 0 ? T.gradButton : T.surfaceAlt, color: Number(c.leftToday) > 0 ? "#fff" : T.inkFaint, fontSize: 12.5, fontWeight: 800, cursor: Number(c.leftToday) > 0 ? "pointer" : "default", whiteSpace: "nowrap" }}>{busy === c.id ? "…" : "Use today's"}</button><button onClick={() => setRemoving(c.id)} className="v2-tap" aria-label={`Remove ${c.name}`} style={{ border: "none", background: "transparent", padding: 6, cursor: "pointer", display: "flex" }}><EssX size={16} color={T.inkFaint} /></button></>}
+    </div>)}
+    {adding
+      ? <div style={{ display: "flex", flexDirection: "column", gap: 9, borderTop: children.length ? `1px solid ${T.line}` : "none", paddingTop: children.length ? 11 : 0 }}>
+        <label style={cap}>Child's name<input data-testid="essentials-child-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} autoComplete="off" style={{ ...input, marginTop: 6, textTransform: "none", letterSpacing: 0, fontWeight: 600 }} /></label>
+        <label style={cap}>Date of birth<input data-testid="essentials-child-born" type="date" value={born} onChange={(e) => setBorn(e.target.value)} style={{ ...input, marginTop: 6, textTransform: "none", letterSpacing: 0, fontWeight: 600 }} /></label>
+        <div style={{ fontSize: 11.5, color: T.inkSoft, lineHeight: 1.45 }}>Under 18. A child can have one guardian on <GloobalWordmark />.</div>
+        <div style={{ display: "flex", gap: 9 }}>
+          <button onClick={() => { setAdding(false); setNote(null); }} className="v2-tap" style={{ flex: 1, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 0", background: T.surface, color: T.ink, fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+          <button onClick={add} className="v2-tap" data-testid="essentials-child-save" disabled={busy === "add" || name.trim().length < 2 || !born} style={{ flex: 1, border: "none", borderRadius: T.radiusMd, padding: "12px 0", background: name.trim().length >= 2 && born ? T.gradButton : T.surfaceAlt, color: name.trim().length >= 2 && born ? "#fff" : T.inkFaint, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}>{busy === "add" ? "Adding…" : "Add child"}</button>
+        </div>
+      </div>
+      : children.length < (Number(summary && summary.childrenMax) || 10) && <button onClick={() => { setAdding(true); setNote(null); }} className="v2-tap" data-testid="essentials-child-add" style={{ border: `1px dashed ${T.line}`, borderRadius: T.radiusMd, padding: "12px 0", background: "transparent", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}>+ Add a child</button>}
+    {note && <div role={note.ok ? "status" : "alert"} style={{ fontSize: 12, fontWeight: 700, color: note.ok ? T.positive : T.negative, lineHeight: 1.4 }}>{note.text}</div>}
   </div>;
 }
 
@@ -232,7 +296,7 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
        because the caveats underneath it — placeholder data, a regional
        default where a country has no entry of its own — are the kind of
        thing somebody should be able to go and read, not squint at. */
-  }<button
+  }{revealed && summary && summary.available && <EssentialsChildrenCard summary={summary} figure={essentialsFigure} onChanged={(r) => { if (r && r.dailyLimit !== undefined) setSummary(r); }} />}<button
     onClick={() => setHowOpen(true)}
     className="v2-tap"
     style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", border: "none", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 16px", cursor: "pointer", textAlign: "left" }}

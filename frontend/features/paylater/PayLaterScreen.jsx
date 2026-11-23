@@ -8,6 +8,13 @@ function PayLaterScreen({ onClose, ccy, ccyCode = "USD", paylaterAvailable, payl
   // own currency, so the lens applies to all of them or none. Read from the
   // shared store the balance card's toggle writes.
   const lens = useGeuLens();
+  // The server's own figures (PayLater by the day). Null until it answers;
+  // until then, and on an old server, the screen shows what this phone knows.
+  const live = usePaylaterLive(true);
+  if (live.me) {
+    paylaterAvailable = Number(live.me.available) || 0;
+    paylaterLimit = Number(live.me.limit) || 0;
+  }
   // The two headline figures get the bar — see the standing-alone rule in
   // AssetsScreen. "of X limit" below the first one does not: it is a
   // sentence, and the figure it qualifies already carries both unit names
@@ -38,7 +45,7 @@ function PayLaterScreen({ onClose, ccy, ccyCode = "USD", paylaterAvailable, payl
     onClick={onViewAssets}
     className="v2-tap"
     style={{ display: "flex", alignItems: "center", gap: 5, border: "none", background: "none", padding: 0, marginTop: 12, cursor: "pointer" }}
-  ><span style={{ fontSize: 11, fontWeight: 700, color: T.accent }}>Your limit = your current assets</span><ChevronRight2 size={13} color={T.accent} /></button></div>{
+  ><span style={{ fontSize: 11, fontWeight: 700, color: T.accent }}>{live.me ? "Your limit = your own seeds in My Assets" : "Your limit = your current assets"}</span><ChevronRight2 size={13} color={T.accent} /></button></div>{live.me ? <PayLaterLiveCards live={live} ccyCode={ccyCode} /> : <>{
     /* Pending dues */
   }<div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}><span><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Pending dues</div><div style={{ fontSize: dueSize, fontWeight: 800, color: paylaterDue > 0 ? T.negative : T.positive, fontFamily: T.fontDisplay, marginTop: 3, whiteSpace: "nowrap" }}><GeuLead parts={dueParts} px={dueSize} />{dueParts.trail && <span style={geuLensTrailStyle(dueSize)}> {dueParts.trail}</span>}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{paylaterDue > 0 ? "Due Aug 1" : "Nothing due \u2014 all clear"}</div></span>{paylaterDue > 0 && <button
     onClick={onPayNow}
@@ -57,7 +64,7 @@ function PayLaterScreen({ onClose, ccy, ccyCode = "USD", paylaterAvailable, payl
     }}
   >
                 Pay now
-              </button>}</div></div>{
+              </button>}</div></div></>}{
     /* History — split into the two directions of the ledger. */
   }<PayLaterLedger title="Paid with PayLater" rows={paylaterSending} direction="out" ccy={ccy} ccyCode={ccyCode} /><PayLaterLedger title="What raised your limit" rows={paylaterReceiving} direction="in" ccy={ccy} ccyCode={ccyCode} />{onOpenHistory && <button
     type="button"

@@ -287,6 +287,7 @@ const FRONTEND_MODULES = [
   "features/choices/CategoryScreen.jsx",
   "features/choices/ChoicesScreen.jsx",
   "features/paylater/PayLaterLedger.jsx",
+  "features/paylater/PayLaterLive.jsx",
   "features/paylater/PayLaterScreen.jsx",
   "screens/Banks/AddBankScreen.jsx",
   // The Gloobal Bank / Gloobal Coin / About Us screens, and the pieces

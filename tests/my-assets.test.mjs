@@ -187,13 +187,15 @@ describe("the rates are a footnote, not an action", () => {
     const src = code();
     assert.ok(!/{ label: "Cashback", value: "0\\u20137%" }/.test(src));
     assert.match(src, /<span>Cashback 0–7%<\/span>/);
-    assert.match(src, /<span>Compounded monthly<\/span>/);
+    // Growth is no longer a fixed monthly rate (PayLater by the day).
+    assert.match(src, /<span>Growth shared daily<\/span><span>From PayLater use<\/span>/);
+    assert.doesNotMatch(src, /Compounded monthly|%\/mo/);
   });
 
-  test("the growth rate is still read from the constant", () => {
-    // If this is ever hardcoded, changing ASSET_GROWTH_RATE_MONTHLY makes
-    // the screen lie about the maths it is running.
-    assert.match(code(), /\{\(ASSET_GROWTH_RATE_MONTHLY \* 100\)\.toFixed\(0\)\}%\/mo/);
+  test("no fixed rate is promised on the screen", () => {
+    // Growth is what people using PayLater paid that day, shared with the
+    // people holding. A percentage here would be a promise nobody funds.
+    assert.doesNotMatch(code(), /ASSET_GROWTH_RATE_MONTHLY \* 100/);
   });
 });
 

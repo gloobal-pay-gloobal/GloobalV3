@@ -223,7 +223,7 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
        the settle button — the same visual weight as the action — for
        three constants that never change and that nobody opens this
        screen to read. */
-  }<div style={{ display: "flex", flexWrap: "wrap", gap: "5px 14px", padding: "0 2px", fontSize: 10.5, fontWeight: 700, color: T.inkFaint }}><span>Cashback 0–7%</span><span>Growth {(ASSET_GROWTH_RATE_MONTHLY * 100).toFixed(0)}%/mo</span><span>Compounded monthly</span></div>{
+  }<div style={{ display: "flex", flexWrap: "wrap", gap: "5px 14px", padding: "0 2px", fontSize: 10.5, fontWeight: 700, color: T.inkFaint }}><span>Cashback 0–7%</span><span>Growth shared daily</span><span>From PayLater use</span></div>{
     /* PayLater. Same fact as before — this total is also the limit —
        but as its own row at the foot of the screen rather than a line
        inside the balance card, where "= your PayLater limit" sat close

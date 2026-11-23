@@ -82,10 +82,10 @@ describe("after paying", () => {
     assert.ok(!/LOGO_FLIP_COLORS|#4F46E5/.test(paint), "the indigo confetti foil is back");
   });
 
-  test("what it grows to is the real My Assets rate, for one month", () => {
+  test("what it does if left: it grows with PayLater use, and no figure is promised", () => {
     const s = code(UNLOCK);
-    assert.match(s, /share \* \(1 \+ \(typeof ASSET_GROWTH_RATE_MONTHLY === "number" \? ASSET_GROWTH_RATE_MONTHLY : 0\.01\)\)/);
-    assert.match(s, /in a month if you leave it/);
+    assert.match(s, /Grows each day PayLater is used, if you leave it/);
+    assert.doesNotMatch(s, /in a month if you leave it|ASSET_GROWTH_RATE_MONTHLY/);
   });
 
   test("Add to balance claims only this payment's share", () => {

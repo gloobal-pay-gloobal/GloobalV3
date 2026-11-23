@@ -1259,6 +1259,38 @@ var GloobalApi = {
       return { applied: 0, code: (body && body.code) || "failed", message: (body && body.message) || (e && e.message) || "" };
     }
   },
+  // PayLater by the day (lib/paylaterDaily.js on the server): what the
+  // account has (seeds, limit, in use, what it has cost so far, growth),
+  // using it, repaying, and claiming the growth. The three that move money
+  // never throw: they resolve { ok, code, message, ...summary }.
+  async getPaylaterDaily() {
+    try {
+      const result = await gloobalApiClient.get("/api/paylater/me");
+      return result && result.success ? result : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async getPaylaterPool() {
+    try {
+      const result = await gloobalApiClient.get("/api/paylater/pool");
+      return result && result.success ? result : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async paylaterMove(path, body) {
+    try {
+      const result = await gloobalApiClient.post(`/api/paylater/${path}`, body || {});
+      return Object.assign({ ok: Boolean(result && result.success) }, result || {});
+    } catch (e) {
+      const b = e && e.body;
+      return { ok: false, code: (b && b.code) || "failed", message: (b && b.message) || "Could not do that just now. Nothing was moved." };
+    }
+  },
+  usePaylater(amount, idempotencyKey) { return GloobalApi.paylaterMove("use", { amount, idempotencyKey }); },
+  repayPaylater(amount, idempotencyKey) { return GloobalApi.paylaterMove("repay", amount === undefined || amount === null ? { idempotencyKey } : { amount, idempotencyKey }); },
+  claimPaylaterGrowth(idempotencyKey) { return GloobalApi.paylaterMove("claim-growth", { idempotencyKey }); },
   async getLinkedAccounts() {
     const result = await gloobalApiClient.get("/api/bank-transfers/accounts");
     return (result && result.accounts) || [];

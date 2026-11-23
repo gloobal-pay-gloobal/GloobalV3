@@ -759,12 +759,12 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
               </div>
               {shareParts ? (
                 <div style={{ padding: "12px 16px 0", display: "flex", flexDirection: "column", gap: 10 }}>
-                  {/* What it becomes if they leave it: one month at the rate My
-                      Assets really pays (ASSET_GROWTH_RATE_MONTHLY), never a
-                      guess. */}
+                  {/* What happens if they leave it. No figure: growth is what
+                      people using PayLater pay each day, shared with holders,
+                      so there is no rate to promise. */}
                   <div data-testid="unlock-grows" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: "#0B7A57" }}>
                     <SproutUnlock size={15} strokeWidth={2.4} aria-hidden="true" />
-                    {`About ${geuLensBarMoney(share * (1 + (typeof ASSET_GROWTH_RATE_MONTHLY === "number" ? ASSET_GROWTH_RATE_MONTHLY : 0.01)), shareCurrency, lens, viewerCurrency)} in a month if you leave it`}
+                    {"Grows each day PayLater is used, if you leave it"}
                   </div>
                   <div role="radiogroup" aria-label="What to do with it" data-testid="unlock-keep" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {[["grow", "Keep it growing"], ["add", keep === "added" ? "Added ✓" : keep === "adding" ? "Adding…" : "Add to balance"]].map(([k, label]) => {

@@ -5018,18 +5018,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       // was for (App.jsx, openSendToCreator).
       if (onPayCreator) onPayCreator({ creator, amount, lines });
     }}
-  /></ScreenErrorBoundary>}{assetDetail && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseAssetDetail} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{assetDetail.row.business}</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 14px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Current value</div><div style={{ fontSize: 26, fontWeight: 800, color: T.positive, fontFamily: T.fontDisplay, marginTop: 3, whiteSpace: "nowrap" }}>{geuLensBarMoney(assetDetail.row.value, ccyCode, displayLens, ccyCode)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{assetDetail.row.monthsAccrued === 0 ? "Just earned" : `${(assetDetail.row.monthsAccrued / 12).toFixed(1)} yr into growing toward ${geuLensBarMoney(assetDetail.target, ccyCode, displayLens, ccyCode)}`}</div>{
-    /* Growth curve: cashback (t=0) compounding at 1%/month up
-       to the point it equals 100% of the original spend. */
-  }<svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} width="100%" height="150" style={{ marginTop: 14, display: "block" }} preserveAspectRatio="none">{
-    /* Target line — 100% of original spending */
-  }<line x1={CHART_PAD_L} y1={assetDetail.targetY} x2={CHART_W - CHART_PAD_R} y2={assetDetail.targetY} stroke={T.line} strokeWidth="1.5" strokeDasharray="4 4" />{
-    /* Baseline (0 value) */
-  }<line x1={CHART_PAD_L} y1={assetDetail.baseY} x2={CHART_W - CHART_PAD_R} y2={assetDetail.baseY} stroke={T.line} strokeWidth="1.5" />{
-    /* Growth curve */
-  }<polyline points={assetDetail.pathPoints} fill="none" stroke={T.positive} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />{
-    /* Today marker */
-  }<line x1={assetDetail.todayX} y1={assetDetail.todayY} x2={assetDetail.todayX} y2={assetDetail.baseY} stroke={T.accent} strokeWidth="1.5" strokeDasharray="3 3" /><circle cx={assetDetail.todayX} cy={assetDetail.todayY} r="4.5" fill={T.accent} stroke="#fff" strokeWidth="1.5" /></svg><div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: T.inkFaint, marginTop: -4 }}><span>Year 0</span><span>~{(assetDetail.monthsToTarget / 12).toFixed(1)} yrs</span></div><div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: T.accent, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.inkSoft }}>Today</span><span style={{ width: 14, height: 2, background: T.line, marginLeft: 10, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.inkSoft }}>100% of original spend (<GeuFigure amount={assetDetail.target} currency={ccyCode} lens={displayLens} size={11} />)</span></div></div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>{[
+  /></ScreenErrorBoundary>}{assetDetail && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseAssetDetail} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{assetDetail.row.business}</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 14px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Current value</div><div style={{ fontSize: 26, fontWeight: 800, color: T.positive, fontFamily: T.fontDisplay, marginTop: 3, whiteSpace: "nowrap" }}>{geuLensBarMoney(assetDetail.row.value, ccyCode, displayLens, ccyCode)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{"Held in My Assets. Grows each day PayLater is used."}</div>{
+    /* No curve: growth is no longer a fixed rate with a known end. It is
+       what people using PayLater paid that day, shared with holders
+       (features/paylater/PayLaterLive.jsx shows it day by day). */
+  }</div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>{[
     ...assetDetail.row.chip === "CS" ? [["Creator", assetDetail.row.creatorName]] : [],
     ["Paid", `${geuLensBarMoney(assetDetail.row.amountPaid, ccyCode, displayLens, ccyCode)}`],
     // Two decimals, not one, and this is load-bearing rather than cosmetic.
@@ -5047,7 +5040,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // without also constraining the slider, or the two will disagree again.
     ["Cashback", `${(assetDetail.row.cashbackRate * 100).toFixed(2)}% \xB7 ${geuLensBarMoney(assetDetail.row.cashback, ccyCode, displayLens, ccyCode)}`],
     ["Earned on", assetDetail.row.time ? `${assetDetail.row.date}, ${assetDetail.row.time}` : assetDetail.row.date],
-    ["Time to 100%", `${(assetDetail.monthsToTarget / 12).toFixed(1)} yrs`],
+    ["Growth", "Shared daily from PayLater use"],
     // The payment itself, last, because it is the way OUT of this screen
     // rather than another fact about the seed. Absent entirely on a seed
     // planted before the link was recorded — a row saying "unknown" is

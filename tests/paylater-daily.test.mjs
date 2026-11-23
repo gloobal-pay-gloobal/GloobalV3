@@ -113,3 +113,29 @@ describe("the server keeps the rule", async () => {
     assert.match(src("server/models/User.js"), /paylaterFactor: \{\s*type: Number,\s*default: 1,\s*min: 1,\s*max: 1\.2\s*\}/);
   });
 });
+
+describe("the app reads PayLater from the server", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  test("the screen's limit and available are the server's once it answers", () => {
+    const screen = src("frontend/features/paylater/PayLaterScreen.jsx");
+    assert.match(screen, /const live = usePaylaterLive\(true\);/);
+    assert.match(screen, /paylaterAvailable = Number\(live\.me\.available\) \|\| 0;/);
+    assert.match(screen, /\{live\.me \? <PayLaterLiveCards live=\{live\} ccyCode=\{ccyCode\} \/> : <>/);
+  });
+  test("each tap makes its key once, so a retry never moves money twice", () => {
+    const live = src("frontend/features/paylater/PayLaterLive.jsx");
+    assert.match(live, /const r = await call\(generateRequestId\(\)\);/);
+    assert.match(live, /window\.dispatchEvent\(new Event\("gloobal:balanceChanged"\)\)/);
+    assert.match(live, /data-amount-pad="2"/, "amounts use the app's own pad");
+  });
+  test("the new calls do not take the name of one that already exists", () => {
+    const api = src("backend/services/api/gloobalApi.js");
+    const names = [...api.matchAll(/^  (?:async )?([A-Za-z_]\w*)\(/gm)].map((m) => m[1]);
+    const twice = names.filter((n, i) => names.indexOf(n) !== i);
+    assert.deepEqual(twice, [], "a second definition silently replaces the first");
+    assert.match(api, /async getPaylater\(symbolId\)/);
+    assert.match(api, /async getPaylaterDaily\(\)/);
+  });
+  test("it is in the build", () => assert.match(src("build_app.mjs"), /"features\/paylater\/PayLaterLive\.jsx",\s*"features\/paylater\/PayLaterScreen\.jsx"/));
+});

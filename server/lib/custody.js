@@ -108,6 +108,10 @@ async function releaseFromCustody({
   reason,
   metadata = {},
   session,
+  // What the person reads on the movement. The defaults are the Creator
+  // Share claim; PayLater (lib/paylaterDaily.js) says what it is instead.
+  note = 'Released from My Assets',
+  ledgerNote = 'Creator Share claimed from My Assets',
 }) {
   if (!session) {
     throw new CustodyError(
@@ -178,7 +182,7 @@ async function releaseFromCustody({
         currency: code,
         type: 'custody_release',
         status: 'success',
-        note: 'Released from My Assets',
+        note,
         referenceId: mintCustodyReleaseId(),
         metadata: { reason, custodyAccountKey: account.key, ...metadata },
       },
@@ -196,7 +200,7 @@ async function releaseFromCustody({
         balanceBefore: toMinorUnit(balanceBefore, code),
         balanceAfter,
         currency: code,
-        note: 'Creator Share claimed from My Assets',
+        note: ledgerNote,
         metadata: {
           reason,
           custodyAccountKey: account.key,

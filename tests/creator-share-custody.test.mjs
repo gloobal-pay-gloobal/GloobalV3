@@ -105,7 +105,7 @@ describe("the share goes into custody, not into a balance", () => {
     // Mixing them would add every claimed share to disbursedTotal, which is
     // the figure "Our spending" is built from — a fabricated number behind
     // an audited label.
-    assert.match(code(PLATFORM), /enum: \['disbursement', 'custody'\]/);
+    assert.match(code(PLATFORM), /enum: \['disbursement', 'custody', 'paylater_bank'\]/);
     assert.match(code(PLATFORM), /PlatformAccount\.custodyFor = /);
     assert.match(code(PLATFORM), /forPurpose\('custody', currency, session\)/);
   });

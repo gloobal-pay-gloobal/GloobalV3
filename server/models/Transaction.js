@@ -105,6 +105,9 @@ const transactionSchema = new mongoose.Schema(
         // no paying USER, and coverageAggregation's
         // SPENDING_TRANSACTION_TYPES is ['send'].
         'custody_release',
+        // A PayLater repayment: what was in use going back to custody, with
+        // what it cost by the day (lib/paylaterDaily.js).
+        'paylater_repay',
       ],
       required: true,
       index: true,

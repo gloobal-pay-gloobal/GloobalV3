@@ -140,6 +140,15 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // PayLater limit = this account's own seeds × this factor
+  // (lib/paylaterMath.js). 1 for everybody today; raised with milestones
+  // (repaying on time, Hooman Score) once extra capacity opens.
+  paylaterFactor: {
+    type: Number,
+    default: 1,
+    min: 1,
+    max: 1.2
+  },
   // The direct person who invited them
   referredBy: {
     type: String,

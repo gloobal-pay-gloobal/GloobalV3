@@ -71,7 +71,9 @@ const platformAccountSchema = new mongoose.Schema(
     // created to end.
     purpose: {
       type: String,
-      enum: ['disbursement', 'custody'],
+      // 'paylater_bank' is the partner bank's part of what people using
+      // PayLater paid (lib/paylaterDaily.js), held until it is settled to them.
+      enum: ['disbursement', 'custody', 'paylater_bank'],
       required: true,
       index: true,
     },
@@ -122,7 +124,7 @@ PlatformAccount.forPurpose = async function forPurpose(purpose, currency, sessio
   const code = String(currency || '').toUpperCase().trim();
   if (!code) throw new Error('a platform account needs a currency');
   const kind = String(purpose || '').trim();
-  if (kind !== 'disbursement' && kind !== 'custody') {
+  if (kind !== 'disbursement' && kind !== 'custody' && kind !== 'paylater_bank') {
     throw new Error(`unknown platform account purpose: ${purpose}`);
   }
   const key = `platform:${kind}:${code}`;

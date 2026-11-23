@@ -8615,13 +8615,21 @@ app.get('/api/payees/current', lookupLimit, requireAuth, async (req, res) => {
 // and principalClaimed, never stored as a total — so neither can drift.
 // POST /api/assets/claim-interest pays them into real balance on request.
 const ASSET_GROWTH_RATE_MONTHLY = 0.01; // 1% per month, internal compounding step
+// THE FIXED RATE STOPS HERE (23 Nov 2026). Growth is now what people using
+// PayLater paid that day, shared with the people holding
+// (lib/paylaterDaily.js) — not a rate GLOOBAL pays from its own account. A
+// seed keeps every bit of the 1%/month it earned up to this moment, and
+// earns nothing more from this formula afterwards; a seed planted later
+// earns none of it. Render's PAYLATER_DAILY_FROM can move the moment.
+const FIXED_GROWTH_ENDS_AT = new Date(process.env.PAYLATER_DAILY_FROM || '2026-11-25T00:00:00.000Z');
 const MS_PER_YEAR = 1000 * 60 * 60 * 24 * 365.25;
 
 function computeSeed(seed) {
   const cashback = Number(seed.cashback) || 0;
   const amountPaid = Number(seed.amountPaid) || 0;
   const plantedAt = seed.plantedAt ? new Date(seed.plantedAt) : new Date();
-  const yearsAccrued = Math.max(0, (Date.now() - plantedAt.getTime()) / MS_PER_YEAR);
+  const growsUntil = Math.min(Date.now(), FIXED_GROWTH_ENDS_AT.getTime());
+  const yearsAccrued = Math.max(0, (growsUntil - plantedAt.getTime()) / MS_PER_YEAR);
   const currentValue = cashback * Math.pow(1 + ASSET_GROWTH_RATE_MONTHLY, yearsAccrued * 12);
 
   // Total bonus interest earned so far (always >= 0 — currentValue never
@@ -9272,6 +9280,12 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
     // are fixed together because they are the same fix: the payout is now a
     // movement between two accounts, and a movement either happens or does
     // not.
+    // Seeds stand behind what is in use through PayLater. They are claimed
+    // once that is paid back, not from under it (lib/paylaterDaily.js).
+    if ((await paylater.inUseFor(user._id)) > 0) {
+      return res.status(409).json({ code: 'paylater_in_use', message: 'Repay what you are using in PayLater first, then claim.' });
+    }
+
     // One payment's share only, when the screen after paying asks for it.
     let onlyPaymentId = null;
     const onlyReference = String(req.body?.referenceId || '').trim();
@@ -9304,6 +9318,9 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
     let payout;
     try {
       payout = await withAtomicSession(async (session) => {
+        // Checked again inside the write, so a use that lands between the
+        // check above and here cannot have its seeds released from under it.
+        if ((await paylater.inUseFor(user._id, null, session)) > 0) return { paylaterInUse: true };
         // "Add to balance" on the screen after a payment (0189) claims only
         // THAT payment's share: the request names the payment, and only the
         // seed planted for it — on this user's own payment — is taken. With
@@ -9424,6 +9441,10 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
         });
       }
       throw error;
+    }
+
+    if (payout.paylaterInUse) {
+      return res.status(409).json({ code: 'paylater_in_use', message: 'Repay what you are using in PayLater first, then claim.' });
     }
 
     if (payout.claimed <= 0) {
@@ -9657,6 +9678,22 @@ const essentials = require('./lib/essentials').createEssentials({
 });
 essentials.mount(app);
 
+// PayLater by the day (23 Nov 2026): the limit is the person's own seeds,
+// using costs 1.5% a month counted by the day, and what is collected is
+// shared with the people holding, every day. See lib/paylaterDaily.js.
+const paylater = require('./lib/paylaterDaily').createPaylaterDaily({
+  User, AssetSeed, PlatformAccount, Transaction, LedgerEntry,
+  requireAuth, writeLimit, lookupLimit,
+  // Wrapped: both are required further down this file.
+  withAtomicSession: (work) => withAtomicSession(work),
+  releaseFromCustody: (args) => releaseFromCustody(args),
+  resolveOwnCurrency, decimalsFor,
+  mintReference: () => createPrototypeTransactionReference(),
+  isBankOpen: (userId) => gloobalBank.isOpen(userId),
+  onHold: (userId) => holds.onHold(userId, ['sending']),
+});
+paylater.mount(app);
+
 const bankTransfers = require('./lib/bankTransfers').createBankTransfers({
   User, Pin, LedgerEntry, Notification, requireAuth, writeLimit, lookupLimit, credentialLimit,
   pin: { beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },
@@ -9683,6 +9720,10 @@ app.post('/api/assets/settle', writeLimit, requireAuth, requireSelf('symbolId'),
       return res.status(409).json({ code: 'bank_not_open', message: 'Open your GLOOBAL Bank account first, then settle into it.' });
     }
 
+    if ((await paylater.inUseFor(user._id)) > 0) {
+      return res.status(409).json({ code: 'paylater_in_use', message: 'Repay what you are using in PayLater first, then settle.' });
+    }
+
     const currency = await resolveOwnCurrency(user);
     if (!currency) {
       return res.status(409).json({ message: 'Your account currency could not be resolved, so nothing can be settled yet.' });
@@ -9695,6 +9736,9 @@ app.post('/api/assets/settle', writeLimit, requireAuth, requireSelf('symbolId'),
     let outcome;
     try {
       outcome = await withAtomicSession(async (session) => {
+        // Checked again inside the write, so a use that lands between the
+        // check above and here cannot have its seeds released from under it.
+        if ((await paylater.inUseFor(user._id, null, session)) > 0) return { paylaterInUse: true };
         const rawSeeds = await AssetSeed.find({ userId: user._id, ...OPEN_SEED }).session(session);
         if (rawSeeds.length === 0) return { empty: true };
 
@@ -9795,6 +9839,9 @@ app.post('/api/assets/settle', writeLimit, requireAuth, requireSelf('symbolId'),
       throw error;
     }
 
+    if (outcome.paylaterInUse) {
+      return res.status(409).json({ code: 'paylater_in_use', message: 'Repay what you are using in PayLater first, then settle.' });
+    }
     if (outcome.empty) {
       return res.status(409).json({ code: 'nothing_to_settle', message: 'There is nothing in My Assets to settle.' });
     }

@@ -156,7 +156,7 @@ function CreatorShareOverviewScreen({ onBack, myRate = 0, side = "personal", sho
   } else if (me && shares) {
     mine = <CsCard testId="share-mine" accent={CREATOR_SHARE_TAG_COLOR} title={<>Your part of it {badge(creatorSharePct(me.ratePct))}</>} sub="Counted from your own payments">
       <div style={{ display: "flex", gap: 10, marginTop: 12 }}>{tile("You gave", money(me.gave.share), `to ${me.gave.people} ${me.gave.people === 1 ? "person" : "people"} who paid you`, "↗")}{tile("Came back to you", money(me.got.share), `from ${me.got.people} shop${me.got.people === 1 ? "" : "s"} you paid`, "↙")}</div>
-      {me.planted > 0 ? note(<CsUp size={16} strokeWidth={2.6} />, <><b style={{ color: T.ink }}>{money(me.planted)} → {money(me.plantedNow)}</b> planted in My Assets, growing 1% a month. Nothing taken out yet.</>) : null}
+      {me.planted > 0 ? note(<CsUp size={16} strokeWidth={2.6} />, <><b style={{ color: T.ink }}>{money(me.plantedNow)}</b> planted in My Assets, growing each day with what PayLater users pay. Nothing taken out yet.</>) : null}
       <div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft, marginTop: 10 }}>You share more than <b style={{ color: T.ink }}>{me.aboveSharePct}%</b> of people.</div>
     </CsCard>;
   } else if (me) {
@@ -194,7 +194,7 @@ function CreatorShareOverviewScreen({ onBack, myRate = 0, side = "personal", sho
   const growing = <CsCard testId="share-growing" title="Still growing in My Assets" sub="Shared money people have left planted">
     <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
       <div aria-hidden="true" style={{ width: 60, height: 60, borderRadius: 18, background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><svg viewBox="0 0 64 64" width="42" height="42"><path d="M32 46V26" stroke="#5DAE5F" strokeWidth="3" strokeLinecap="round"/><path d="M32 30q-12 -8 -15 2 9 4 15 -2z" fill="#6CC47E"/><path d="M32 24q12 -9 16 1 -9 5 -16 -1z" fill="#80D18E"/><path d="M20 46h24l-3 12H23z" fill="#E8701E"/><path d="M18 44h28v4H18z" fill="#F7925E"/></svg></div>
-      <div style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block", fontSize: 16, fontWeight: 800, color: T.ink }}>{money(g.planted)}{t.share > 0 ? <> of {money(t.share)}</> : ""}</b><span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 600, lineHeight: 1.4, display: "block" }}>still planted · grown <b style={{ color: T.positive }}>+{money(g.grown)}</b> so far at 1% a month</span>
+      <div style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block", fontSize: 16, fontWeight: 800, color: T.ink }}>{money(g.planted)}{t.share > 0 ? <> of {money(t.share)}</> : ""}</b><span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 600, lineHeight: 1.4, display: "block" }}>still planted{g.grown > 0 ? <> · grown <b style={{ color: T.positive }}>+{money(g.grown)}</b> so far</> : null} · grows each day with what PayLater users pay</span>
         <div style={{ height: 7, borderRadius: 4, background: T.surfaceSunk, marginTop: 8, overflow: "hidden" }}><div style={{ width: `${t.share > 0 ? Math.min(100, (g.planted / t.share) * 100) : 0}%`, height: "100%", background: T.positive, borderRadius: 4 }} /></div></div>
     </div>
   </CsCard>;

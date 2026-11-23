@@ -46,7 +46,6 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
   // returned in full — that is the whole point of the screen and it cannot
   // be made without printing the figure.
   const totalSpending = assetRows.reduce((s, r) => s + r.amountPaid, 0);
-  const avgMonthsToTarget = assetRows.length ? assetRows.reduce((s, r) => s + r.monthsToTarget, 0) / assetRows.length : 0;
   // The horizon printed beside the total is the LONGEST seed, not the
   // average of them.
   //
@@ -56,7 +55,6 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
   // 41.1 years apart, so the average would have promised the full total
   // sixteen years before it exists. The average still has a place, but it
   // is a fact about the seeds and it lives with them, further down.
-  const maxMonthsToTarget = assetRows.length ? Math.max(...assetRows.map((r) => r.monthsToTarget)) : 0;
   // How much of everything ever spent has come back and is sitting here
   // now. This is a ratio of two real balances, and the label says exactly
   // that — "of what you spent" — because it is NOT progress earned.
@@ -119,7 +117,7 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
       background: T.surface,
       transition: "width 0.3s ease"
     }}
-  /></div><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginTop: 8, fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}><span>{pctOfSpend.toFixed(1)}% of what you spent</span><span style={{ textAlign: "right" }}><GeuFigure amount={totalSpending} currency={ccyCode} lens={lens} size={10.5} />{maxMonthsToTarget > 0 ? ` · ~${(maxMonthsToTarget / 12).toFixed(0)} yrs` : ""}</span></div></div>{
+  /></div><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginTop: 8, fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}><span>{pctOfSpend.toFixed(1)}% of what you spent</span><span style={{ textAlign: "right" }}><GeuFigure amount={totalSpending} currency={ccyCode} lens={lens} size={10.5} /></span></div></div>{
     /* Settle — moves the real current assets total into the real
        Gloobal Bank balance, gated behind verification. Disabled at
        zero, since there's genuinely nothing to settle then. */
@@ -207,18 +205,19 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
          So it is gone, and the horizon says what it was there to say.
          "back in 31.6 yr" can only mean back to the figure at the front
          of the line, and that figure is printed in full. */
-    }<span style={{ flexShrink: 0 }}>back in {(r.monthsToTarget / 12).toFixed(1)} yr</span></span></span></button>;
+    }{
+      /* No "back in N years" any more: that counted a fixed 1% a month.
+         Seeds now grow by what PayLater users pay each day, which nobody
+         can promise ahead (lib/paylaterMath.js). */
+    }</span></span></button>;
   })}</div>{assetRows.length > 4 && <button
     onClick={() => setAssetsExpanded((v) => !v)}
     className="v2-tap"
     style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, border: "none", background: "none", padding: "12px 4px 4px", cursor: "pointer" }}
   ><span style={{ fontSize: 12, fontWeight: 700, color: T.accent }}>{assetsExpanded ? "Show less" : `View all spending (${assetRows.length})`}</span><ChevronRight size={13} color={T.accent} style={{ transform: assetsExpanded ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform 0.15s ease" }} /></button>}{
-    /* Average time-to-fully-compound — only shown once the
-       full list is expanded, as the total that summarizes it. */
-  }{assetsExpanded && <div style={{ display: "flex", alignItems: "center", gap: 12, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "14px 16px", marginTop: 12 }}><span style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><TrendingUp size={17} color={T.accent} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink }}>Avg. time to fully compound</span><span style={{ display: "block", fontSize: 11, color: T.inkFaint, marginTop: 1 }}>
-                  Average across all {assetRows.length} asset{assetRows.length === 1 ? "" : "s"}, to reach 100% of spend
-                </span></span><span style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flexShrink: 0 }}>{(avgMonthsToTarget / 12).toFixed(1)} yr
-              </span></div>}</div>{
+    /* (The average time to "fully compound" was a fixed-rate projection,
+       and is gone with the fixed rate.) */
+  }{null}</div>{
     /* The rates, as one quiet line. These were three cards the size of
        the settle button — the same visual weight as the action — for
        three constants that never change and that nobody opens this
@@ -233,7 +232,7 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
     className="v2-tap"
     style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, border: "none", borderTop: `1px solid ${T.line}`, background: "none", padding: "12px 2px 0", cursor: "pointer", textAlign: "left" }}
   ><span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>
-            Your assets are also your PayLater limit
+            Your assets set your PayLater limit — more as you repay on time
           </span><ChevronRight size={14} color={T.inkFaint} style={{ flexShrink: 0 }} /></button></div>{confirmOpen && <AssetsSettleSheet
     symbolId={symbolId}
     ccyCode={ccyCode}

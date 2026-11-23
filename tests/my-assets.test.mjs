@@ -46,30 +46,16 @@ describe("the balance card states the chain with its quantities", () => {
     );
   });
 
-  test("the projection never appears without its horizon", () => {
+  test("the total spent is shown once, with no fixed-rate horizon beside it", () => {
+    // The years beside the total counted a fixed 1% a month. Seeds now grow
+    // by the day with what PayLater users pay (lib/paylaterMath.js), which
+    // nobody can promise ahead, so no "~N yrs" is printed anywhere.
     const src = code();
     assert.ok(!/Future assets/.test(src), "the second balance is back");
-    // Every render of totalSpending on this screen is the one in the
-    // footer line, and that line carries the years with it.
     const renders = src.match(/<GeuFigure amount=\{totalSpending\}/g) || [];
     assert.equal(renders.length, 1, "total spending is drawn somewhere new");
-    assert.match(
-      src,
-      /<GeuFigure amount=\{totalSpending\}[^>]*\/>\{maxMonthsToTarget > 0 \? ` · ~\$\{\(maxMonthsToTarget \/ 12\)\.toFixed\(0\)\} yrs` : ""\}/,
-      "the projection has been separated from its horizon"
-    );
-  });
-
-  test("that horizon is the longest seed, not the average one", () => {
-    // The total is whole when the LAST seed arrives. avgMonthsToTarget
-    // still exists — it is a fact about the seeds, and it lives with them
-    // in the expanded list, not beside the total.
-    const src = code();
-    assert.match(src, /const maxMonthsToTarget = assetRows\.length \? Math\.max\(\.\.\.assetRows\.map\(\(r\) => r\.monthsToTarget\)\) : 0;/);
-    assert.ok(
-      !/avgMonthsToTarget \/ 12\)\.toFixed\(0\)\} yrs/.test(src),
-      "the average is being used as the horizon for the total"
-    );
+    assert.ok(!/MonthsToTarget/.test(src), "a fixed-rate horizon is back");
+    assert.ok(!/ yrs`/.test(src));
   });
 
   test("the headline ratio is labelled as a ratio, not as progress", () => {
@@ -91,7 +77,7 @@ describe("the balance card states the chain with its quantities", () => {
 });
 
 describe("each seed carries its own chain, end to end", () => {
-  test("the row prints paid → worth now, and when it is back", () => {
+  test("the row prints paid → worth now, and no fixed-rate horizon", () => {
     const src = code();
     // Each figure through GeuFigure, so the row names both units. This is
     // a 10px row — the place the second name was most tempting to drop
@@ -99,7 +85,9 @@ describe("each seed carries its own chain, end to end", () => {
     // has no other currency on it.
     assert.match(src, /<span style=\{\{ flexShrink: 0 \}\}><GeuFigure amount=\{paid\}[^>]*\/><\/span>/);
     assert.match(src, /<span style=\{\{ flexShrink: 0, color: T\.positive \}\}><GeuFigure amount=\{now\}[^>]*\/><\/span>/);
-    assert.match(src, /back in \{\(r\.monthsToTarget \/ 12\)\.toFixed\(1\)\} yr/);
+    // "back in N yr" counted a fixed 1% a month; growth is by the day now.
+    assert.doesNotMatch(src, /back in \{/);
+    assert.doesNotMatch(src, /fully compound<\/span>/);
   });
 
   test("the chain no longer reprints its own first figure", () => {
@@ -205,7 +193,7 @@ describe("PayLater", () => {
     // enough to the total to read as part of it.
     const src = code();
     assert.ok(!/= your PayLater limit/.test(src));
-    assert.match(src, /This <GeuFigure amount=\{totalAssets\}[^>]*\/> is also your PayLater limit/);
+    assert.match(src, /Your assets set your PayLater limit — more as you repay on time/);
     assert.match(src, /onClick=\{onViewPayLater\}/);
   });
 });

@@ -4833,7 +4833,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   />}{
     /* Single-asset growth chart — from the month cashback was earned
        up to the month it fully compounds to 100% of the original
-       spend, at the fixed 1%/month rate. Layered above My Assets. */
+       spend. (No fixed rate since 25 Nov 2026: seeds grow by the day
+       with what PayLater users pay.) Layered above My Assets. */
   }{showMyShops && shareRole === "merchant" && <ScreenErrorBoundary name="My shops" onClose={() => setShowMyShops(false)}><MyShopsScreen
     shops={shopsInfo}
     active={creatorSymbol}

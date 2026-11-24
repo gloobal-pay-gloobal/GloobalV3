@@ -9657,6 +9657,7 @@ care = careLib.createCare({
   issueActingToken,
   isBankOpen: (userId) => gloobalBank.isOpen(userId),
   accountCountryIso: (u) => accountCountryIso(u),
+  ownCurrency: (u) => resolveOwnCurrency(u),
   pin: { Pin, beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },
   bcrypt,
 });

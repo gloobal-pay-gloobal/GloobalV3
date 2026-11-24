@@ -107,6 +107,26 @@ function creatorItemsWithRefs(items, current) {
   });
 }
 
+// The care calls' one shape: { ok: true, ...answer } or { ok: false, code,
+// message, status }. `status` 0 is no answer at all (offline, or the server
+// waking); 401/403 inside a helper's session means that session is over.
+async function gloobalCareCall(run) {
+  try {
+    const result = await run();
+    return { ...(result || {}), ok: true };
+  } catch (e) {
+    const body = (e && e.body) || {};
+    const unreachable = Boolean(e && e.status === 0);
+    return {
+      ...body,
+      ok: false,
+      status: e && typeof e.status === "number" ? e.status : 0,
+      code: body.code || (unreachable ? "unreachable" : "failed"),
+      message: unreachable ? "Couldn't reach GLOOBAL. Check your connection and try again." : (body.message || (e && e.message) || "Could not do that just now."),
+    };
+  }
+}
+
 var GloobalApi = {
   baseUrl: GLOOBAL_API_BASE,
   isUnreachable: gloobalApiIsUnreachable,
@@ -1258,6 +1278,57 @@ var GloobalApi = {
       const body = e && e.body;
       return { applied: 0, code: (body && body.code) || "failed", message: (body && body.message) || (e && e.message) || "" };
     }
+  },
+  // ── People I look after (server/lib/care.js) ──────────────────────────
+  // A child, someone older, someone with a disability: their own GLOOBAL
+  // ID and their own Essentials, used for them by a helper. None of these
+  // throws: each resolves { ok, ...the server's answer } or
+  // { ok: false, code, message }, so a screen can say what the server said.
+  async careDocs() {
+    return gloobalCareCall(() => gloobalApiClient.get("/api/care/docs", { liveOnly: true }));
+  },
+  async carePeople() {
+    return gloobalCareCall(() => gloobalApiClient.get("/api/care/people", { liveOnly: true }));
+  },
+  async careAdd(person) {
+    return gloobalCareCall(() => gloobalApiClient.post("/api/care/people", person || {}));
+  },
+  async careInvite(personId, invite) {
+    return gloobalCareCall(() => gloobalApiClient.post(`/api/care/people/${encodeURIComponent(personId)}/helpers`, invite || {}));
+  },
+  async careAnswer(linkId, accept) {
+    return gloobalCareCall(() => gloobalApiClient.post(`/api/care/invitations/${encodeURIComponent(linkId)}`, { accept: Boolean(accept) }));
+  },
+  async careLeave(personId) {
+    return gloobalCareCall(() => gloobalApiClient.delete(`/api/care/people/${encodeURIComponent(personId)}/helpers/me`));
+  },
+  async careRemoveHelper(personId, linkId) {
+    return gloobalCareCall(() => gloobalApiClient.delete(`/api/care/people/${encodeURIComponent(personId)}/helpers/${encodeURIComponent(linkId)}`));
+  },
+  async careActions(personId) {
+    return gloobalCareCall(() => gloobalApiClient.get(`/api/care/people/${encodeURIComponent(personId)}/actions`, { liveOnly: true }));
+  },
+  // Opens their account with the HELPER'S own PIN. Resolves { ok, token,
+  // person }: `token` is a short session for their account that names this
+  // helper too. It is handed to careSession below and kept nowhere else.
+  async careOpen(personId, pin) {
+    return gloobalCareCall(() => gloobalApiClient.post(`/api/care/people/${encodeURIComponent(personId)}/open`, { pin }));
+  },
+  // Every call made inside their account. Each one carries that session's
+  // token in place of this phone's own sign-in (httpClient.js `bearer`), so
+  // helping someone never signs this phone into their account or out of its
+  // own; a renewal the server sends back replaces the token here only.
+  careSession(token) {
+    let current = token;
+    const opts = () => ({ bearer: current, onBearerRefresh: (next) => { current = next; } });
+    return {
+      acting: () => gloobalCareCall(() => gloobalApiClient.get("/api/care/acting", opts())),
+      essentials: () => gloobalCareCall(() => gloobalApiClient.get("/api/essentials/me", opts())),
+      draw: (amount, idempotencyKey) => gloobalCareCall(() => gloobalApiClient.post("/api/essentials/draw", { amount, idempotencyKey }, opts())),
+      history: (symbolId) => gloobalCareCall(() => gloobalApiClient.get(`/api/transactions/history/${encodeURIComponent(symbolId)}`, opts())),
+      resolve: (identifier) => gloobalCareCall(() => gloobalApiClient.get(`/api/users/resolve?identifier=${encodeURIComponent(identifier)}`, opts())),
+      send: (payload) => gloobalCareCall(() => gloobalApiClient.post("/api/transactions/send", payload, opts())),
+    };
   },
   // PayLater by the day (lib/paylaterDaily.js on the server): what the
   // account has (seeds, limit, in use, what it has cost so far, growth),

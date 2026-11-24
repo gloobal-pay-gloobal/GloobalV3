@@ -110,6 +110,8 @@ function createCare({
   User, CareLink, CareDocument, CareAction, BankAccount,
   requireAuth, writeLimit, lookupLimit, credentialLimit,
   withAtomicSession, mintSymbolId, issueActingToken, isBankOpen, accountCountryIso,
+  // The person's own money (their country's), so figures can be named.
+  ownCurrency = async () => null,
   pin: { Pin, beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },
   bcrypt,
 }) {
@@ -152,6 +154,7 @@ function createCare({
     const order = docs.find((d) => d.kind === 'guardianship_order');
     const verified = Boolean(identity && identity.status === 'verified' && (identity.consent !== 'guardianship' || (order && order.status === 'verified')));
     const birth = dep.care && dep.care.birthDate;
+    const currency = await ownCurrency(dep).catch(() => null);
     return {
       id: idOf(dep),
       linkId: idOf(link),
@@ -168,6 +171,7 @@ function createCare({
       guardianship: docOut(order),
       consent: identity ? identity.consent : null,
       essentialsReady: verified,
+      currency,
       helpers: links.map((l) => ({
         linkId: idOf(l), role: l.role, status: l.status, relationship: l.relationship,
         name: (nameOf.get(idOf(l.helper)) || {}).fullName || '',
@@ -201,9 +205,9 @@ function createCare({
     const age = ageOn(birthDate);
     const adult = age >= ADULT_AGE;
     const relationship = String(body.relationship || '');
-    if (!CareLink.RELATIONSHIPS.includes(relationship)) throw new CareError('relationship', 'Say who they are to you.', 400);
+    if (!CareLink.RELATIONSHIPS.includes(relationship)) throw new CareError('relationship', 'Say who you are to them.', 400);
     const relationshipNote = relationship === 'other' ? clip(body.relationshipNote, 40) : '';
-    if (relationship === 'other' && relationshipNote.length < 2) throw new CareError('relationship', 'Say who they are to you.', 400);
+    if (relationship === 'other' && relationshipNote.length < 2) throw new CareError('relationship', 'Say who you are to them.', 400);
 
     const country = String(accountCountryIso(helper) || '').toUpperCase();
     const kind = String((body.document && body.document.kind) || '');
@@ -359,10 +363,14 @@ function createCare({
   }
   async function actionsOf(me, dependentId) {
     if (!(await activeLink(me._id, dependentId))) throw new CareError('not_helper', 'You are not this person\'s helper.', 403);
-    const rows = await CareAction.find({ dependent: dependentId }).sort({ createdAt: -1 }).limit(100).lean();
+    const [rows, dep] = await Promise.all([
+      CareAction.find({ dependent: dependentId }).sort({ createdAt: -1 }).limit(100).lean(),
+      User.findById(dependentId).select('countryIso').lean(),
+    ]);
+    const currency = dep ? await ownCurrency(dep).catch(() => null) : null;
     const helpers = await User.find({ _id: { $in: [...new Set(rows.map((r) => idOf(r.helper)))] } }).select('fullName').lean();
     const nameOf = new Map(helpers.map((u) => [idOf(u), u.fullName]));
-    return rows.map((r) => ({ what: r.what, at: r.createdAt, by: nameOf.get(idOf(r.helper)) || '', byMe: idOf(r.helper) === idOf(me._id), ok: r.status >= 200 && r.status < 300, amount: r.detail ? r.detail.amount : null, to: r.detail ? r.detail.to : '' }));
+    return rows.map((r) => ({ what: r.what, at: r.createdAt, by: nameOf.get(idOf(r.helper)) || '', byMe: idOf(r.helper) === idOf(me._id), ok: r.status >= 200 && r.status < 300, amount: r.detail ? r.detail.amount : null, currency, to: r.detail ? r.detail.to : '' }));
   }
 
   // ── Checks ────────────────────────────────────────────────────────────

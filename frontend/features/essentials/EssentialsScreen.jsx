@@ -86,6 +86,10 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
   // viewer's — the same as My Assets and PayLater.
   const lens = useGeuLens();
   const [howOpen, setHowOpen] = useState45(false);
+  // People this account looks after (features/care/): their own GLOOBAL
+  // ID and their own Essentials, used by this account for them.
+  const [careOpen, setCareOpen] = useState45(false);
+  const [careRound, setCareRound] = useState45(0);
   const essentialsMoney = (value) => geuLensBarParts(value, ccyCode, lens, ccyCode);
   // One renderer for all of them, so a tile and the headline cannot end up
   // drawn differently. `base` is the size the design asked for; the second
@@ -232,7 +236,7 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
        because the caveats underneath it — placeholder data, a regional
        default where a country has no entry of its own — are the kind of
        thing somebody should be able to go and read, not squint at. */
-  }<button
+  }<CareEntryCard key={careRound} onOpen={() => setCareOpen(true)} /><button
     onClick={() => setHowOpen(true)}
     className="v2-tap"
     style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", border: "none", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 16px", cursor: "pointer", textAlign: "left" }}
@@ -351,5 +355,5 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
     style={{ borderRadius: T.radiusMd, background: T.surfaceAlt, padding: "12px 14px", fontWeight: 700, color: T.ink }}
   >
       These are placeholder figures and have not been verified. Do not treat them as advice about what anything costs.
-    </div></div></HelpSheet></div>;
+    </div></div></HelpSheet>{careOpen && <CarePeopleScreen onClose={() => { setCareOpen(false); setCareRound((n) => n + 1); }} />}</div>;
 }

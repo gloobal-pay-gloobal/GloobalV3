@@ -260,6 +260,10 @@ const FRONTEND_MODULES = [
   "components/dialogs/NotificationsSheet.jsx",
   "features/assets/AssetsScreen.jsx",
   "features/essentials/EssentialsScreen.jsx",
+  // People looked after by a helper: the list, adding someone, and their
+  // account as the helper sees it (opened from My Essentials).
+  "features/care/CarePeopleScreen.jsx",
+  "features/care/CareHelperPanel.jsx",
   "features/bank/bankOpen.jsx",
   "features/bank/bankMoney.jsx",
   "features/history/TransactionRow.jsx",

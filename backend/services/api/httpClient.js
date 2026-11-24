@@ -129,7 +129,12 @@ async function gloobalApiRequestNetwork(method, path, body, options) {
   // Sent when there is one, omitted when there is not, so the pre-sign-in
   // routes (OTP, registration, login, availability) are unaffected.
   const headers = { "Content-Type": "application/json" };
-  const authToken = typeof gloobalAuthToken === "function" ? gloobalAuthToken() : null;
+  // `opts.bearer`: a helper's session for the account of someone they look
+  // after (server/lib/care.js). It is sent instead of this phone's own
+  // sign-in, is never stored in place of it, and its renewals go back to
+  // whoever asked (`opts.onBearerRefresh`) — so helping someone can never
+  // sign this phone into their account, or out of its own.
+  const authToken = opts.bearer || (typeof gloobalAuthToken === "function" ? gloobalAuthToken() : null);
   if (authToken && !opts.anonymous) headers.Authorization = `Bearer ${authToken}`;
 
   try {
@@ -161,14 +166,19 @@ async function gloobalApiRequestNetwork(method, path, body, options) {
     // token accepted on a call that had no credential of its own would be a
     // session minted by a response, which is not a thing this client should
     // ever let happen.
-    if (authToken && !opts.anonymous && typeof gloobalAuthTokenSave === "function") {
+    if (authToken && !opts.anonymous && (opts.bearer || typeof gloobalAuthTokenSave === "function")) {
       const refreshed = res.headers.get(GLOOBAL_API_TOKEN_REFRESH_HEADER);
-      // Only while the token this request went out with is still the one in
-      // hand. An answer that comes back after somebody else has signed in on
-      // this phone would otherwise put the PREVIOUS account's fresh token
-      // over the new session's.
-      const stillMine = typeof gloobalAuthToken !== "function" || gloobalAuthToken() === authToken;
-      if (refreshed && refreshed !== authToken && stillMine) gloobalAuthTokenSave(refreshed);
+      if (opts.bearer) {
+        // A helper's session: renewed for whoever holds it, never stored here.
+        if (refreshed && refreshed !== authToken && typeof opts.onBearerRefresh === "function") opts.onBearerRefresh(refreshed);
+      } else {
+        // Only while the token this request went out with is still the one in
+        // hand. An answer that comes back after somebody else has signed in on
+        // this phone would otherwise put the PREVIOUS account's fresh token
+        // over the new session's.
+        const stillMine = typeof gloobalAuthToken !== "function" || gloobalAuthToken() === authToken;
+        if (refreshed && refreshed !== authToken && stillMine) gloobalAuthTokenSave(refreshed);
+      }
     }
 
     if (!res.ok) {
@@ -258,7 +268,7 @@ async function gloobalApiRequestNetwork(method, path, body, options) {
       // was in storage by then — the one the sign-in had just earned — and
       // announce a sign-out: signed in, and thrown out the same moment.
       // So the session ends only if the refused token is still the one held.
-      const refusedIsCurrent = typeof gloobalAuthToken !== "function" || gloobalAuthToken() === authToken;
+      const refusedIsCurrent = !opts.bearer && (typeof gloobalAuthToken !== "function" || gloobalAuthToken() === authToken);
       if (tokenRejected && authToken && refusedIsCurrent && typeof gloobalAuthTokenClear === "function") {
         gloobalAuthTokenClear();
         if (typeof gloobalLocalCopyClear === "function") gloobalLocalCopyClear();
@@ -305,6 +315,8 @@ async function gloobalApiRequestNetwork(method, path, body, options) {
 // Everything else, every write included, is the server's answer or its error.
 async function gloobalApiRequest(method, path, body, options) {
   const opts = options || {};
+  // A helper's session is never kept on, or served from, this phone's copy.
+  if (opts.bearer) return gloobalApiRequestNetwork(method, path, body, opts);
   const authToken = typeof gloobalAuthToken === "function" ? gloobalAuthToken() : null;
   if (!gloobalApiKeepsLocalCopy(method, path, authToken, opts)) {
     return gloobalApiRequestNetwork(method, path, body, opts);
@@ -376,7 +388,7 @@ async function gloobalApiSavedOrThrow(error, path, saved) {
 // `{ liveOnly: true }`.
 function gloobalApiKeepsLocalCopy(method, path, authToken, opts) {
   return Boolean(
-    authToken && !opts.anonymous && !opts.liveOnly &&
+    authToken && !opts.anonymous && !opts.liveOnly && !opts.bearer &&
     typeof gloobalLocalCopyWanted === "function" && gloobalLocalCopyWanted(method, path)
   );
 }

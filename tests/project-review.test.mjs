@@ -6,8 +6,11 @@
 // server/tests/project-review.test.mjs.
 //
 //   1. The applicant: the checklist says what is missing; the plan has to add
-//      up; Submit sends it; the page shows "Submitted"; giving is closed.
-//   2. GLOOBAL: the desk lists it; a question goes out; the applicant answers;
+//      up; talking it through with GLOOBAL's assistant ends in an analysis,
+//      and its "Yes, send it" applies; the page shows "Submitted"; giving is
+//      closed. (The conversation's own rules: tests/project-talk.test.mjs.)
+//   2. GLOOBAL: the desk lists it, with the assistant's analysis and the
+//      conversation; a question goes out; the applicant answers;
 //      approve with an amount makes milestones; the first is due.
 //   3. Paying a milestone: "Pay on Send" opens Send with the amount; Mark
 //      paid is refused until the payment exists, then accepted.
@@ -52,7 +55,15 @@ function fakeReview() {
   };
   const project = (viewer) => ({ ...p, isOwner: viewer === OWNER.symbolId, review: pub(viewer) });
   const step = (state, by, note = "") => p.review.timeline.push({ at: new Date().toISOString(), state, by, note });
-  return { p, reqs, payments, requirements, pub, project, step, givingOpen };
+  // The conversation with GLOOBAL's assistant, as GLOOBAL's fixed questions
+  // would run it: two questions, then an analysis that says ready.
+  const talkWorld = { talk: null };
+  const QUESTIONS = ['Let\'s talk "River footbridge" through before it goes to GLOOBAL. What problem does it solve, and for whom?', "Where do the prices in your plan come from?"];
+  // The nine things the assistant must understand (server/lib/projectTalk.js).
+  const NINE = [["problem", "The problem"], ["people", "Who benefits"], ["work", "What will be done"], ["person", "Why this person"], ["money", "The money"], ["steps", "The steps"], ["risks", "The risks"], ["after", "Afterwards"], ["fits", "It all fits"]];
+  const nine = (clearUpTo) => NINE.map(([key, label], i) => ({ key, label, clear: "", status: i < clearUpTo ? "clear" : "missing", note: "", evidence: i < clearUpTo ? "Children cannot reach the school" : "" }));
+  const ANALYSIS = { summary: "River footbridge (Pokhara): children cannot reach school across the river in the monsoon.", understanding: nine(9), understood: 9, of: 9, strengths: ["The plan adds up to the goal."], gaps: [], contradictions: [], risks: [], openQuestions: [], readiness: "ready", readinessLabel: "Ready for review", readinessWhy: "All nine are clear, and nothing contradicts.", milestones: [{ label: "Steel and cement", percent: 60 }, { label: "Labour", percent: 40 }], by: "practice" };
+  return { p, reqs, payments, requirements, pub, project, step, givingOpen, talkWorld, QUESTIONS, ANALYSIS, nine };
 }
 
 function installReview(context, world, viewer) {
@@ -90,6 +101,30 @@ function installReview(context, world, viewer) {
     }
     if (path === "/api/projects/p1/contributions" && req.method() === "GET") return json(route, 200, { success: true, contributions: [], nextCursor: null });
     if (path === "/api/review/me") return json(route, 200, { success: true, reviewer: viewer === REVIEWER.symbolId });
+    if (path === "/api/projects/p1/talk" && req.method() === "GET") {
+      const t = w.talkWorld.talk;
+      return json(route, 200, { success: true, switchedOn: true, mode: "practice", talk: t, canStart: viewer === OWNER.symbolId && p.review.state === "draft" && !(t && t.state === "talking"), requirements: viewer === OWNER.symbolId ? w.requirements() : undefined });
+    }
+    if (path === "/api/projects/p1/talk" && req.method() === "POST") {
+      w.talkWorld.talk = { id: "t1", state: "talking", messages: [{ from: "assistant", text: w.QUESTIONS[0], at: new Date().toISOString() }], understanding: w.nine(0), understood: 0, of: 9, analysis: null, provider: "practice", answers: 0, answersLeft: 30, canFinish: false, appliedAnyway: false };
+      return json(route, 201, { success: true, talk: w.talkWorld.talk });
+    }
+    if (path === "/api/projects/p1/talk/say") {
+      const t = w.talkWorld.talk;
+      t.messages.push({ from: "applicant", text: body.text, at: new Date().toISOString() });
+      const answered = t.messages.filter((m) => m.from === "applicant").length;
+      Object.assign(t, { understanding: w.nine(answered), understood: answered, answers: answered, canFinish: answered >= 2 });
+      if (answered < w.QUESTIONS.length) t.messages.push({ from: "assistant", text: w.QUESTIONS[answered], at: new Date().toISOString() });
+      else { t.messages.push({ from: "assistant", text: "Thank you — that gives a clear picture.", at: new Date().toISOString() }); t.state = "done"; t.analysis = w.ANALYSIS; }
+      return json(route, 200, { success: true, talk: t });
+    }
+    if (path === "/api/projects/p1/talk/apply") {
+      const missing = w.requirements().filter((r) => !r.ok);
+      if (missing.length) return json(route, 409, { success: false, code: "requirements", message: "Before submitting: " + missing.map((m) => m.label.toLowerCase()).join("; ") + ".", requirements: w.requirements() });
+      p.status = "published"; p.review.state = "submitted"; w.step("submitted", "applicant", "Talked it through with GLOOBAL's assistant: ready for review");
+      w.talkWorld.talk.state = "applied";
+      return json(route, 200, { success: true, review: w.pub(viewer), talk: w.talkWorld.talk });
+    }
     if (path === "/api/review/projects") {
       const want = url.searchParams.get("state");
       const rows = p.review.state !== "draft" && (!want || want === p.review.state) ? [p] : [];
@@ -152,7 +187,8 @@ test("the whole road: checklist, plan, submit, review, question, answer, approve
   let reqs = await A.page.evaluate(() => [...document.querySelectorAll("[data-testid=project-requirement]")].map((e) => e.dataset.ok));
   assert.deepEqual(reqs, ["0", "0", "1", "1"], "bank and plan missing");
   assert.ok(await A.page.getByTestId("project-giving-closed").count(), "nobody can give yet");
-  assert.ok(await A.page.getByTestId("project-submit").isDisabled());
+  assert.equal(await A.page.getByTestId("project-submit").count(), 0, "applying goes through the conversation");
+  assert.match(await A.page.getByTestId("project-talk-open").innerText(), /Talk it through and apply/);
 
   // The plan: two lines that add up to the goal of 50,000.
   world.reqs.bank = true;
@@ -168,8 +204,34 @@ test("the whole road: checklist, plan, submit, review, question, answer, approve
   await padFill(A.page, A.page.getByLabel("Plan line 2 amount", { exact: true }), "20000");
   await tap(A.page.getByTestId("project-plan-save"));
   await A.page.waitForFunction(() => [...document.querySelectorAll("[data-testid=project-requirement]")].every((e) => e.dataset.ok === "1"), null, { timeout: 10000 });
-  await tap(A.page.getByTestId("project-submit"));
+  // Talk it through: one question at a time, then the analysis, then a yes.
+  await tap(A.page.getByTestId("project-talk-open"));
+  const talk = A.page.getByTestId("project-talk");
+  await talk.waitFor({ timeout: 10000 });
+  const said = (from) => A.page.evaluate((f) => document.querySelectorAll(`[data-testid=talk-message][data-from=${f}]`).length, from);
+  await A.page.waitForFunction(() => document.querySelectorAll("[data-testid=talk-message][data-from=assistant]").length === 1, null, { timeout: 10000 });
+  assert.match(await talk.innerText(), /What problem does it solve/);
+  assert.match(await A.page.getByTestId("talk-progress").innerText(), /Understood 0 of 9/);
+  for (const [i, answer] of ["Children cannot reach the school across the river in the monsoon.", "Two written quotes from local fabricators; labour at the panchayat's rate."].entries()) {
+    await A.page.getByTestId("talk-input").fill(answer);
+    await tap(A.page.getByTestId("talk-send"));
+    await A.page.waitForFunction((n) => document.querySelectorAll("[data-testid=talk-message][data-from=applicant]").length === n, i + 1, { timeout: 10000 });
+    if (i === 0) {
+      await A.page.waitForFunction(() => document.querySelector("[data-testid=talk-progress]")?.dataset.understood === "1", null, { timeout: 10000 });
+      assert.equal(await A.page.getByTestId("talk-finish").count(), 0, "finish now comes after two answers");
+    }
+  }
+  await A.page.getByTestId("talk-analysis").waitFor({ timeout: 10000 });
+  assert.equal(await said("assistant"), 3);
+  assert.equal(await A.page.evaluate(() => document.querySelectorAll("[data-testid=talk-analysis] [data-testid=talk-item][data-status=clear]").length), 9, "the nine, each with where it stands");
+  assert.match(await A.page.getByTestId("talk-understood").innerText(), /Understood 9 of 9/);
+  assert.equal(await A.page.getByTestId("talk-analysis").getAttribute("data-readiness"), "ready");
+  assert.match(await talk.innerText(), /Shall I send it to GLOOBAL for review\?/);
+  await tap(A.page.getByTestId("talk-apply"));
+  await A.page.getByTestId("talk-applied").waitFor({ timeout: 10000 });
+  await tap(talk.getByRole("button", { name: "Back" }).first());
   await A.page.waitForFunction(() => document.querySelector("[data-testid=project-applicant-panel] [data-testid=project-status]")?.dataset.state === "submitted", null, { timeout: 10000 });
+  assert.equal(await A.page.getByTestId("project-talk-view").count(), 1, "the conversation stays readable");
   assert.match(await A.page.getByTestId("project-next-step").innerText(), /Waiting for GLOOBAL/);
 
   // ── GLOOBAL ──
@@ -179,7 +241,16 @@ test("the whole road: checklist, plan, submit, review, question, answer, approve
   await openProjects(R.page);
   await tap(R.page.getByTestId("open-review-desk"));
   await tap(R.page.getByTestId("desk-row").first());
+  // The reviewer reads what the assistant found, and the conversation.
+  await R.page.getByTestId("desk-talk").waitFor({ timeout: 10000 });
+  assert.equal(await R.page.getByTestId("desk-talk").getByTestId("talk-analysis").getAttribute("data-readiness"), "ready");
+  assert.equal(await R.page.getByTestId("desk-use-milestones").count(), 1);
+  await tap(R.page.getByTestId("desk-talk-thread"));
+  assert.equal(await R.page.evaluate(() => document.querySelectorAll("[data-testid=desk-talk] [data-testid=talk-message]").length), 5);
   await tap(R.page.getByTestId("desk-start"));
+  // Wait for Start to finish: its answer clears the question box, so a
+  // question typed before it lands would be wiped (this used to flake).
+  await R.page.waitForFunction(() => document.querySelector("[data-testid=project-review-desk] [data-testid=project-status]")?.dataset.state === "under_review", null, { timeout: 10000 });
   await R.page.getByTestId("desk-question").fill("Who owns the land the bridge stands on?");
   await tap(R.page.getByTestId("desk-ask"));
   await R.page.waitForFunction(() => document.querySelector("[data-testid=project-review-desk] [data-testid=project-status]")?.dataset.state === "needs_info", null, { timeout: 10000 });

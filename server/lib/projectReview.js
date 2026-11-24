@@ -173,6 +173,10 @@ function validatePlan(rawPlan, goalMinor) {
 
 function createProjectReview(deps) {
   const { Project, BankAccount, FaceTemplate, Transaction, StaffMember, notify = async () => {}, env = process.env, now = () => Date.now() } = deps;
+  // Asked before Submit sends a project. Answers null to let it through, or
+  // { status, body } to stop it — the AI conversation (lib/projectTalk.js)
+  // uses it so that applying goes through talking it over first.
+  const beforeSubmit = deps.beforeSubmit || (async () => null);
 
   async function isReviewer(user) {
     if (!user) return false;
@@ -252,24 +256,38 @@ function createProjectReview(deps) {
     });
   }
 
-  async function submit(req, res) {
-    const got = await ownProject(req);
-    if (!got.project) return res.status(got.status).json(got.body);
-    const { project } = got;
-    if (project.review && !inState(project, ['draft'])) return refuse(res, 409, `It is already ${STATE_WORDS[project.review.state].toLowerCase()}.`);
+  // Send a draft to GLOOBAL: the four requirements, then Submitted. Shared by
+  // the Submit route and by applying at the end of the AI conversation.
+  // Answers { ok: true } or { status, body }.
+  async function sendForReview(project, note = '') {
+    if (project.review && !inState(project, ['draft'])) {
+      return { status: 409, body: { success: false, message: `It is already ${STATE_WORDS[project.review.state].toLowerCase()}.` } };
+    }
     const reqs = await requirements(project);
     const missing = reqs.filter((r) => !r.ok);
     if (missing.length) {
-      return res.status(409).json({ success: false, code: 'requirements', message: `Before submitting: ${missing.map((m) => m.label.toLowerCase()).join('; ')}.`, requirements: reqs });
+      return { status: 409, body: { success: false, code: 'requirements', message: `Before submitting: ${missing.map((m) => m.label.toLowerCase()).join('; ')}.`, requirements: reqs } };
     }
     project.status = 'published';
     project.review = project.review || { state: 'draft', timeline: [] };
     project.review.state = 'submitted';
     project.review.submittedAt = new Date(now());
     project.review.reason = '';
-    project.review.timeline.push(step('submitted', 'applicant'));
+    project.review.timeline.push(step('submitted', 'applicant', note));
     await project.save();
     say(project, 'Project submitted', `"${project.title}" is waiting for GLOOBAL's review.`);
+    return { ok: true };
+  }
+
+  async function submit(req, res) {
+    const got = await ownProject(req);
+    if (!got.project) return res.status(got.status).json(got.body);
+    const { project } = got;
+    if (project.review && !inState(project, ['draft'])) return refuse(res, 409, `It is already ${STATE_WORDS[project.review.state].toLowerCase()}.`);
+    const stop = await beforeSubmit(project);
+    if (stop) return res.status(stop.status).json(stop.body);
+    const sent = await sendForReview(project);
+    if (!sent.ok) return res.status(sent.status).json(sent.body);
     return reply(res, project);
   }
 
@@ -544,7 +562,7 @@ function createProjectReview(deps) {
   }
 
   return {
-    mount, isReviewer, requirements, publicReview, givingOpen, effectiveState,
+    mount, isReviewer, requirements, publicReview, givingOpen, effectiveState, sendForReview, reply,
     handlers: { getReview, setPlan, submit, answer, withdraw, reapply, postUpdate, queue, start, ask, approve, decline, pause, resume, markPaid, requireReviewer },
   };
 }

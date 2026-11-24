@@ -166,6 +166,8 @@ const {
 // models/ProjectAttachment.js for why its file lives in MongoDB.
 const Project = require('./models/Project');
 const { createProjectReview, publicReview: projectReviewPublic, givingOpen: projectGivingOpen } = require('./lib/projectReview');
+const { createProjectTalk } = require('./lib/projectTalk');
+const { createAiChat } = require('./lib/aiChat');
 const ProjectAttachment = require('./models/ProjectAttachment');
 // What people have given to a project. NOT a money record — an attribution
 // of a payment that already happened through /api/transactions/send. The
@@ -10486,7 +10488,11 @@ app.patch('/api/projects/:id', writeLimit, requireAuth, async (req, res) => {
 // DELETE /api/projects/:id — owner only. Takes the attachment with it, so a
 // deleted project cannot leave its file behind as an unreferenced blob.
 // ── Hooman Projects: applying for GLOOBAL funding (lib/projectReview.js) ──
+// Hooman Projects: applying goes through a conversation with GLOOBAL's
+// assistant first (lib/projectTalk.js); Submit asks it before sending.
+let projectTalk = null;
 const projectReview = createProjectReview({
+  beforeSubmit: (project) => (projectTalk ? projectTalk.gate(project) : null),
   Project,
   BankAccount: require('./models/BankAccount'),
   FaceTemplate,
@@ -10498,6 +10504,13 @@ const projectReview = createProjectReview({
   },
 });
 projectReview.mount(app, { requireAuth, writeLimit, lookupLimit });
+projectTalk = createProjectTalk({
+  Project,
+  ProjectTalk: require('./models/ProjectTalk'),
+  ai: createAiChat(),
+  review: projectReview,
+});
+projectTalk.mount(app, { requireAuth, writeLimit, lookupLimit });
 
 app.delete('/api/projects/:id', writeLimit, requireAuth, async (req, res) => {
   try {

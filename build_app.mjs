@@ -416,6 +416,9 @@ const FRONTEND_MODULES = [
   // Applying for GLOOBAL funding: status chips, the applicant's panel, the
   // reviewer desk (server/lib/projectReview.js).
   "features/projects/projectReview.jsx",
+  // Talk it through with GLOOBAL's assistant, then apply
+  // (server/lib/projectTalk.js); its analysis on the reviewer desk too.
+  "features/projects/ProjectTalk.jsx",
   "features/coverage/worldDots.js",
   "features/coverage/coverageCharts.jsx",
   "features/coverage/CoverageDashboard.jsx",

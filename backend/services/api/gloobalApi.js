@@ -107,7 +107,8 @@ function creatorItemsWithRefs(items, current) {
   });
 }
 
-// The care calls' one shape: { ok: true, ...answer } or { ok: false, code,
+// One shape for calls that must not throw (people I look after, the project
+// conversation): { ok: true, ...answer } or { ok: false, code,
 // message, status }. `status` 0 is no answer at all (offline, or the server
 // waking); 401/403 inside a helper's session means that session is over.
 async function gloobalCareCall(run) {
@@ -827,6 +828,24 @@ var GloobalApi = {
   },
   async submitProject(id) {
     return gloobalApiClient.post(`/api/projects/${encodeURIComponent(id)}/submit`, {});
+  },
+  // Talk it through with GLOOBAL's assistant, then apply
+  // (server/lib/projectTalk.js). None of these throws: each resolves
+  // { ok, ...the server's answer } or { ok: false, code, message }.
+  async projectTalk(id) {
+    return gloobalCareCall(() => gloobalApiClient.get(`/api/projects/${encodeURIComponent(id)}/talk`, { liveOnly: true }));
+  },
+  async projectTalkStart(id) {
+    return gloobalCareCall(() => gloobalApiClient.post(`/api/projects/${encodeURIComponent(id)}/talk`, {}, { timeoutMs: 60000 }));
+  },
+  async projectTalkSay(id, text) {
+    return gloobalCareCall(() => gloobalApiClient.post(`/api/projects/${encodeURIComponent(id)}/talk/say`, { text }, { timeoutMs: 60000 }));
+  },
+  async projectTalkFinish(id) {
+    return gloobalCareCall(() => gloobalApiClient.post(`/api/projects/${encodeURIComponent(id)}/talk/finish`, {}, { timeoutMs: 60000 }));
+  },
+  async projectTalkApply(id, anyway) {
+    return gloobalCareCall(() => gloobalApiClient.post(`/api/projects/${encodeURIComponent(id)}/talk/apply`, { anyway: Boolean(anyway) }));
   },
   async answerProjectQuestion(id, questionId, answer) {
     return gloobalApiClient.post(`/api/projects/${encodeURIComponent(id)}/answer`, { questionId, answer });

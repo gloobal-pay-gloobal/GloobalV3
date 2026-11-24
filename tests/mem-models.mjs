@@ -97,6 +97,7 @@ function modelClass(defaults = {}) {
   function Doc(d) { Object.assign(this, { _id: new mongoose.Types.ObjectId() }, JSON.parse(JSON.stringify(defaults)), d); }
   Doc.prototype.set = function set(k, v) { if (v === undefined) delete this[k]; else this[k] = v; };
   Doc.prototype.save = async function save() { if (!m.rows.includes(this)) m.rows.push(this); return this; };
+  Doc.prototype.markModified = function markModified() {};
   Object.assign(Doc, m);
   Doc.exists = (f) => { const api = { session: () => api, then: (a, b) => Promise.resolve(m.rows.some((r) => match(r, f)) ? { _id: 1 } : null).then(a, b) }; return api; };
   Doc.countDocuments = async (f) => m.rows.filter((r) => match(r, f)).length;

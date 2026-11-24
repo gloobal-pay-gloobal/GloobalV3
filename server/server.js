@@ -167,6 +167,7 @@ const {
 const Project = require('./models/Project');
 const { createProjectReview, publicReview: projectReviewPublic, givingOpen: projectGivingOpen } = require('./lib/projectReview');
 const { createProjectTalk } = require('./lib/projectTalk');
+const { createProjectSuppliers } = require('./lib/projectSuppliers');
 const { createAiChat } = require('./lib/aiChat');
 const ProjectAttachment = require('./models/ProjectAttachment');
 // What people have given to a project. NOT a money record — an attribution
@@ -10511,6 +10512,11 @@ projectTalk = createProjectTalk({
   review: projectReview,
 });
 projectTalk.mount(app, { requireAuth, writeLimit, lookupLimit });
+// Which Bazaar seller GLOOBAL buys a project's materials from.
+createProjectSuppliers({
+  Project, User, CreatorItem, CreatorReview, Complaint, CareLink, Transaction,
+  review: projectReview,
+}).mount(app, { requireAuth, writeLimit, lookupLimit, requireReviewer: projectReview.handlers.requireReviewer });
 
 app.delete('/api/projects/:id', writeLimit, requireAuth, async (req, res) => {
   try {

@@ -3,13 +3,14 @@
 // ── UNDERSTAND IT FIRST, THEN APPLY ──────────────────────────────────────
 //
 // Before a Hooman Project goes to GLOOBAL's reviewers, its owner talks it
-// over with GLOOBAL's assistant (server/lib/projectTalk.js) until it is
+// over with Hooman Intelligence, GLOOBAL's own assistant
+// (server/lib/projectTalk.js) until it is
 // understood: nine things — the problem, who benefits, what will be done,
 // why this person, the money, the steps, the risks, afterwards, and whether
 // it all fits — each clear, thin, missing or doesn't fit, with the owner's
 // own words as evidence. "Understood n of 9" shows as it goes; it can pause
 // and carry on later, or finish now to see where it stands. All nine clear
-// is "ready", and a yes sends it. For now the assistant only advises:
+// is "ready", and a yes sends it. For now Hooman Intelligence only advises:
 // people at GLOOBAL decide.
 //
 //   ProjectTalkScreen    the conversation, full screen
@@ -80,7 +81,7 @@ function ProjectTalkAnalysis({ analysis, onUseMilestones }) {
   const ai = String(analysis.by || "").startsWith("groq");
   return <div data-testid="talk-analysis" data-readiness={analysis.readiness} style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
     <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-      <span style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 14.5, fontWeight: 800, color: T.ink, flex: 1, minWidth: 0 }}><TalkSpark size={16} color={T.accent} />{ai ? "The assistant's analysis" : "GLOOBAL's checklist analysis"}</span>
+      <span style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 14.5, fontWeight: 800, color: T.ink, flex: 1, minWidth: 0 }}><TalkSpark size={16} color={T.accent} />{ai ? "Hooman Intelligence's analysis" : "GLOOBAL's checklist analysis"}</span>
       <TalkReadinessChip readiness={analysis.readiness} label={analysis.readinessLabel} />
     </div>
     <span style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.55 }}>{analysis.summary}</span>
@@ -194,7 +195,7 @@ function ProjectTalkScreen({ project, onClose, onApplied }) {
       <NavBackButton onClick={onClose} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: "block", fontSize: 16.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Talk it through</span>
-        <span style={{ display: "block", fontSize: 12, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.title}</span>
+        <span style={{ display: "block", fontSize: 12, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{`with Hooman Intelligence · ${project.title}`}</span>
       </span>
       <span style={{ width: 38, height: 38, borderRadius: 12, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><TalkSpark size={18} color={T.accent} /></span>
     </div>
@@ -203,7 +204,7 @@ function ProjectTalkScreen({ project, onClose, onApplied }) {
       <div style={{ display: "flex", gap: 9, alignItems: "flex-start", padding: "10px 12px", borderRadius: 14, background: T.surfaceAlt }}>
         <TalkShield size={15} color={T.inkSoft} style={{ flexShrink: 0, marginTop: 2 }} />
         <span data-testid="talk-privacy" style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.5 }}>{mode === "groq"
-          ? "GLOOBAL's assistant is an AI. Your answers go to it and to GLOOBAL's reviewers — not your documents, photos or account. Don't type ID numbers, bank details or passwords."
+          ? "Hooman Intelligence is an AI. Your answers go to it and to GLOOBAL's reviewers — not your documents, photos or account. Don't type ID numbers, bank details or passwords."
           : "GLOOBAL's questions, answered here, go to GLOOBAL's reviewers with your project. Don't type ID numbers, bank details or passwords."} It advises; people at GLOOBAL decide.</span>
       </div>
       {talk ? <ProjectTalkThread messages={talk.messages} /> : null}

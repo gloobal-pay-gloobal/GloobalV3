@@ -826,10 +826,24 @@ var GloobalApi = {
   async setProjectPlan(id, plan) {
     return gloobalApiClient.put(`/api/projects/${encodeURIComponent(id)}/plan`, { plan });
   },
+  // Where the work happens: { lat, lng, label } or { clear: true }.
+  async setProjectSite(id, site) {
+    return gloobalApiClient.put(`/api/projects/${encodeURIComponent(id)}/site`, site || {});
+  },
+  // GLOOBAL's reviewers: the ranked Bazaar sellers for each material and
+  // tech line (server/lib/projectSuppliers.js), and confirming one —
+  // { sellerId, note } or { other: true, note } or { clear: true }. Neither
+  // throws: { ok, ...the server's answer } or { ok: false, code, message }.
+  async projectSellers(id) {
+    return gloobalCareCall(() => gloobalApiClient.get(`/api/review/projects/${encodeURIComponent(id)}/sellers`, { liveOnly: true }));
+  },
+  async pickProjectSeller(id, n, body) {
+    return gloobalCareCall(() => gloobalApiClient.post(`/api/review/projects/${encodeURIComponent(id)}/plan/${Number(n)}/pick`, body || {}));
+  },
   async submitProject(id) {
     return gloobalApiClient.post(`/api/projects/${encodeURIComponent(id)}/submit`, {});
   },
-  // Talk it through with GLOOBAL's assistant, then apply
+  // Talk it through with Hooman Intelligence, then apply
   // (server/lib/projectTalk.js). None of these throws: each resolves
   // { ok, ...the server's answer } or { ok: false, code, message }.
   async projectTalk(id) {

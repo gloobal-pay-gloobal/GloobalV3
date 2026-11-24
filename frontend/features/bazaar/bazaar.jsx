@@ -19,7 +19,7 @@ import { useState as useState62, useEffect as useEffect59, useRef as useRef35 } 
 import {
   UtensilsCrossed as BzFood, ShoppingBasket as BzGrocery, Cake as BzSweets, Shirt as BzFashion, Scissors as BzBeauty,
   Pill as BzHealth, Smartphone as BzElectronics, Wrench as BzRepair, Hammer as BzHome, GraduationCap as BzEducation,
-  Bus as BzTravel, Palette as BzArt, PartyPopper as BzEvents, Store as BzOther, Clapperboard as BzCreator, HeartHandshake as BzCommunity, Tractor as BzFarm, HardHat as BzWork,
+  Bus as BzTravel, Palette as BzArt, PartyPopper as BzEvents, Store as BzOther, Clapperboard as BzCreator, HeartHandshake as BzCommunity, Tractor as BzFarm, HardHat as BzWork, BrickWall as BzBuilding,
   LocateFixed as LocateFixed2, Loader as Loader7, Flame as BzFlame, SearchX as BzSearchOff, ChevronRight as ChevronRight10,
   History as BzRecent, Star as BzStar,
   Gift as BzFestive, Search as BzSuggest, SlidersHorizontal as BzFilter, X as BzX,
@@ -27,7 +27,7 @@ import {
   Tag as BzItemIcon, ImageOff as BzNoPhoto
 } from "lucide-react";
 
-// The same eighteen, in the same order, as server/lib/bazaar.js. The order
+// The same nineteen, in the same order, as server/lib/bazaar.js. The order
 // here is only the setup screen's; Pay & Services orders them by payments.
 var BAZAAR_CATEGORY_INFO = [
   { key: "food", label: "Food & Chai", Icon: BzFood },
@@ -43,6 +43,7 @@ var BAZAAR_CATEGORY_INFO = [
   { key: "travel", label: "Travel & Transport", Icon: BzTravel },
   { key: "art", label: "Art & Craft", Icon: BzArt },
   { key: "events", label: "Events", Icon: BzEvents },
+  { key: "building", label: "Building materials", Icon: BzBuilding },
   { key: "farm", label: "Farm & Fresh", Icon: BzFarm },
   { key: "work", label: "Daily work & Help", Icon: BzWork },
   { key: "creator", label: "Creators & Freelance", Icon: BzCreator },
@@ -67,6 +68,7 @@ var BAZAAR_SUBCATEGORY_INFO = {
   travel: [["taxi", "Taxi"], ["auto", "Auto"], ["tours", "Tours"], ["hotel", "Hotel"], ["tickets", "Tickets"], ["bikerental", "Bike rental"], ["courier", "Courier & delivery"], ["guide", "Guide"], ["tempo", "Tempo & truck"], ["erickshaw", "E-rickshaw"], ["rickshaw", "Cycle rickshaw"], ["driver", "Driver on hire"], ["schoolvan", "School van"]],
   art: [["handmade", "Handmade"], ["pottery", "Pottery"], ["painting", "Painting"], ["gifts", "Gifts"], ["photography", "Photography"], ["design", "Design"], ["framing", "Framing"], ["idol", "Idol & statue maker"], ["bamboo", "Bamboo & cane work"], ["toys", "Toys & balloons"]],
   events: [["wedding", "Wedding"], ["decoration", "Decoration"], ["catering", "Catering"], ["dj", "DJ"], ["tent", "Tent"], ["flowers", "Flowers"], ["photovideo", "Photo & video"], ["pandit", "Pandit & puja"], ["band", "Band & dhol"], ["anchor", "Anchor & host"], ["lights", "Lights & generator"]],
+  building: [["cement", "Cement"], ["steel", "Steel & TMT bars"], ["sand", "Sand & gravel"], ["bricks", "Bricks & blocks"], ["tiles", "Tiles & marble"], ["paint", "Paint"], ["plumbing", "Pipes & plumbing"], ["electrical", "Wires & electrical"], ["wood", "Wood & plywood"], ["glass", "Glass & aluminium"], ["roofing", "Roofing sheets"], ["solar", "Solar & inverters"], ["machinery", "Machine hire (JCB, mixer)"]],
   farm: [["farmer", "Farmer"], ["dairyfarm", "Dairy farm"], ["poultry", "Poultry & eggs"], ["fishery", "Fish farm"], ["nursery", "Plant nursery"], ["seeds", "Seeds & fertiliser"], ["cattlefeed", "Cattle feed"], ["honey", "Honey & bee keeping"], ["flowergrower", "Flower grower"], ["mandi", "Mandi trader"], ["tractor", "Tractor & JCB"]],
   work: [["labour", "Daily labour"], ["helper", "Helper & loader"], ["porter", "Porter (coolie)"], ["guard", "Security guard"], ["sweeper", "Sweeper & cleaner"], ["maid", "Maid"], ["babysitter", "Babysitter (aaya)"], ["eldercare", "Elder care"], ["homecook", "Home cook"], ["gardener", "Gardener (mali)"], ["rider", "Delivery rider"], ["waiter", "Waiter & event staff"]],
   creator: [["youtuber", "YouTuber"], ["musician", "Musician"], ["writer", "Writer"], ["artist", "Artist"], ["photographer", "Photographer"], ["videomaker", "Video maker"], ["designer", "Designer"], ["developer", "Developer"], ["influencer", "Influencer"], ["podcaster", "Podcaster"], ["freelancer", "Freelancer"], ["consultant", "Consultant"], ["astrology", "Astrology"]],

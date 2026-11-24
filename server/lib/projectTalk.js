@@ -3,17 +3,18 @@
 // ── HOOMAN PROJECTS: UNDERSTAND IT FIRST, THEN APPLY ─────────────────────
 //
 // Before a project goes to GLOOBAL's reviewers, its owner talks it over with
-// GLOOBAL's assistant. The point is to UNDERSTAND the project, so the
-// conversation is not a fixed number of questions: it works through nine
-// things it must understand, and after every answer it asks about the
-// weakest one — a contradiction first.
+// Hooman Intelligence, GLOOBAL's own assistant. The point is to UNDERSTAND
+// the project, so the conversation is not a fixed number of questions: it
+// works through nine things it must understand, and after every answer it
+// asks about the weakest one — a contradiction first.
 //
 //   1 The problem         who exactly, where, how many, how bad today
 //   2 Who benefits        a real group and rough number; what changes for them
 //   3 What will be done   what gets built, bought or run, and why this way
 //   4 Why this person     what they have done, experience, own effort put in
-//   5 The money           every plan line explained, where prices come from,
-//                         nothing missing
+//   5 The money           every plan line explained — what kind of cost it
+//                         is (material, tech, people, other) with its
+//                         quantities — where prices come from, nothing missing
 //   6 The steps           what is finished at each step, matching the plan
 //   7 The risks           what could go wrong and what they would do
 //   8 Afterwards          who keeps it running; how results will be shown
@@ -29,10 +30,14 @@
 //   almost     one or two thin; nothing missing or contradicting
 //   not_ready  anything missing or contradicting, or three or more thin
 // Only "ready" offers "Shall I send it?". The owner may still send it anyway
-// — for now the assistant only ADVISES; people at GLOOBAL approve, decline,
-// set the amount and pay. The hard rules stay hard rules, checked by code:
-// the plan adds up to the goal (or The money and It all fits cannot be
-// clear), a document, GLOOBAL Bank open, the face check (lib/projectReview).
+// — for now Hooman Intelligence only ADVISES; people at GLOOBAL approve,
+// decline, set the amount and pay. The hard rules stay hard rules, checked
+// by code: the plan adds up to the goal (or The money and It all fits
+// cannot be clear); The money is not clear until every line says what kind
+// of cost it is and, when there are materials or tech to buy, the site is
+// pinned (GLOOBAL buys those itself, from sellers near it —
+// lib/projectSuppliers.js); a document, GLOOBAL Bank open, the face check
+// (lib/projectReview).
 //
 // Taking time: a conversation can pause and carry on over days; the owner
 // sees "Understood n of 9" and what is still open, and can "finish now" to
@@ -87,10 +92,10 @@ const ITEMS = [
     again: 'Is there anything you have already paid for, built, tested or arranged yourself?',
   },
   {
-    key: 'money', label: 'The money', clear: 'Every plan line explained, where each price comes from, nothing missing',
+    key: 'money', label: 'The money', clear: 'Every plan line says what kind of cost it is (material, tech, people or other) with its quantities, where each price comes from, nothing missing',
     ask: (c) => (c.planText
-      ? `Your plan spends ${c.goalText} on: ${c.planText}. Where does each price come from — a quote, a shop, your own estimate — and is anything missing?`
-      : `How will the ${c.goalText || 'money'} be spent? Name each cost and where its price comes from.`),
+      ? `Your plan spends ${c.goalText} on: ${c.planText}. Where does each price come from — a quote, a shop, your own estimate — and is anything missing?${c.unkinded.length ? ` (In the plan, say what kind of cost each line is — material, tech, people's wages or other: ${c.unkinded.join(', ')}.)` : ''}`
+      : `How will the ${c.goalText || 'money'} be spent? Name each cost — materials, tech, people's wages — and where its price comes from.`),
     again: 'For each line of the plan: where does the price come from, and is anything left out — transport, tools, permits?',
   },
   {
@@ -136,11 +141,31 @@ function money(minor, currency) {
   return `${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}${currency ? ` ${currency}` : ''}`;
 }
 
+const qty = (n) => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 });
+const SELLER_KINDS = ['material', 'tech'];
+
+// One plan line in words, with its kind and details.
+function lineText(l, currency) {
+  const amount = money(l.amountMinor, currency);
+  if (SELLER_KINDS.includes(l.kind)) return `${l.label} — ${l.kind}: ${qty(l.quantity)} ${l.unit || ''}${l.quality ? `, ${l.quality}` : ''} (${amount})`;
+  if (l.kind === 'human') return `${l.label} — people's wages: ${l.people} × ${l.days} days × ${money(l.rateMinor, currency)} a day (${amount})`;
+  if (l.kind === 'other') return `${l.label} — other (${amount})`;
+  return `${l.label} (${amount})`;
+}
+
 // What the conversation knows about the project.
 function contextOf(project) {
-  const plan = (project.plan || []).map((l) => ({ label: clip(l.label, 80), amountMinor: Number(l.amountMinor) || 0 }));
+  const plan = (project.plan || []).map((raw) => {
+    const l = raw && raw.toObject ? raw.toObject() : (raw || {});
+    return {
+      label: clip(l.label, 80), amountMinor: Number(l.amountMinor) || 0, kind: l.kind || '',
+      quantity: Number(l.quantity) || 0, unit: clip(l.unit, 20), quality: clip(l.quality, 120),
+      people: Number(l.people) || 0, days: Number(l.days) || 0, rateMinor: Number(l.rateMinor) || 0,
+    };
+  });
   const planSum = plan.reduce((a, l) => a + l.amountMinor, 0);
   const goalMinor = Number(project.goalMinor) || 0;
+  const needsSite = plan.some((l) => SELLER_KINDS.includes(l.kind));
   return {
     title: clip(project.title, 140),
     category: clip(project.category, 60),
@@ -152,8 +177,12 @@ function contextOf(project) {
     goalText: goalMinor ? money(goalMinor, project.goalCurrency) : '',
     plan,
     planSum,
-    planText: plan.map((l) => `${l.label} (${money(l.amountMinor, project.goalCurrency)})`).join(', '),
+    planText: plan.map((l) => lineText(l, project.goalCurrency)).join('; '),
     planOk: goalMinor > 0 && plan.length > 0 && planSum === goalMinor,
+    // Lines that do not yet say what kind of cost they are.
+    unkinded: plan.filter((l) => !l.kind).map((l) => l.label),
+    needsSite,
+    hasSite: Boolean(project.site && Number.isFinite(Number(project.site.lat))),
     hasDocument: Boolean(project.attachment),
   };
 }
@@ -166,6 +195,10 @@ function blankUnderstanding() {
 
 // The hard rule the code checks, whatever anyone says: a plan that does not
 // add up to the goal is a contradiction in The money and in It all fits.
+//
+// And The money is not clear — thin at best — until every line says what
+// kind of cost it is, and, when GLOOBAL has materials or tech to buy, the
+// site is pinned so it can find sellers near it.
 function applyHardRules(u, ctx) {
   if (!ctx.planOk) {
     const why = ctx.plan.length
@@ -174,6 +207,13 @@ function applyHardRules(u, ctx) {
     for (const key of ['money', 'fits']) {
       u[key] = { ...u[key], status: 'contradicting', note: why };
     }
+    return u;
+  }
+  const short = [];
+  if (ctx.unkinded && ctx.unkinded.length) short.push(`Say in the plan what kind of cost each line is — material, tech, people or other: ${ctx.unkinded.join(', ')}.`);
+  if (ctx.needsSite && !ctx.hasSite) short.push('Pin the project site under the plan: GLOOBAL buys the materials itself, from sellers near it.');
+  if (short.length && u.money && u.money.status === 'clear') {
+    u.money = { ...u.money, status: 'thin', note: clip(short.join(' '), 240) };
   }
   return u;
 }
@@ -316,9 +356,11 @@ function judgeAnswer(key, text, ctx) {
 }
 
 function systemPrompt(ctx) {
-  const plan = ctx.plan.length ? ctx.plan.map((l) => `- ${l.label}: ${money(l.amountMinor, ctx.currency)}`).join('\n') : '(no plan lines yet)';
+  const plan = ctx.plan.length ? ctx.plan.map((l) => `- ${redact(lineText(l, ctx.currency))}`).join('\n') : '(no plan lines yet)';
   return [
-    "You are GLOOBAL's project assistant. GLOOBAL funds Hooman Projects — work that helps people — and pays in milestones. You are talking with the person who wants funding for the project below, BEFORE it goes to GLOOBAL's human reviewers. Take your time: your job is to UNDERSTAND the project, honestly, not to get through questions.",
+    "You are Hooman Intelligence, GLOOBAL's own project assistant. GLOOBAL funds Hooman Projects — work that helps people — and pays in milestones. You are talking with the person who wants funding for the project below, BEFORE it goes to GLOOBAL's human reviewers. Take your time: your job is to UNDERSTAND the project, honestly, not to get through questions.",
+    '',
+    'How GLOOBAL pays, so you understand the plan: every plan line is one kind of cost. "material" (cement, steel, bricks) and "tech" (laptops, solar panels) are bought by GLOOBAL itself from sellers on GLOOBAL Bazaar near the project site — GLOOBAL chooses the seller, never the applicant, so do not ask them which shop. "people" lines are wages: people × days × a day\'s pay, paid to each worker\'s GLOOBAL ID. "other" is paid against receipts. Check that quantities are believable for the work (how much cement for that length of road, how many workers for how many days).',
     '',
     'You must understand these nine things. Keep a status for each — "clear", "thin", "missing" or "contradicting" — with a short note and, as evidence, the applicant\'s own words (or words from the project text) that show it:',
     ...ITEMS.map((i, n) => `${n + 1}. ${i.key} — ${i.label}: clear means ${i.clear.toLowerCase()}.`),
@@ -342,6 +384,8 @@ function systemPrompt(ctx) {
     `Funding goal: ${ctx.goalText || '(not set yet)'}`,
     `Plan:\n${plan}`,
     `Plan adds up to the goal: ${ctx.planOk ? 'yes' : 'NO — that is a contradiction to raise'}`,
+    ctx.unkinded.length ? `Lines that do not say their kind yet (ask them to set it in the plan): ${ctx.unkinded.map((l) => redact(l)).join(', ')}` : '',
+    ctx.needsSite ? `Project site pinned on the map: ${ctx.hasSite ? 'yes' : 'NO — ask them to pin it under the plan, so GLOOBAL can find sellers near it'}` : '',
     `Document or photo attached: ${ctx.hasDocument ? 'yes' : 'no'}`,
     `Description:\n${redact(ctx.summary)}`,
   ].filter((l) => l !== '').join('\n');
@@ -433,7 +477,7 @@ function createProjectTalk(deps) {
       finish(talk, ctx, '', null, 'practice');
       return;
     }
-    const BUSY = "(GLOOBAL's assistant is busy, so GLOOBAL's own questions carry on.) ";
+    const BUSY = "(Hooman Intelligence is busy, so GLOOBAL's own questions carry on.) ";
     const lead = talk.fellBack && !msgs.some((m) => m.from === 'assistant' && m.text.startsWith(BUSY)) ? BUSY : '';
     const text = first ? next.ask(ctx) : next.again;
     talk.messages.push({ from: 'assistant', text: lead + text, topic: first ? next.key : `${next.key}:again`, at: new Date(now()) });
@@ -572,8 +616,8 @@ function createProjectTalk(deps) {
       return refuse(res, 409, `${READINESS_WORDS[readiness] || readiness}. ${talk.analysis.readinessWhy || ''} Improve it and talk again, or send it anyway.`.trim(), 'not_ready');
     }
     const note = readiness === 'ready'
-      ? `Talked it through with GLOOBAL's assistant: ready for review (${talk.analysis.understood} of ${talk.analysis.of} clear)`
-      : `Talked it through with GLOOBAL's assistant: ${(READINESS_WORDS[readiness] || readiness).toLowerCase()} (${talk.analysis.understood} of ${talk.analysis.of} clear) — sent anyway`;
+      ? `Talked it through with Hooman Intelligence: ready for review (${talk.analysis.understood} of ${talk.analysis.of} clear)`
+      : `Talked it through with Hooman Intelligence: ${(READINESS_WORDS[readiness] || readiness).toLowerCase()} (${talk.analysis.understood} of ${talk.analysis.of} clear) — sent anyway`;
     const sent = await review.sendForReview(project, note);
     if (!sent.ok) return res.status(sent.status).json(sent.body);
     talk.state = 'applied';
@@ -587,7 +631,7 @@ function createProjectTalk(deps) {
   // applying goes through it.
   async function gate() {
     if (!switchedOn()) return null;
-    return { status: 409, body: { success: false, code: 'talk_first', message: "Talk it through with GLOOBAL's assistant first — it sends the project on for you." } };
+    return { status: 409, body: { success: false, code: 'talk_first', message: "Talk it through with Hooman Intelligence first — it sends the project on for you." } };
   }
 
   function mount(app, { requireAuth, writeLimit, lookupLimit }) {
@@ -604,6 +648,6 @@ function createProjectTalk(deps) {
 
 module.exports = {
   createProjectTalk, redact, contextOf, milestonesFromPlan, normaliseUnderstanding, readinessOf, readinessWhyOf, buildAnalysis,
-  judgeAnswer, applyHardRules, blankUnderstanding, supported, systemPrompt,
+  judgeAnswer, applyHardRules, blankUnderstanding, supported, systemPrompt, lineText,
   ITEMS, MAX_ANSWERS, TALKS_PER_DAY, PERSON_TALKS_PER_DAY, FINISH_AFTER, READINESS_WORDS, STATUS_WORDS,
 };

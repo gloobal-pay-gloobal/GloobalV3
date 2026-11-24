@@ -16,6 +16,7 @@ function match(doc, q) {
         if (op === "$lt") return v < x;
         if (op === "$gt") return v > x;
         if (op === "$gte") return v >= x;
+        if (op === "$lte") return v <= x;
         if (op === "$ne") return !same(v, x);
         if (op === "$in") return x.some((y) => same(v, y));
         if (op === "$exists") return (v !== undefined) === x;

@@ -33,6 +33,11 @@ const GOOD = {
   after: "The panchayat maintains it from its yearly roads budget, and we will post photos and the school attendance numbers every month.",
 };
 const keyOf = (topic) => String(topic || "").split(":")[0];
+// A plan whose lines say what kind of cost they are: what The money needs.
+const KINDED = [
+  { label: "Steel and cement", amountMinor: 3500000, kind: "material", quantity: 1, unit: "lot", quality: "as quoted", category: "building", subcategory: "steel" },
+  { label: "Labour", amountMinor: 1500000, kind: "human", people: 5, days: 20, rateMinor: 15000 },
+];
 
 function world({ env = {}, fetchImpl } = {}) {
   const Project = modelClass({ status: "draft", plan: [], review: undefined });
@@ -60,12 +65,13 @@ function world({ env = {}, fetchImpl } = {}) {
     return { status, body: json };
   };
   let opened = false;
-  async function project({ ready = true, plan, title = "River footbridge" } = {}) {
+  async function project({ ready = true, plan, title = "River footbridge", site = { lat: 27.55, lng: 76.6 } } = {}) {
     const p = new Project({
       ownerId: owner._id, ownerSymbolId: owner.symbolId, title, category: "Infrastructure",
       summary: "A steel footbridge between Rampur and Kheri so children reach school in the monsoon.", place: "Rampur", countryIso: "IN",
       goalMinor: 5000000, goalCurrency: "INR", attachment: { filename: "quote.pdf" },
-      plan: plan || [{ label: "Steel and cement", amountMinor: 3500000 }, { label: "Labour", amountMinor: 1500000 }],
+      plan: plan || KINDED,
+      site,
       review: { state: "draft", timeline: [], questions: [], milestones: [] },
     });
     await p.save();
@@ -323,7 +329,7 @@ test("Groq stops answering: GLOOBAL's questions carry on with only what is not y
   const t = r.body.talk;
   assert.equal(t.fellBack, true);
   const last = w.talkOf(p).messages.at(-1);
-  assert.match(last.text, /^\(GLOOBAL's assistant is busy/);
+  assert.match(last.text, /^\(Hooman Intelligence is busy/);
   assert.equal(last.topic, "people", "problem is clear already, so it is not asked again");
   const end = await answerAll(w, p, GOOD);
   assert.equal(end.body.talk.analysis.readiness, "ready");
@@ -400,4 +406,53 @@ test("the bar, the evidence check, blanking and milestones", () => {
   assert.equal(many.reduce((a, m) => a + m.percent, 0), 100);
   assert.deepEqual(milestonesFromPlan([]).map((m) => m.percent), [40, 30, 30]);
   assert.equal(talkLib.judgeAnswer("risks", "मुझे अभी पता नहीं", ctx).note, "Doesn't know yet.");
+});
+
+// ── The money: what kind of cost each line is, and where the site is ──────
+test("The money is thin until every line says its kind, and the site is pinned when GLOOBAL has materials to buy", async () => {
+  // No kinds: the answers are good, The money is not clear, and it says why.
+  const w = world();
+  const p = await w.project({ plan: [{ label: "Steel and cement", amountMinor: 3500000 }, { label: "Labour", amountMinor: 1500000 }] });
+  const s = await w.call(w.talk.handlers.start, w.owner, p._id);
+  assert.equal(statuses(s.body.talk).money, "missing", "not asked yet: missing, not contradicting");
+  const end = await answerAll(w, p, GOOD);
+  const a = end.body.talk.analysis;
+  const money = a.understanding.find((i) => i.key === "money");
+  assert.equal(money.status, "thin");
+  assert.match(money.note, /what kind of cost each line is — material, tech, people or other: Steel and cement, Labour\./);
+  assert.equal(a.readiness, "almost", "advice only: it can still be sent anyway");
+  const asked = w.talkOf(p).messages.find((m) => m.topic === "money").text;
+  assert.match(asked, /say what kind of cost each line is — material, tech, people's wages or other: Steel and cement, Labour\./);
+
+  // Kinds, but materials to buy and no site pinned.
+  const w2 = world();
+  const p2 = await w2.project({ site: null });
+  const a2 = (await answerAll(w2, p2, GOOD)).body.talk.analysis;
+  assert.match(a2.understanding.find((i) => i.key === "money").note, /Pin the project site under the plan: GLOOBAL buys the materials itself, from sellers near it\./);
+  assert.equal(a2.readiness, "almost");
+  const req = await w2.review.requirements(p2);
+  assert.deepEqual(req.map((r) => r.key), ["bank", "plan", "site", "document", "face"], "a plan with materials needs the site pinned to be sent at all");
+  assert.equal(req.find((r) => r.key === "site").ok, false);
+
+  // People and other only: no seller to find, so no site is needed.
+  const w3 = world();
+  const p3 = await w3.project({ site: null, plan: [{ label: "Teachers", amountMinor: 3600000, kind: "human", people: 4, days: 30, rateMinor: 30000 }, { label: "Hall rent", amountMinor: 1400000, kind: "other" }] });
+  assert.equal((await answerAll(w3, p3, GOOD)).body.talk.analysis.readiness, "ready");
+  assert.deepEqual((await w3.review.requirements(p3)).map((r) => r.key), ["bank", "plan", "document", "face"]);
+});
+
+test("Hooman Intelligence is told how GLOOBAL pays each kind, and sees each line's details", () => {
+  const ctx = contextOf({
+    title: "Village road", goalMinor: 20000000, goalCurrency: "INR", site: { lat: 27.5, lng: 76.6 },
+    plan: [
+      { label: "Cement", amountMinor: 15200000, kind: "material", quantity: 400, unit: "bags", quality: "OPC 53", category: "building", subcategory: "cement" },
+      { label: "Masons", amountMinor: 4800000, kind: "human", people: 4, days: 20, rateMinor: 60000 },
+    ],
+  });
+  assert.equal(ctx.planText, "Cement — material: 400 bags, OPC 53 (1,52,000 INR); Masons — people's wages: 4 × 20 days × 600 INR a day (48,000 INR)");
+  const sys = talkLib.systemPrompt(ctx);
+  assert.match(sys, /^You are Hooman Intelligence, GLOOBAL's own project assistant\./);
+  assert.match(sys, /GLOOBAL chooses the seller, never the applicant, so do not ask them which shop/);
+  assert.match(sys, /Project site pinned on the map: yes/);
+  assert.doesNotMatch(sys, /Lines that do not say their kind/);
 });

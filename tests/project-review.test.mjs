@@ -6,11 +6,15 @@
 // server/tests/project-review.test.mjs.
 //
 //   1. The applicant: the checklist says what is missing; the plan has to add
-//      up; talking it through with GLOOBAL's assistant ends in an analysis,
+//      up, each line saying what kind of cost it is (wages worked out from
+//      people × days × a day's pay); a plan with materials needs the site
+//      pinned; talking it through with Hooman Intelligence ends in an analysis,
 //      and its "Yes, send it" applies; the page shows "Submitted"; giving is
 //      closed. (The conversation's own rules: tests/project-talk.test.mjs.)
-//   2. GLOOBAL: the desk lists it, with the assistant's analysis and the
-//      conversation; a question goes out; the applicant answers;
+//   2. GLOOBAL: the desk lists it, with Hooman Intelligence's analysis and
+//      the conversation; GLOOBAL's choice of cement seller is confirmed in
+//      one tap (and the applicant sees it); a question goes out; the
+//      applicant answers;
 //      approve with an amount makes milestones; the first is due.
 //   3. Paying a milestone: "Pay on Send" opens Send with the amount; Mark
 //      paid is refused until the payment exists, then accepted.
@@ -31,7 +35,7 @@ function fakeReview() {
   const p = {
     id: "p1", title: "River footbridge", category: "Infrastructure", summary: "Connects two villages so children can reach school in the monsoon.", summaryWordCount: 11,
     countryIso: "IN", status: "draft", ownerSymbolId: OWNER.symbolId, place: "Pokhara", goal: { minor: 5000000, currency: "INR" }, attachment: { filename: "quote.pdf" },
-    plan: [], review: { state: "draft", timeline: [{ at: new Date().toISOString(), state: "draft", by: "applicant", note: "" }], questions: [], milestones: [], fundMinor: 0, fundCurrency: "" },
+    plan: [], site: null, review: { state: "draft", timeline: [{ at: new Date().toISOString(), state: "draft", by: "applicant", note: "" }], questions: [], milestones: [], fundMinor: 0, fundCurrency: "" },
     createdAt: new Date().toISOString(), raised: 0, backers: 0,
   };
   const reqs = { bank: true, face: true };
@@ -41,6 +45,7 @@ function fakeReview() {
     return [
       { key: "bank", ok: reqs.bank, label: "GLOOBAL Bank account open", hint: "Open it from Accounts." },
       { key: "plan", ok: sum === p.goal.minor && p.plan.length > 0, label: "Funding goal and a plan that adds up to it", hint: "Add plan lines that add up to the goal." },
+      ...(p.plan.some((l) => l.kind === "material" || l.kind === "tech") ? [{ key: "site", ok: Boolean(p.site), label: "Project site pinned on the map", hint: "Pin it under the plan." }] : []),
       { key: "document", ok: Boolean(p.attachment), label: "A document or photo", hint: "A quote or a photo." },
       { key: "face", ok: reqs.face, label: "Live face check done", hint: "Take the live photo." },
     ];
@@ -55,11 +60,11 @@ function fakeReview() {
   };
   const project = (viewer) => ({ ...p, isOwner: viewer === OWNER.symbolId, review: pub(viewer) });
   const step = (state, by, note = "") => p.review.timeline.push({ at: new Date().toISOString(), state, by, note });
-  // The conversation with GLOOBAL's assistant, as GLOOBAL's fixed questions
+  // The conversation with Hooman Intelligence, as GLOOBAL's fixed questions
   // would run it: two questions, then an analysis that says ready.
   const talkWorld = { talk: null };
   const QUESTIONS = ['Let\'s talk "River footbridge" through before it goes to GLOOBAL. What problem does it solve, and for whom?', "Where do the prices in your plan come from?"];
-  // The nine things the assistant must understand (server/lib/projectTalk.js).
+  // The nine things Hooman Intelligence must understand (server/lib/projectTalk.js).
   const NINE = [["problem", "The problem"], ["people", "Who benefits"], ["work", "What will be done"], ["person", "Why this person"], ["money", "The money"], ["steps", "The steps"], ["risks", "The risks"], ["after", "Afterwards"], ["fits", "It all fits"]];
   const nine = (clearUpTo) => NINE.map(([key, label], i) => ({ key, label, clear: "", status: i < clearUpTo ? "clear" : "missing", note: "", evidence: i < clearUpTo ? "Children cannot reach the school" : "" }));
   const ANALYSIS = { summary: "River footbridge (Pokhara): children cannot reach school across the river in the monsoon.", understanding: nine(9), understood: 9, of: 9, strengths: ["The plan adds up to the goal."], gaps: [], contradictions: [], risks: [], openQuestions: [], readiness: "ready", readinessLabel: "Ready for review", readinessWhy: "All nine are clear, and nothing contradicts.", milestones: [{ label: "Steel and cement", percent: 60 }, { label: "Labour", percent: 40 }], by: "practice" };
@@ -79,9 +84,16 @@ function installReview(context, world, viewer) {
       const rows = mine ? [p] : p.status === "published" ? [p] : [];
       return json(route, 200, { success: true, projects: rows.map(() => w.project(viewer)), counts: { Infrastructure: rows.length }, nextCursor: null });
     }
-    if (path === "/api/projects/p1/review") return json(route, 200, { success: true, review: w.pub(viewer), plan: p.plan, requirements: w.requirements(), reviewer: viewer === REVIEWER.symbolId });
+    if (path === "/api/projects/p1/review") return json(route, 200, { success: true, review: w.pub(viewer), plan: p.plan, site: p.site, requirements: w.requirements(), reviewer: viewer === REVIEWER.symbolId });
+    if (path === "/api/projects/p1/site") {
+      p.site = { lat: body.lat, lng: body.lng, label: body.label || "" };
+      return json(route, 200, { success: true, site: p.site });
+    }
     if (path === "/api/projects/p1/plan") {
-      const plan = (body.plan || []).map((l) => ({ label: l.label, amountMinor: Math.round(Number(l.amountMajor) * 100) }));
+      // As server/lib/projectReview.js validatePlan: wages are people × days × a day's pay.
+      const plan = (body.plan || []).map((l) => (l.kind === "human"
+        ? { label: l.label, kind: l.kind, people: Number(l.people), days: Number(l.days), rateMinor: Math.round(Number(l.rateMajor) * 100), amountMinor: Number(l.people) * Number(l.days) * Math.round(Number(l.rateMajor) * 100) }
+        : { label: l.label, kind: l.kind || "", amountMinor: Math.round(Number(l.amountMajor) * 100), ...(l.kind === "material" ? { quantity: Number(l.quantity), unit: l.unit, quality: l.quality, category: l.category, subcategory: l.subcategory } : {}) }));
       const sum = plan.reduce((a, l) => a + l.amountMinor, 0);
       if (sum !== p.goal.minor) return json(route, 400, { success: false, message: `The plan adds up to ${(sum / 100).toFixed(2)} but the goal is ${(p.goal.minor / 100).toFixed(2)}. Make them match.` });
       p.plan = plan;
@@ -121,9 +133,28 @@ function installReview(context, world, viewer) {
     if (path === "/api/projects/p1/talk/apply") {
       const missing = w.requirements().filter((r) => !r.ok);
       if (missing.length) return json(route, 409, { success: false, code: "requirements", message: "Before submitting: " + missing.map((m) => m.label.toLowerCase()).join("; ") + ".", requirements: w.requirements() });
-      p.status = "published"; p.review.state = "submitted"; w.step("submitted", "applicant", "Talked it through with GLOOBAL's assistant: ready for review");
+      p.status = "published"; p.review.state = "submitted"; w.step("submitted", "applicant", "Talked it through with Hooman Intelligence: ready for review");
       w.talkWorld.talk.state = "applied";
       return json(route, 200, { success: true, review: w.pub(viewer), talk: w.talkWorld.talk });
+    }
+    // GLOOBAL's ranked sellers for the material line (server/lib/projectSuppliers.js).
+    if (path === "/api/review/projects/p1/sellers") {
+      const lines = p.plan.map((l, index) => ({ ...l, index })).filter((l) => l.kind === "material").map((l) => ({
+        index: l.index, label: l.label, kind: l.kind, amountMinor: l.amountMinor, quantity: l.quantity, unit: l.unit, quality: l.quality, category: l.category, subcategory: l.subcategory,
+        pick: l.pick || null, radiusKm: 25, more: 0, note: "",
+        excluded: [{ name: "Owner's Own Steel", why: "one of the applicant's own shops" }],
+        candidates: [
+          { sellerId: "s1", symbolId: "SHOP1", name: "Sharma Steel & Cement", area: "Station Road, Pokhara", distanceKm: 3.2, item: null, estimateMinor: null, currency: "INR", rating: { avg: 4.8, count: 21 }, complaints: 0, sharePct: 5, recentPicks: 0, score: 86, rank: 1, reason: "no listed price yet — will quote · 3.2 km from the site · 4.8★ from 21 reviews · no complaints in a year · gives 5% Creator Share · not picked for another project lately" },
+          { sellerId: "s2", symbolId: "SHOP2", name: "Gupta Traders", area: "Lakeside", distanceKm: 7.9, item: null, estimateMinor: null, currency: "INR", rating: { avg: 3.9, count: 6 }, complaints: 1, sharePct: 0, recentPicks: 1, score: 61, rank: 2, reason: "no listed price yet — will quote · 7.9 km from the site · 3.9★ from 6 reviews · 1 complaint in a year · already picked for 1 other project lately" },
+        ],
+      }));
+      return json(route, 200, { success: true, site: p.site, currency: "INR", canPick: ["submitted", "under_review", "needs_info", "approved", "funding", "paused"].includes(p.review.state), lines });
+    }
+    const picked = path.match(/^\/api\/review\/projects\/p1\/plan\/(\d+)\/pick$/);
+    if (picked) {
+      const line = p.plan[Number(picked[1])];
+      line.pick = body.sellerId === "s1" ? { other: false, sellerId: "s1", name: "Sharma Steel & Cement", distanceKm: 3.2, reason: "", rank: 1, note: "" } : null;
+      return json(route, 200, { success: true, index: Number(picked[1]), pick: line.pick });
     }
     if (path === "/api/review/projects") {
       const want = url.searchParams.get("state");
@@ -190,19 +221,37 @@ test("the whole road: checklist, plan, submit, review, question, answer, approve
   assert.equal(await A.page.getByTestId("project-submit").count(), 0, "applying goes through the conversation");
   assert.match(await A.page.getByTestId("project-talk-open").innerText(), /Talk it through and apply/);
 
-  // The plan: two lines that add up to the goal of 50,000.
+  // The plan: two lines that add up to the goal of 50,000, each saying what
+  // kind of cost it is. Wages are worked out, never typed.
   world.reqs.bank = true;
   await tap(A.page.getByRole("button", { name: "Add line" }));
   await tap(A.page.getByRole("button", { name: "Add line" }));
   await A.page.getByLabel("Plan line 1", { exact: true }).fill("Steel and cement");
-  await A.page.getByLabel("Plan line 2", { exact: true }).fill("Labour");
+  await tap(A.page.getByTestId("plan-kind-0-material"));
+  await padFill(A.page, A.page.getByLabel("Plan line 1 quantity", { exact: true }), "1");
+  await A.page.getByLabel("Plan line 1 unit", { exact: true }).fill("lot");
+  assert.equal(await A.page.getByLabel("Plan line 1 sold by", { exact: true }).inputValue(), "building|", "a material line starts at Building materials");
+  await A.page.getByLabel("Plan line 1 sold by", { exact: true }).selectOption("building|steel");
   await padFill(A.page, A.page.getByLabel("Plan line 1 amount", { exact: true }), "30000");
-  await padFill(A.page, A.page.getByLabel("Plan line 2 amount", { exact: true }), "15000");
+  await A.page.getByLabel("Plan line 2", { exact: true }).fill("Labour");
+  await tap(A.page.getByTestId("plan-kind-1-human"));
+  await padFill(A.page, A.page.getByLabel("Plan line 2 people", { exact: true }), "5");
+  await padFill(A.page, A.page.getByLabel("Plan line 2 days", { exact: true }), "20");
+  await padFill(A.page, A.page.getByLabel("Plan line 2 day's pay", { exact: true }), "150");
+  assert.match(await A.page.getByTestId("plan-line-wages").innerText(), /= 15,000\.00 INR/);
   await tap(A.page.getByTestId("project-plan-save"));
   await A.page.getByTestId("project-review-error").waitFor({ timeout: 10000 });
   assert.match(await A.page.getByTestId("project-review-error").innerText(), /adds up to 45000\.00 but the goal is 50000\.00/);
-  await padFill(A.page, A.page.getByLabel("Plan line 2 amount", { exact: true }), "20000");
+  await padFill(A.page, A.page.getByLabel("Plan line 2 day's pay", { exact: true }), "200");
   await tap(A.page.getByTestId("project-plan-save"));
+  // Steel to buy: GLOOBAL needs the site, to find sellers near it.
+  await A.page.waitForFunction(() => document.querySelectorAll("[data-testid=project-requirement]").length === 5, null, { timeout: 10000 });
+  assert.equal(await A.page.evaluate(() => [...document.querySelectorAll("[data-testid=project-requirement]")].map((e) => e.dataset.ok).join("")), "11011", "only the site is left");
+  await A.page.getByTestId("site-paste").fill("https://www.google.com/maps/place/Kheri/@28.2096,83.9856,15z");
+  await tap(A.page.getByTestId("site-paste-go"));
+  await tap(A.page.getByTestId("site-save"));
+  await A.page.getByTestId("site-pinned").waitFor({ timeout: 10000 });
+  assert.deepEqual({ lat: world.p.site.lat, lng: world.p.site.lng }, { lat: 28.2096, lng: 83.9856 });
   await A.page.waitForFunction(() => [...document.querySelectorAll("[data-testid=project-requirement]")].every((e) => e.dataset.ok === "1"), null, { timeout: 10000 });
   // Talk it through: one question at a time, then the analysis, then a yes.
   await tap(A.page.getByTestId("project-talk-open"));
@@ -251,6 +300,14 @@ test("the whole road: checklist, plan, submit, review, question, answer, approve
   // Wait for Start to finish: its answer clears the question box, so a
   // question typed before it lands would be wiped (this used to flake).
   await R.page.waitForFunction(() => document.querySelector("[data-testid=project-review-desk] [data-testid=project-status]")?.dataset.state === "under_review", null, { timeout: 10000 });
+  // Who GLOOBAL buys the steel from: its first choice, confirmed in one tap.
+  const seller = R.page.getByTestId("desk-seller-line");
+  await seller.waitFor({ timeout: 10000 });
+  assert.match(await seller.innerText(), /GLOOBAL WOULD BUY FROM[\s\S]*Sharma Steel & Cement[\s\S]*3\.2 km from the site/);
+  assert.match(await R.page.getByTestId("desk-seller-excluded").innerText(), /Owner's Own Steel \(one of the applicant's own shops\)/);
+  await tap(R.page.getByTestId("desk-seller-confirm"));
+  await R.page.getByTestId("desk-seller-picked").waitFor({ timeout: 10000 });
+  assert.match(await R.page.getByTestId("desk-seller-picked").innerText(), /Buying from Sharma Steel & Cement[\s\S]*GLOOBAL's choice/);
   await R.page.getByTestId("desk-question").fill("Who owns the land the bridge stands on?");
   await tap(R.page.getByTestId("desk-ask"));
   await R.page.waitForFunction(() => document.querySelector("[data-testid=project-review-desk] [data-testid=project-status]")?.dataset.state === "needs_info", null, { timeout: 10000 });
@@ -261,6 +318,9 @@ test("the whole road: checklist, plan, submit, review, question, answer, approve
   await openProjects(A.page);
   await openProject(A.page);
   await A.page.getByTestId("project-question").waitFor({ timeout: 10000 });
+  // The applicant sees which seller GLOOBAL picked, and cannot change it.
+  assert.match(await A.page.getByTestId("plan-view-pick").innerText(), /GLOOBAL buys this from Sharma Steel & Cement · 3\.2 km from the site/);
+  assert.equal(await A.page.getByTestId("desk-seller-confirm").count(), 0);
   await A.page.getByTestId("project-answer").fill("The panchayat; the letter is attached.");
   await tap(A.page.getByTestId("project-answer-send"));
   await A.page.waitForFunction(() => document.querySelector("[data-testid=project-applicant-panel] [data-testid=project-status]")?.dataset.state === "under_review", null, { timeout: 10000 });

@@ -177,12 +177,70 @@ const ProjectSchema = new mongoose.Schema({
   // `milestones` are GLOOBAL's own payments, set on approval. `timeline` and
   // `questions` are what the applicant sees: every step, and every question
   // GLOOBAL asked with their answer.
+  //
+  // Each plan line also says what KIND of cost it is (lib/projectReview.js
+  // validatePlan), because GLOOBAL pays them differently:
+  //   material  cement, steel, bricks — bought by GLOOBAL itself from a
+  //             Bazaar seller GLOOBAL picks near the site (lib/
+  //             projectSuppliers.js), never chosen by the applicant
+  //   tech      laptops, solar panels, software — the same
+  //   human     wages: how many people, how many days, at what daily rate
+  //             (the amount is exactly people × days × rate)
+  //   other     anything else, paid against receipts
+  // A line saved before kinds existed has kind '' and is still valid; the
+  // conversation (lib/projectTalk.js) asks for the kind before The money
+  // can be clear.
   plan: {
     type: [new mongoose.Schema({
       label: { type: String, trim: true, required: true, maxlength: 80 },
       amountMinor: { type: Number, required: true, min: 1 },
+      kind: { type: String, enum: ['', 'material', 'tech', 'human', 'other'], default: '' },
+      // material / tech: how much of what, and where it is found in the Bazaar.
+      quantity: { type: Number, min: 0, default: undefined },
+      unit: { type: String, trim: true, maxlength: 20, default: undefined },
+      quality: { type: String, trim: true, maxlength: 120, default: undefined },
+      category: { type: String, trim: true, maxlength: 20, default: undefined },
+      subcategory: { type: String, trim: true, maxlength: 30, default: undefined },
+      // human: people × days × rateMinor (a day's pay for one person).
+      people: { type: Number, min: 0, default: undefined },
+      days: { type: Number, min: 0, default: undefined },
+      rateMinor: { type: Number, min: 0, default: undefined },
+      // GLOOBAL's choice of seller for a material or tech line, confirmed by
+      // a reviewer from the ranked list — or `other`: no suitable seller,
+      // paid against receipts. A snapshot of why, as it was when picked.
+      pick: {
+        type: new mongoose.Schema({
+          other: { type: Boolean, default: false },
+          sellerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+          sellerSymbolId: { type: String, default: '' },
+          name: { type: String, trim: true, maxlength: 80, default: '' },
+          distanceKm: { type: Number, default: null },
+          estimateMinor: { type: Number, default: null },
+          estimateCurrency: { type: String, default: '' },
+          reason: { type: String, trim: true, maxlength: 400, default: '' },
+          // Its place in GLOOBAL's ranking (1 = GLOOBAL's own first choice),
+          // and the reviewer's note when they chose another or none.
+          rank: { type: Number, default: null },
+          note: { type: String, trim: true, maxlength: 300, default: '' },
+          pickedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+          pickedAt: { type: Date, default: null },
+        }, { _id: false }),
+        default: undefined,
+      },
     }, { _id: false })],
     default: undefined,
+  },
+  // Where the work happens, pinned by the applicant: the sellers of a
+  // project's materials are found around it. Shown to the owner and
+  // GLOOBAL's reviewers only — a site can be somebody's own home.
+  site: {
+    type: new mongoose.Schema({
+      lat: { type: Number, required: true, min: -90, max: 90 },
+      lng: { type: Number, required: true, min: -180, max: 180 },
+      label: { type: String, trim: true, maxlength: 120, default: '' },
+      setAt: { type: Date, default: Date.now },
+    }, { _id: false }),
+    default: null,
   },
   review: {
     type: new mongoose.Schema({

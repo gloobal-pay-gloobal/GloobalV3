@@ -22,6 +22,10 @@
 var BAZAAR_CATEGORIES = [
   'food', 'grocery', 'sweets', 'fashion', 'beauty', 'health', 'electronics',
   'repair', 'home', 'education', 'travel', 'art', 'events',
+  // What building work is made of: cement, steel, sand, bricks… The shops
+  // GLOOBAL buys a Hooman Project's materials from (lib/projectSuppliers.js),
+  // and anyone building a house looks for.
+  'building',
   // People who are not a shop: someone who makes things or works for
   // themselves, and places people give to. Before these, a YouTuber, a
   // freelancer and a temple fund could only be "Other".
@@ -49,6 +53,7 @@ var BAZAAR_CATEGORY_WORDS = {
   education: ['education', 'tuition', 'ट्यूशन', 'coaching', 'classes', 'school', 'teacher'],
   travel: ['travel', 'taxi', 'cab', 'auto', 'transport', 'tour', 'bus'],
   art: ['art', 'craft', 'handmade', 'painting', 'pottery'],
+  building: ['building', 'construction', 'material', 'cement', 'siment', 'सीमेंट', 'steel', 'sariya', 'saria', 'सरिया', 'tmt', 'sand', 'reti', 'रेत', 'bajri', 'gitti', 'bricks', 'eent', 'ईंट', 'tiles', 'marble', 'paint', 'pipes', 'plywood', 'glass', 'solar'],
   events: ['events', 'wedding', 'shaadi', 'शादी', 'decoration', 'photographer', 'dj', 'catering'],
   farm: ['farm', 'farmer', 'kisan', 'किसान', 'kheti', 'खेती', 'dairy', 'poultry', 'nursery', 'seeds', 'khad', 'tractor', 'mandi', 'मंडी'],
   work: ['work', 'labour', 'labor', 'mazdoor', 'मज़दूर', 'majdoor', 'helper', 'maid', 'bai', 'guard', 'chowkidar', 'coolie', 'mali', 'माली', 'kaam', 'काम'],
@@ -75,6 +80,7 @@ var BAZAAR_SUBCATEGORIES = {
   education: ['tuition', 'coaching', 'music', 'dance', 'books', 'stationery', 'language', 'computerclass', 'sports', 'preschool', 'driving', 'library', 'craftclass'],
   travel: ['taxi', 'auto', 'tours', 'hotel', 'tickets', 'bikerental', 'courier', 'guide', 'tempo', 'erickshaw', 'rickshaw', 'driver', 'schoolvan'],
   art: ['handmade', 'pottery', 'painting', 'gifts', 'photography', 'design', 'framing', 'idol', 'bamboo', 'toys'],
+  building: ['cement', 'steel', 'sand', 'bricks', 'tiles', 'paint', 'plumbing', 'electrical', 'wood', 'glass', 'roofing', 'solar', 'machinery'],
   events: ['wedding', 'decoration', 'catering', 'dj', 'tent', 'flowers', 'photovideo', 'pandit', 'band', 'anchor', 'lights'],
   farm: ['farmer', 'dairyfarm', 'poultry', 'fishery', 'nursery', 'seeds', 'cattlefeed', 'honey', 'flowergrower', 'mandi', 'tractor'],
   work: ['labour', 'helper', 'porter', 'guard', 'sweeper', 'maid', 'babysitter', 'eldercare', 'homecook', 'gardener', 'rider', 'waiter'],

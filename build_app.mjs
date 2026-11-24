@@ -413,10 +413,14 @@ const FRONTEND_MODULES = [
   // Coverage screen, which renders all three of its exports. Nothing in it
   // moves money — see server/models/Contribution.js for why that matters.
   "features/projects/ProjectContributions.jsx",
+  // What the money buys, line by line, each line one kind of cost; the
+  // site pin; and GLOOBAL's choice of Bazaar seller on the reviewer desk
+  // (server/lib/projectSuppliers.js).
+  "features/projects/ProjectPlan.jsx",
   // Applying for GLOOBAL funding: status chips, the applicant's panel, the
   // reviewer desk (server/lib/projectReview.js).
   "features/projects/projectReview.jsx",
-  // Talk it through with GLOOBAL's assistant, then apply
+  // Talk it through with Hooman Intelligence, then apply
   // (server/lib/projectTalk.js); its analysis on the reviewer desk too.
   "features/projects/ProjectTalk.jsx",
   "features/coverage/worldDots.js",

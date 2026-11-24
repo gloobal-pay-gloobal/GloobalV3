@@ -400,7 +400,7 @@ const userSchema = new mongoose.Schema({
     category: {
       type: String,
       enum: ['', 'food', 'grocery', 'sweets', 'fashion', 'beauty', 'health', 'electronics',
-        'repair', 'home', 'education', 'travel', 'art', 'events', 'farm', 'work', 'creator', 'community', 'other'],
+        'repair', 'home', 'education', 'travel', 'art', 'events', 'building', 'farm', 'work', 'creator', 'community', 'other'],
       default: ''
     },
 
@@ -431,7 +431,7 @@ const userSchema = new mongoose.Schema({
     category2: {
       type: String,
       enum: ['', 'food', 'grocery', 'sweets', 'fashion', 'beauty', 'health', 'electronics',
-        'repair', 'home', 'education', 'travel', 'art', 'events', 'farm', 'work', 'creator', 'community', 'other'],
+        'repair', 'home', 'education', 'travel', 'art', 'events', 'building', 'farm', 'work', 'creator', 'community', 'other'],
       default: ''
     },
     subcategory: { type: String, trim: true, maxlength: 24, default: '' },

@@ -41,6 +41,7 @@
 //     and the applicant is notified of every decision.
 
 const crypto = require('crypto');
+const bazaar = require('./bazaar');
 
 const UPDATE_DUE_DAYS = 30;
 const DEFAULT_REAPPLY_DAYS = 30;
@@ -48,6 +49,11 @@ const REVIEWER_STAFF_ROLES = ['finance', 'projects'];
 const GIVING_OPEN = ['approved', 'funding', 'paused', 'completed'];
 const EDITABLE = ['draft', 'needs_info'];
 const DAY = 86400000;
+// What kind of cost a plan line is (models/Project.js explains each), and
+// the two that GLOOBAL buys itself from a seller it picks near the site.
+const LINE_KINDS = ['material', 'tech', 'human', 'other'];
+const KIND_WORDS = { material: 'Material', tech: 'Tech', human: 'People', other: 'Other' };
+const SELLER_KINDS = ['material', 'tech'];
 
 const list = (raw) => String(raw || '').split(',').map((s) => s.trim()).filter(Boolean);
 const text = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
@@ -55,6 +61,8 @@ const toMinor = (major) => {
   const n = Number(String(major == null ? '' : major).replace(/,/g, ''));
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
 };
+const num = (v) => (v === '' || v == null ? NaN : Number(String(v).replace(/,/g, '')));
+const major = (minor) => (minor / 100).toFixed(2);
 
 const STATE_WORDS = {
   draft: 'Draft',
@@ -153,22 +161,85 @@ function publicReview(project, { isOwner = false, isReviewer = false, now = Date
   return out;
 }
 
+// One plan line as typed. Answers { line } or { message }. A line with no
+// kind is one from before kinds existed: name and amount, as it always was.
+function validatePlanLine(raw) {
+  const line = raw && typeof raw === 'object' ? raw : {};
+  const label = text(line.label, 80);
+  if (!label) return { message: 'Every plan line needs a name.' };
+  const kind = LINE_KINDS.includes(line.kind) ? line.kind : '';
+  if (line.kind && !kind) return { message: `"${label}": say whether it is material, tech, people or other.` };
+  if (kind === 'human') {
+    // Wages: the amount is people × days × one day's pay, exactly.
+    const people = num(line.people);
+    const days = num(line.days);
+    const rateMinor = toMinor(line.rateMajor);
+    if (!(Number.isInteger(people) && people >= 1 && people <= 10000)) return { message: `"${label}": how many people?` };
+    if (!(Number.isInteger(days) && days >= 1 && days <= 3650)) return { message: `"${label}": for how many days?` };
+    if (!rateMinor) return { message: `"${label}": what is one person's pay for a day?` };
+    const wages = people * days * rateMinor;
+    const typed = line.amountMajor === undefined || line.amountMajor === null || line.amountMajor === '' ? wages : toMinor(line.amountMajor);
+    if (typed !== wages) return { message: `"${label}": ${people} people × ${days} days × ${major(rateMinor)} a day is ${major(wages)}, not ${typed ? major(typed) : 'that'}.` };
+    return { line: { label, amountMinor: wages, kind, people, days, rateMinor } };
+  }
+  const amountMinor = toMinor(line.amountMajor);
+  if (!amountMinor) return { message: `"${label}" needs an amount.` };
+  if (!SELLER_KINDS.includes(kind)) return { line: kind ? { label, amountMinor, kind } : { label, amountMinor } };
+  // Material and tech: how much of what, and which kind of Bazaar shop
+  // sells it — what GLOOBAL needs to find a seller near the site.
+  const quantity = num(line.quantity);
+  const unit = text(line.unit, 20);
+  const category = text(line.category, 20);
+  const subcategory = text(line.subcategory, 30);
+  if (!(quantity > 0 && quantity <= 1e9)) return { message: `"${label}": how much is needed?` };
+  if (!unit) return { message: `"${label}": in what unit — bags, tonnes, pieces…?` };
+  if (!bazaar.BAZAAR_CATEGORIES.includes(category) || category === 'other') return { message: `"${label}": which kind of Bazaar shop sells it?` };
+  if (subcategory && !bazaar.bazaarSubcategoryValid(category, subcategory)) return { message: `"${label}": pick the shop's kind from the list.` };
+  return { line: { label, amountMinor, kind, quantity: Math.round(quantity * 1000) / 1000, unit, quality: text(line.quality, 120), category, subcategory } };
+}
+
 function validatePlan(rawPlan, goalMinor) {
   if (!Array.isArray(rawPlan) || !rawPlan.length) return { ok: false, message: 'Add at least one line to the plan: what the money is for.' };
   if (rawPlan.length > 12) return { ok: false, message: 'Keep the plan to 12 lines or fewer.' };
   const plan = [];
-  for (const line of rawPlan) {
-    const label = text(line && line.label, 80);
-    const amountMinor = toMinor(line && line.amountMajor);
-    if (!label) return { ok: false, message: 'Every plan line needs a name.' };
-    if (!amountMinor) return { ok: false, message: `"${label}" needs an amount.` };
-    plan.push({ label, amountMinor });
+  for (const raw of rawPlan) {
+    const got = validatePlanLine(raw);
+    if (!got.line) return { ok: false, message: got.message };
+    plan.push(got.line);
   }
   const sum = plan.reduce((a, l) => a + l.amountMinor, 0);
   if (goalMinor != null && sum !== goalMinor) {
     return { ok: false, message: `The plan adds up to ${(sum / 100).toFixed(2)} but the goal is ${(goalMinor / 100).toFixed(2)}. Make them match.` };
   }
   return { ok: true, plan, sumMinor: sum };
+}
+
+// The same thing to buy, so a seller GLOOBAL already picked for it stays
+// picked when the applicant edits another line (while answering a question).
+function samePurchase(a, b) {
+  if (!a || !b || !SELLER_KINDS.includes(a.kind) || a.kind !== b.kind) return false;
+  return ['label', 'unit', 'quality', 'category', 'subcategory'].every((k) => String(a[k] || '') === String(b[k] || '')) && Number(a.quantity) === Number(b.quantity);
+}
+
+const needsSite = (plan) => (plan || []).some((l) => SELLER_KINDS.includes(l.kind));
+const siteOut = (site) => (site && Number.isFinite(Number(site.lat)) ? { lat: site.lat, lng: site.lng, label: site.label || '', setAt: site.setAt || null } : null);
+
+// A plan as its reader sees it. The reviewers see everything about a
+// pick; the applicant sees which seller GLOOBAL chose and why, not the
+// reviewer's own note or who pressed the button.
+function planOut(plan, { reviewer = false } = {}) {
+  return (plan || []).map((raw) => {
+    const l = raw && raw.toObject ? raw.toObject() : raw;
+    const out = { label: l.label, amountMinor: l.amountMinor, kind: l.kind || '' };
+    if (SELLER_KINDS.includes(l.kind)) Object.assign(out, { quantity: l.quantity, unit: l.unit || '', quality: l.quality || '', category: l.category || '', subcategory: l.subcategory || '' });
+    if (l.kind === 'human') Object.assign(out, { people: l.people, days: l.days, rateMinor: l.rateMinor });
+    if (l.pick && (l.pick.other || l.pick.sellerId)) {
+      const p = l.pick;
+      out.pick = { other: Boolean(p.other), name: p.name || '', distanceKm: p.distanceKm == null ? null : p.distanceKm, estimateMinor: p.estimateMinor == null ? null : p.estimateMinor, estimateCurrency: p.estimateCurrency || '', reason: p.reason || '', pickedAt: p.pickedAt || null };
+      if (reviewer) Object.assign(out.pick, { sellerId: p.sellerId ? String(p.sellerId) : null, sellerSymbolId: p.sellerSymbolId || '', rank: p.rank == null ? null : p.rank, note: p.note || '', pickedBy: p.pickedBy ? String(p.pickedBy) : null });
+    }
+    return out;
+  });
 }
 
 function createProjectReview(deps) {
@@ -194,12 +265,18 @@ function createProjectReview(deps) {
     ]);
     const planSum = (project.plan || []).reduce((a, l) => a + (l.amountMinor || 0), 0);
     const goalOk = project.goalMinor > 0 && Boolean(project.goalCurrency);
-    return [
+    const list = [
       { key: 'bank', ok: Boolean(bank), label: 'GLOOBAL Bank account open', hint: 'Open it from Accounts → GLOOBAL Bank. Funding is paid into it.' },
       { key: 'plan', ok: goalOk && planSum === project.goalMinor, label: 'Funding goal and a plan that adds up to it', hint: goalOk ? 'Add plan lines that add up to the goal.' : 'Set a funding goal, then the plan.' },
       { key: 'document', ok: Boolean(project.attachment), label: 'A document or photo', hint: 'A quote, a photo of the site, a registration.' },
       { key: 'face', ok: Boolean(face), label: 'Live face check done', hint: 'Profile → your photo → take the live photo.' },
     ];
+    // Materials and tech are bought by GLOOBAL from sellers near the site,
+    // so a plan that has them needs the site pinned.
+    if (needsSite(project.plan)) {
+      list.splice(2, 0, { key: 'site', ok: Boolean(siteOut(project.site)), label: 'Project site pinned on the map', hint: 'GLOOBAL buys the materials itself, from sellers near the site. Pin it under the plan.' });
+    }
+    return list;
   }
 
   const step = (state, by, note = '') => ({ at: new Date(now()), state, by, note: text(note, 600) });
@@ -236,9 +313,37 @@ function createProjectReview(deps) {
     if (project.review && !inState(project, EDITABLE)) return refuse(res, 409, 'The plan cannot change while GLOOBAL is reviewing or funding it.');
     const checked = validatePlan(req.body && req.body.plan, project.goalMinor != null ? project.goalMinor : null);
     if (!checked.ok) return refuse(res, 400, checked.message);
-    project.plan = checked.plan;
+    const before = (project.plan || []).map((l) => (l && l.toObject ? l.toObject() : l));
+    project.plan = checked.plan.map((line, i) => {
+      const kept = [before[i], ...before].find((old) => old && old.pick && samePurchase(old, line));
+      return kept ? { ...line, pick: kept.pick } : line;
+    });
+    project.markModified('plan');
     await project.save();
-    return res.json({ success: true, plan: project.plan });
+    return res.json({ success: true, plan: planOut(project.plan) });
+  }
+
+  // Where the work happens. From the phone's location on the site, or a
+  // point pasted from a map. Moves only while the plan can change.
+  async function setSite(req, res) {
+    const got = await ownProject(req);
+    if (!got.project) return res.status(got.status).json(got.body);
+    const { project } = got;
+    if (project.review && !inState(project, EDITABLE)) return refuse(res, 409, 'The site cannot move while GLOOBAL is reviewing or funding it.');
+    const body = req.body || {};
+    if (body.clear) {
+      project.site = null;
+      await project.save();
+      return res.json({ success: true, site: null });
+    }
+    const lat = num(body.lat);
+    const lng = num(body.lng);
+    if (!(Number.isFinite(lat) && Math.abs(lat) <= 90 && Number.isFinite(lng) && Math.abs(lng) <= 180) || (lat === 0 && lng === 0)) {
+      return refuse(res, 400, 'That is not a place on the map.');
+    }
+    project.site = { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6, label: text(body.label, 120), setAt: new Date(now()) };
+    await project.save();
+    return res.json({ success: true, site: siteOut(project.site) });
   }
 
   async function getReview(req, res) {
@@ -250,7 +355,8 @@ function createProjectReview(deps) {
     return res.json({
       success: true,
       review: publicReview(project, { isOwner, isReviewer: reviewer, now: now() }),
-      plan: project.plan || [],
+      plan: planOut(project.plan, { reviewer: reviewer && !isOwner }),
+      site: siteOut(project.site),
       requirements: await requirements(project),
       reviewer,
     });
@@ -545,6 +651,7 @@ function createProjectReview(deps) {
     };
     app.get('/api/projects/:id/review', lookupLimit, requireAuth, wrap(getReview));
     app.put('/api/projects/:id/plan', writeLimit, requireAuth, wrap(setPlan));
+    app.put('/api/projects/:id/site', writeLimit, requireAuth, wrap(setSite));
     app.post('/api/projects/:id/submit', writeLimit, requireAuth, wrap(submit));
     app.post('/api/projects/:id/answer', writeLimit, requireAuth, wrap(answer));
     app.post('/api/projects/:id/withdraw', writeLimit, requireAuth, wrap(withdraw));
@@ -562,9 +669,12 @@ function createProjectReview(deps) {
   }
 
   return {
-    mount, isReviewer, requirements, publicReview, givingOpen, effectiveState, sendForReview, reply,
-    handlers: { getReview, setPlan, submit, answer, withdraw, reapply, postUpdate, queue, start, ask, approve, decline, pause, resume, markPaid, requireReviewer },
+    mount, isReviewer, requirements, publicReview, givingOpen, effectiveState, sendForReview, reply, reviewedProject,
+    handlers: { getReview, setPlan, setSite, submit, answer, withdraw, reapply, postUpdate, queue, start, ask, approve, decline, pause, resume, markPaid, requireReviewer },
   };
 }
 
-module.exports = { createProjectReview, publicReview, givingOpen, effectiveState, validatePlan, UPDATE_DUE_DAYS, STATE_WORDS };
+module.exports = {
+  createProjectReview, publicReview, givingOpen, effectiveState, validatePlan, validatePlanLine, planOut, siteOut, needsSite, samePurchase,
+  UPDATE_DUE_DAYS, STATE_WORDS, LINE_KINDS, KIND_WORDS, SELLER_KINDS,
+};

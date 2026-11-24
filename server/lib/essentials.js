@@ -27,18 +27,14 @@
 //
 // Only between GLOOBAL Banks: a draw needs an open GLOOBAL Bank account.
 //
-// CHILDREN. A child has no account: their guardian adds them and draws the
-// child's own daily amount, into the guardian's GLOOBAL Bank balance. Those
-// rows carry `metadata.childId` and `metadata.heldOnUserId` = the guardian,
-// so the lock is on the guardian (usedBy counts them) while the guardian's
-// own daily amount and each child's are counted apart. One guardian per
-// child; under 18 only.
+// Used-for-a-child (a nominee) will be written with `metadata.heldOnUserId`
+// set to the parent; `usedBy` below already counts those rows, so that part
+// changes nothing here when it arrives.
 
 const mongoose = require('mongoose');
 const Disbursement = require('../models/Disbursement');
 const EssentialsPool = require('../models/EssentialsPool');
 const EssentialsPoolAdd = require('../models/EssentialsPoolAdd');
-const EssentialsChild = require('../models/EssentialsChild');
 const { recordDisbursement } = require('./disbursement');
 const { decimalsFor } = require('./currencyDecimals');
 
@@ -102,23 +98,6 @@ const usedBy = (userId) => ({
   reason: REASON,
   $or: [{ userId, 'metadata.heldOnUserId': { $exists: false } }, { 'metadata.heldOnUserId': userId }],
 });
-// Today's own amount counts only what the account drew for itself; each
-// child's counts only what was drawn for that child.
-const ownDraws = (userId) => ({ reason: REASON, userId, 'metadata.childId': { $exists: false } });
-const childDraws = (childId) => ({ reason: REASON, 'metadata.childId': childId });
-
-// How many children one guardian can add. A guard against misuse until
-// identity checks are connected; ESSENTIALS_CHILDREN_MAX changes it.
-const CHILDREN_MAX = Math.max(1, Number(process.env.ESSENTIALS_CHILDREN_MAX) || 10);
-const ADULT_AGE = 18;
-function ageOn(birthDate, now = new Date()) {
-  const b = new Date(birthDate);
-  let age = now.getUTCFullYear() - b.getUTCFullYear();
-  const m = now.getUTCMonth() - b.getUTCMonth();
-  if (m < 0 || (m === 0 && now.getUTCDate() < b.getUTCDate())) age -= 1;
-  return age;
-}
-const childKeyOf = (name, birthDate) => `${String(name || '').trim().toLowerCase().replace(/\s+/g, ' ')}|${new Date(birthDate).toISOString().slice(0, 10)}`;
 
 function createEssentials({
   User, requireAuth, writeLimit, lookupLimit, withAtomicSession,
@@ -189,7 +168,7 @@ function createEssentials({
     const id = user._id;
     const [limit, usedToday, used, months, bankOpen] = await Promise.all([
       dailyLimit(iso, currency),
-      sumOf({ ...ownDraws(id), createdAt: { $gte: startOfDay() } }),
+      sumOf({ ...usedBy(id), createdAt: { $gte: startOfDay() } }),
       heldFor(id),
       Disbursement.aggregate([
         { $match: { ...usedBy(id), createdAt: { $gte: new Date(Date.now() - 400 * 86400000) } } },
@@ -202,10 +181,14 @@ function createEssentials({
     const held = toMinor(used, currency);
     const row = localRow(iso);
     const pool = limit > 0 ? await poolOf(iso) : null;
-    const children = await childrenOf(user, limit, currency);
     return {
       currency,
       bankOpen: Boolean(bankOpen),
+      // A person looked after by a helper (lib/care.js): their own day, in
+      // their own account, starting once their document has passed its
+      // automatic check — until then this says it is waiting for it.
+      lookedAfter: Boolean(user.care && user.care.managed),
+      waitingForCheck: Boolean(user.care && user.care.managed && !bankOpen),
       // Where Essentials stand in this country: not set up yet, or set in its
       // own money ("set" by GLOOBAL, or "assumed" until checked locally).
       available: limit > 0,
@@ -223,59 +206,7 @@ function createEssentials({
       free: toMinor(Math.max(0, balance - held), currency),
       short: toMinor(Math.max(0, held - balance), currency),
       months: months.slice(-12).map((m) => ({ month: m._id, used: toMinor(m.t, currency), days: m.days.length })),
-      // The children this account uses Essentials for, each with today's own amount.
-      children,
-      childrenMax: CHILDREN_MAX,
     };
-  }
-
-  // ── CHILDREN ───────────────────────────────────────────────────────────
-  // A child who has turned 18 is ended here, the first time it is read.
-  async function childrenOf(user, limit, currency) {
-    const rows = await EssentialsChild.find({ guardian: user._id, endedAt: null }).sort({ createdAt: 1 }).lean();
-    const out = [];
-    for (const c of rows) {
-      if (ageOn(c.birthDate) >= ADULT_AGE) { await EssentialsChild.updateOne({ _id: c._id, endedAt: null }, { $set: { endedAt: new Date(), endedReason: 'adult' } }); continue; }
-      const [today, ever] = await Promise.all([sumOf({ ...childDraws(c._id), createdAt: { $gte: startOfDay() } }), sumOf(childDraws(c._id))]);
-      out.push({ id: String(c._id), name: c.name, age: ageOn(c.birthDate), usedToday: toMinor(today, currency), leftToday: toMinor(Math.max(0, limit - today), currency), used: toMinor(ever, currency) });
-    }
-    return out;
-  }
-  class ChildError extends Error { constructor(code, message, status = 409) { super(message); this.code = code; this.status = status; } }
-  async function addChild(user, { name, birthDate }) {
-    const clean = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
-    if (clean.length < 2) throw new ChildError('name', 'Enter the child\'s name.', 400);
-    const born = new Date(`${String(birthDate || '').slice(0, 10)}T00:00:00.000Z`);
-    if (Number.isNaN(born.getTime()) || born > new Date()) throw new ChildError('birth_date', 'Enter the child\'s date of birth.', 400);
-    if (ageOn(born) >= ADULT_AGE) throw new ChildError('adult', 'At 18, a person has Essentials of their own. Ask them to open their own GLOOBAL account.');
-    const iso = accountCountryIso(user);
-    if (!localRow(iso)) throw new ChildError('not_available', 'Essentials are not available in your country yet.');
-    const count = await EssentialsChild.countDocuments({ guardian: user._id, endedAt: null });
-    if (count >= CHILDREN_MAX) throw new ChildError('too_many', `You can add up to ${CHILDREN_MAX} children.`);
-    const childKey = childKeyOf(clean, born);
-    const taken = await EssentialsChild.findOne({ childKey }).lean();
-    if (taken) {
-      if (String(taken.guardian) === String(user._id) && taken.endedReason === 'removed') {
-        await EssentialsChild.updateOne({ _id: taken._id }, { $set: { endedAt: null, endedReason: null, name: clean } });
-        return { id: String(taken._id) };
-      }
-      throw new ChildError('has_guardian', String(taken.guardian) === String(user._id) ? 'This child is already added.' : 'This child already has a guardian on GLOOBAL. A child can have one guardian.');
-    }
-    try {
-      const row = await EssentialsChild.create({ guardian: user._id, name: clean, birthDate: born, childKey, countryIso: String(iso).toUpperCase() });
-      return { id: String(row._id) };
-    } catch (error) {
-      if (error && error.code === 11000) throw new ChildError('has_guardian', 'This child already has a guardian on GLOOBAL. A child can have one guardian.');
-      throw error;
-    }
-  }
-  // Removing a child stops new draws for them. What was already used stays
-  // in GLOOBAL on the guardian — it is never undone.
-  async function removeChild(user, childId) {
-    if (!mongoose.isValidObjectId(childId)) throw new ChildError('not_found', 'Child not found.', 404);
-    const r = await EssentialsChild.updateOne({ _id: childId, guardian: user._id, endedAt: null }, { $set: { endedAt: new Date(), endedReason: 'removed' } });
-    if (!r.matchedCount && !r.n) throw new ChildError('not_found', 'Child not found.', 404);
-    return true;
   }
 
   function mount(app) {
@@ -316,29 +247,6 @@ function createEssentials({
       }
     });
 
-    // Children: add one (name + date of birth), or remove one.
-    const childFail = (res, error) => {
-      if (error instanceof ChildError) return res.status(error.status).json({ success: false, code: error.code, message: error.message });
-      console.error('Essentials child error:', error);
-      return res.status(500).json({ success: false, message: 'Could not do that just now.' });
-    };
-    app.post('/api/essentials/children', writeLimit, requireAuth, async (req, res) => {
-      try {
-        const user = await User.findById(req.authUser._id).lean();
-        if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
-        const r = await addChild(user, req.body || {});
-        return res.status(201).json({ success: true, ...r, ...(await summary(user)) });
-      } catch (error) { return childFail(res, error); }
-    });
-    app.delete('/api/essentials/children/:id', writeLimit, requireAuth, async (req, res) => {
-      try {
-        const user = await User.findById(req.authUser._id).lean();
-        if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
-        await removeChild(user, req.params.id);
-        return res.json({ success: true, ...(await summary(user)) });
-      } catch (error) { return childFail(res, error); }
-    });
-
     // Draw up to `amount` of today's Essentials into the GLOOBAL Bank balance.
     // Never more than what is left today, never more than asked for.
     app.post('/api/essentials/draw', writeLimit, requireAuth, async (req, res) => {
@@ -351,6 +259,9 @@ function createEssentials({
         const user = await User.findById(req.authUser._id);
         if (!user) return res.status(404).json({ success: false, message: 'Account not found.' });
         if (!(await isBankOpen(user._id))) {
+          if (user.care && user.care.managed) {
+            return res.status(409).json({ success: false, code: 'waiting_for_check', applied: 0, message: 'Their Essentials start once their document has been checked.' });
+          }
           return res.status(409).json({ success: false, code: 'bank_closed', applied: 0, message: 'Open GLOOBAL Bank to use Essentials. Essentials only moves between GLOOBAL Banks.' });
         }
         const currency = await resolveOwnCurrency(user);
@@ -363,18 +274,10 @@ function createEssentials({
 
         const limit = await dailyLimit(countryIso, currency);
         if (!(limit > 0)) return res.status(409).json({ success: false, code: 'not_available', applied: 0, message: 'Essentials are not available in your country yet.' });
-        // For one of this guardian's children: the child's own daily amount,
-        // paid to the guardian, held on the guardian.
-        let child = null;
-        if (body.forChild) {
-          child = mongoose.isValidObjectId(body.forChild) ? await EssentialsChild.findOne({ _id: body.forChild, guardian: user._id, endedAt: null }).lean() : null;
-          if (!child) return res.status(404).json({ success: false, code: 'child', applied: 0, message: 'Child not found.' });
-          if (ageOn(child.birthDate) >= ADULT_AGE) return res.status(409).json({ success: false, code: 'adult', applied: 0, message: 'At 18, a person has Essentials of their own.' });
-        }
         let applied = 0;
         let poolEmpty = false;
         await withAtomicSession(async (session) => {
-          const usedToday = await sumOf({ ...(child ? childDraws(child._id) : ownDraws(user._id)), createdAt: { $gte: startOfDay() } }, session);
+          const usedToday = await sumOf({ ...usedBy(user._id), createdAt: { $gte: startOfDay() } }, session);
           applied = toMinor(Math.min(requested, Math.max(0, limit - usedToday)), currency);
           if (!(applied > 0)) { applied = 0; return; }
           // Out of the country's local pool, in the same write as the payout:
@@ -387,7 +290,7 @@ function createEssentials({
           if (!took) { poolEmpty = true; applied = 0; return; }
           await recordDisbursement({
             user, amount: applied, currency, countryIso, reason: REASON, idempotencyKey,
-            metadata: Object.assign({ day: dayKey(), requested: toMinor(requested, currency), dailyLimit: limit, pool: String(countryIso).toUpperCase(), table: ESSENTIALS_TABLE_VERSION }, child ? { childId: child._id, childName: child.name, heldOnUserId: user._id } : {}),
+            metadata: { day: dayKey(), requested: toMinor(requested, currency), dailyLimit: limit, pool: String(countryIso).toUpperCase(), table: ESSENTIALS_TABLE_VERSION },
             session,
           });
         });
@@ -403,7 +306,7 @@ function createEssentials({
     });
   }
 
-  return { mount, heldFor, summary, dailyLimit, addToPool, seedPools, poolOf, addChild, removeChild, childrenOf };
+  return { mount, heldFor, summary, dailyLimit, addToPool, seedPools, poolOf };
 }
 
-module.exports = { createEssentials, ageOn, childKeyOf, ADULT_AGE, ESSENTIALS_LOCAL_BY_ISO, ESSENTIALS_TABLE_VERSION, POOL_LOW_DRAWS, localRow, REASON };
+module.exports = { createEssentials, ESSENTIALS_LOCAL_BY_ISO, ESSENTIALS_TABLE_VERSION, POOL_LOW_DRAWS, localRow, REASON };

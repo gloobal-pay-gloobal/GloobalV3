@@ -57,6 +57,16 @@ const userSchema = new mongoose.Schema({
   // balance), and the payment stays recorded against the shop, which is
   // what the per-shop totals are read from. See lib/shops.js.
   shopOwnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+  // ── LOOKED AFTER BY A HELPER (lib/care.js) ───────────────────────────
+  // A person who cannot use GLOOBAL themselves — a child, someone older,
+  // someone with a disability — has their own GLOOBAL ID and their own
+  // Essentials, and a helper uses the account for them. Nobody signs in to
+  // it with a phone or a PIN of its own until it is handed over.
+  care: {
+    managed: { type: Boolean, default: false, index: true },
+    birthDate: { type: Date, default: null },
+    addedAt: { type: Date, default: null },
+  },
   // Helloo Social: each social profile (yourself, your shop side, each
   // shop) is off until its owner turns it on. Unset = never chosen: on
   // only if it already has posts from before this switch existed.

@@ -180,7 +180,11 @@ function maskedMobile(user) {
   return m.length >= 2 ? `••••• •••${m.slice(-2)}` : '';
 }
 
-function createBank({ User, Pin, requireAuth, requireSelf, writeLimit, lookupLimit, credentialLimit, pin }) {
+// `alsoOpen(userId)`: an account counted as open without a GLOOBAL Bank
+// opening of its own — a person looked after by a helper, once their
+// document has passed its check (lib/care.js). They cannot open one: they
+// have no phone, no Aadhaar OTP and no selfie of their own to give.
+function createBank({ User, Pin, requireAuth, requireSelf, writeLimit, lookupLimit, credentialLimit, pin, alsoOpen = async () => false }) {
   const findUser = async (req) => {
     const sid = clip(req.params.symbolId || (req.body && req.body.symbolId), 64);
     if (req.authUser && (req.authUser.symbolId === sid)) return req.authUser;
@@ -447,10 +451,11 @@ function createBank({ User, Pin, requireAuth, requireSelf, writeLimit, lookupLim
 
   // For other routes: is this user's account open?
   async function isOpen(userId) {
-    return Boolean(await BankAccount.exists({ userId, status: 'open' }));
+    if (await BankAccount.exists({ userId, status: 'open' })) return true;
+    try { return Boolean(await alsoOpen(userId)); } catch (error) { return false; }
   }
 
   return { mount, isOpen };
 }
 
-module.exports = { createBank, validAadhaar, validPan, verhoeffValid, problemsWith, ageOn };
+module.exports = { createBank, validAadhaar, validPan, verhoeffValid, problemsWith, ageOn, idHash };

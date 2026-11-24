@@ -1039,6 +1039,14 @@ const resolveAuthTokenSecret = () => {
 
 const AUTH_TOKEN_SECRET = resolveAuthTokenSecret();
 
+// People looked after by a helper (lib/care.js). The helper's session is
+// read in authenticatedUser and requireAuth below; `care` is made further
+// down, once the bank and the PIN helpers it needs exist.
+const { runActing } = require('./lib/actingContext');
+const careLib = require('./lib/care');
+const CareLink = require('./models/CareLink');
+let care = null;
+
 const base64url = (input) => Buffer.from(input).toString('base64url');
 
 const signAuthPayload = (encodedPayload) =>
@@ -1054,6 +1062,25 @@ const issueAuthToken = (user) => {
     })
   );
 
+  return `${payload}.${signAuthPayload(payload)}`;
+};
+
+// A helper's session for the account of someone they look after
+// (lib/care.js): the token opens that account (`sub`) and names the helper
+// (`act`). Every request with it is checked against an active helper link,
+// so a helper who steps back, or is removed, is out at once. An hour, then
+// the helper opens it again with their PIN; it is renewed while in use.
+const ACTING_TOKEN_TTL_MS = 60 * 60 * 1000;
+const issueActingToken = (dependent, helper) => {
+  const payload = base64url(
+    JSON.stringify({
+      sub: String(dependent._id),
+      symbolId: dependent.symbolId,
+      act: String(helper._id),
+      iat: Date.now(),
+      exp: Date.now() + ACTING_TOKEN_TTL_MS
+    })
+  );
   return `${payload}.${signAuthPayload(payload)}`;
 };
 
@@ -1112,6 +1139,22 @@ const authenticatedUser = async (req) => {
   // person out of the device they just used to change their PIN.
   if (user.credentialsInvalidatedAt && typeof claims.iat === 'number') {
     if (claims.iat < new Date(user.credentialsInvalidatedAt).getTime()) return null;
+  }
+
+  // A helper's session (lib/care.js): good only while the helper is still
+  // this person's helper, and only while the helper's own sessions are —
+  // a helper who changes their PIN is signed out of the people they help
+  // too.
+  if (claims.act) {
+    if (!(user.care && user.care.managed)) return null;
+    const helper = await User.findById(claims.act).select('credentialsInvalidatedAt').lean();
+    if (!helper) return null;
+    if (helper.credentialsInvalidatedAt && typeof claims.iat === 'number' && claims.iat < new Date(helper.credentialsInvalidatedAt).getTime()) return null;
+    if (!(await CareLink.exists({ helper: claims.act, dependent: user._id, status: 'active' }))) return null;
+    if (req) req.actingHelperId = String(claims.act);
+  } else if (user.care && user.care.managed) {
+    // Nobody signs in to a looked-after account on its own.
+    return null;
   }
 
   // The token names an ID the account no longer uses — it was renamed through
@@ -1177,6 +1220,23 @@ const requireAuth = async (req, res, next) => {
 
   req.authUser = user;
   maybeRefreshAuthToken(req, res, user);
+  if (req.actingHelperId) {
+    // A helper using the account of someone they look after: never who the
+    // account IS (its PIN, passkeys, face, ID, bank opening), and every
+    // write written down as theirs. Everything after runs knowing it.
+    const path = String(req.originalUrl || req.url || '').split('?')[0];
+    if (careLib.refusedWhileHelping(req.method, path)) {
+      return res.status(403).json({ success: false, code: 'not_while_helping', message: 'This can only be done by the person themselves, not by a helper.' });
+    }
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+      const dependentId = user._id;
+      const helperId = req.actingHelperId;
+      res.on('finish', () => {
+        if (care) care.recordAction({ dependentId, helperId, method: req.method, path, status: res.statusCode, body: req.body });
+      });
+    }
+    return runActing({ dependentId: user._id, helperId: req.actingHelperId }, () => next());
+  }
   next();
 };
 
@@ -1203,6 +1263,11 @@ const maybeRefreshAuthToken = (req, res, user) => {
   try {
     const claims = readAuthToken(bearerFrom(req));
     if (!claims || typeof claims.exp !== 'number') return;
+    if (claims.act) {
+      if (claims.exp - Date.now() > ACTING_TOKEN_TTL_MS / 2) return;
+      res.set(AUTH_TOKEN_REFRESH_HEADER, issueActingToken(user, { _id: claims.act }));
+      return;
+    }
     if (claims.exp - Date.now() > AUTH_TOKEN_TTL_MS / 2) return;
     res.set(AUTH_TOKEN_REFRESH_HEADER, issueAuthToken(user));
   } catch (error) {
@@ -9574,8 +9639,29 @@ app.get('/api/corridor/limit', lookupLimit, requireAuth, requireSelf('from'), as
 const gloobalBank = require('./lib/bank').createBank({
   User, Pin, requireAuth, requireSelf, writeLimit, lookupLimit, credentialLimit,
   pin: { beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },
+  // A person looked after by a helper counts as open once their document
+  // has passed its automatic check (lib/care.js).
+  alsoOpen: (userId) => (care ? care.isVerified(userId) : false),
 });
 gloobalBank.mount(app);
+
+// People looked after by a helper: children, people who are older, people
+// with a disability — each with their own GLOOBAL ID and Essentials, used
+// for them by someone close (lib/care.js, lib/identityChecks.js).
+care = careLib.createCare({
+  User, CareLink, CareDocument: require('./models/CareDocument'), CareAction: require('./models/CareAction'),
+  BankAccount: require('./models/BankAccount'),
+  requireAuth, writeLimit, lookupLimit, credentialLimit,
+  withAtomicSession: (work) => withAtomicSession(work),
+  mintSymbolId: () => mintShopSymbolId(),
+  issueActingToken,
+  isBankOpen: (userId) => gloobalBank.isOpen(userId),
+  accountCountryIso: (u) => accountCountryIso(u),
+  pin: { Pin, beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },
+  bcrypt,
+});
+care.mount(app);
+if (process.env.NODE_ENV !== 'test') care.startChecking();
 
 // Money in and out of GLOOBAL Bank: add money, send to your own bank, the
 // history of both, and "Report a problem" on each. Test mode until a payment

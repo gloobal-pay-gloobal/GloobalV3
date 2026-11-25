@@ -120,9 +120,16 @@ describe("the wiring", () => {
   });
 
   test("registration sends the face with the account, so a duplicate is refused before it exists", () => {
+    // Since 25 Nov the account is made by the shared gloobalCreateAccount
+    // (features/entry/entrySteps.jsx), which GLOOBAL's own registration and
+    // Helloo's (GloobalJoinFlow) both call.
     const app = readSource("frontend/App.jsx");
-    assert.match(app, /face: liveRegResult && liveRegResult\.photo === profilePhoto\s*\? \{ descriptor: liveRegResult\.descriptor, model: liveRegResult\.model \}/);
-    assert.match(app, /liveFaceSave\(newSymbolId, liveRegResult\)/);
+    assert.match(app, /gloobalCreateAccount\(\{[\s\S]{0,300}photo: profilePhoto,\s*live: liveRegResult/);
+    const shared = readSource("frontend/features/entry/entrySteps.jsx");
+    assert.match(shared, /const liveOk = Boolean\(live && live\.photo === photo\);/);
+    assert.match(shared, /face: liveOk \? \{ descriptor: live\.descriptor, model: live\.model \} : undefined/);
+    assert.match(shared, /liveFaceSave\(newSymbolId, live\)/);
+    assert.match(shared, /gloobalCreateAccount\(\{ fullName: name, mobileNumber, symbolId, countryIso: country && country\.iso, referredBy: referral, pin, photo, live \}\)/, "Helloo's registration sends the face too");
     const server = fs.readFileSync(path.join(ROOT, "server/server.js"), "utf8");
     const reg = server.slice(server.indexOf("app.post('/api/register-symbol'"), server.indexOf("const newUser = new User({"));
     assert.match(reg, /livePhoto\.findOnOtherAccount\(null, model, d\)/);

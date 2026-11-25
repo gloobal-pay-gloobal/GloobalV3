@@ -311,6 +311,7 @@ const FRONTEND_MODULES = [
   // The live photo: camera only, spoken numbers, a head-move combo. Uses
   // fitProfilePhotoForUpload (PayPinModal.jsx) and GloobalApi.setLivePhoto.
   "features/identity/liveFaceCheck.jsx",
+  "features/entry/entrySteps.jsx",
   "features/identity/passportStamps.jsx",
   "features/complaints/complaints.jsx",
   // The Creator side's own name, mark and address. Emitted before the

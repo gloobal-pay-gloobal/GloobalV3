@@ -1807,7 +1807,7 @@ function GloobalId() {
   // OTP has passed: { id, status: "checking" | "found" | "none" | "unknown", name }.
   const [referrerPreview, setReferrerPreview] = useState19(null);
   const [pin, setPin] = useState19("");
-  const [otp, setOtp] = useState19("123456");
+  const [otp, setOtp] = useState19(GLOOBAL_PROTOTYPE_OTP);
   const [dialCountry, setDialCountry] = useState19(() => TOP_COUNTRIES.find((c) => c.iso === "IN") || TOP_COUNTRIES[0]);
   // dialCountry starts on India because registration has to start SOMEWHERE
   // before anyone has said where they are. For a signed-in account that is no
@@ -3564,84 +3564,27 @@ function GloobalId() {
     setAuthBusy(true);
     setAuthError(null);
     try {
-      const result = await GloobalApi.register({
-        // The real name, collected at the profile step just before this
-        // one. It used to be the phone number: fullName was set to
-        // fullMobileNumber because the name had not been asked for yet at
-        // this point in the flow, so every account created here was stored
-        // with its own mobile number as its display name.
-        fullName: documentedName.trim(),
+      // The account is made by the shared gloobalCreateAccount
+      // (features/entry/entrySteps.jsx), the same call Helloo's own
+      // registration makes: register-symbol with the real name, the country
+      // picked on the phone step and the live face (a face already on
+      // another ID is refused before the account exists), then pin/set,
+      // the photo through the live route, and the name.
+      const made = await gloobalCreateAccount({
+        fullName: documentedName,
         mobileNumber: fullMobileNumber,
         symbolId: secureId,
-        // The country picked on the phone-code step. POST /api/register-symbol
-        // has always read this out of the body and stored it, but nothing ever
-        // sent it — so the route's `undefined` fallback ran on every single
-        // registration and wrote 'IN'. Every account in the database is
-        // recorded as India-registered as a result, which is the root of the
-        // wrong receiver flag and currency on Send Money: an American payee
-        // resolved to countryIso 'IN' and was drawn with an Indian flag and ₹
-        // on the sender's screen, and the FX conversion used INR as the
-        // receiving currency. Sending it is what makes the stored country
-        // real; server/scripts/backfill-country-iso.mjs repairs the accounts
-        // written before this line existed.
         countryIso: dialCountry.iso,
         referredBy: referralCode || "",
-        face: liveRegResult && liveRegResult.photo === profilePhoto
-          ? { descriptor: liveRegResult.descriptor, model: liveRegResult.model }
-          : undefined
+        pin,
+        photo: profilePhoto,
+        live: liveRegResult
       });
-      setRegisteredUser(result.user);
+      setRegisteredUser(made.user);
       // Normally the same country that was just sent; read back from the
-      // response so the client agrees with whatever the server actually
-      // stored rather than with what it asked for.
-      applyAccountCountry(result.user);
-      const newSymbolId = result.user.symbolId || secureId;
-      await GloobalApi.setPin(newSymbolId, pin);
-      // The photo has no home on the backend (PUT /api/profile takes
-      // fullName and email only), so it is written locally against the ID
-      // that now exists. Done here rather than at the profile step because
-      // that step runs before the account does.
-      persistLocalProfile(newSymbolId, documentedName.trim(), profilePhoto);
-      // The token exists from the register call, so the photo chosen at the
-      // profile step can now become the account's server copy. Best-effort
-      // and not awaited: a registration never waits on, or fails over, a
-      // photo. Anything that does not land is retried at the next sign-in.
-      // A live photo is saved through the live route (it carries the face);
-      // only if GLOOBAL couldn't be reached does it fall back to the plain
-      // upload, which the next sign-in retries.
-      if (liveRegResult && liveRegResult.photo === profilePhoto) {
-        liveFaceSave(newSymbolId, liveRegResult).then((outcome) => {
-          if (outcome && outcome.reason === "offline") pushOwnProfilePhoto(newSymbolId, profilePhoto);
-        });
-      } else {
-        pushOwnProfilePhoto(newSymbolId, profilePhoto);
-      }
-      // This — not the register call above — is what actually sets the
-      // name. POST /api/register-symbol destructures `fullName` out of the
-      // body and then throws it away: it does
-      // `cleanFullName = cleanMobileNumber` and stores that, so every
-      // account it creates is named after its own phone number regardless
-      // of what was sent. (Confirmed against live data: resolving an
-      // existing account returns fullName "+2528685888888".) PUT
-      // /api/profile/:symbolId is the only route that honours a real name,
-      // so it is awaited rather than fired and forgotten — an earlier
-      // version let it fail silently, which meant the name quietly stayed
-      // as the phone number and nothing said so.
-      //
-      // It still must not fail the registration. The account and its PIN
-      // both exist by now; a name that did not reach the server is worth a
-      // warning and a retry, not throwing the whole thing away.
-      try {
-        await GloobalApi.updateProfile(newSymbolId, { fullName: documentedName.trim() });
-      } catch (err) {
-        setAuthError("Your name couldn't be saved to your profile just now — we'll retry next time you sign in.");
-      }
-      // The passkey has to be enrolled against an account that exists, so
-      // the gate is told who it is working for only now.
-      gloobalSetBiometricSymbolId(newSymbolId);
-      // A bad referral code never fails the registration, so this is the
-      // only place it can be reported.
-      if (result.referralWarning) setAuthError(result.referralWarning);
+      // server so the account's own record decides.
+      applyAccountCountry(made.user);
+      if (made.warning) setAuthError(made.warning);
       flipTo("biometric");
     } catch (err) {
       setAuthError(err.message);
@@ -4014,6 +3957,24 @@ function GloobalId() {
   };
   // Switches the same phone number straight into the login flow. The
   // number is kept — it is the one thing already known to be correct.
+  // Log in, from the first screen: the same as the old flip-to-log-in.
+  const openLoginFromStart = () => {
+    setAuthError(null);
+    setPhoneAlreadyRegistered(false);
+    setShowLoginFace(true);
+    setIsLoginAttempt(true);
+    setLoginEntryMode("id");
+    setLoginMobileBuffer("");
+    setLoginMobileCountry(null);
+    flipTo("secureId");
+  };
+  // Logging in: the round switch between mobile number and GLOOBAL ID, and
+  // the way back to making a new ID.
+  const loginModes = <GloobalEntryModes mode={loginEntryMode === "mobile" ? "mobile" : "id"} onMode={(m) => {
+    setAuthError(null);
+    setLoginEntryMode(m);
+  }} label="Log in with" testid="gloobal-login-mode" />;
+  const loginFooter = <>New here? <GloobalEntryLink onClick={goToRegistrationStart} testid="gloobal-open-register">Create your free <GloobalWordmark suffix=" ID" /></GloobalEntryLink></>;
   const handleSwitchToLogin = () => {
     setPhoneAlreadyRegistered(false);
     setAuthError(null);
@@ -4217,550 +4178,110 @@ function GloobalId() {
       pointerEvents: "none"
     }}
   /></button>}{
-    /* Back — sits in the same top-left corner regardless of stage,
-       separate from the flipping card itself so it never overlaps or
-       shifts the card's own corner controls (eye toggles, flip icons).
-       The Secure ID / Referral corner tab used to sit left-aligned here
-       too and could collide with this button on shorter screens; it's
-       now centered on the card instead, so the two can never overlap.
-       Covers the steps that had no way back: registration's Secure ID
-       (→ OTP), login's Secure ID (→ phone), and Referral (→ Secure ID). */
-  }{(stage === "secureId" || stage === "referral") && <NavBackButton onClick={stage === "referral" ? requestBackFromReferral : requestBackFromSecureId} style={{
-      position: "absolute",
-      top: "calc(18px + env(safe-area-inset-top, 0px))",
-      left: "calc(18px + env(safe-area-inset-left, 0px))",
-      zIndex: 25
-     }} />}{
-    /* Explain this screen — the mirror of the Back chevron above, in the
-       opposite corner, on the two screens that ask for something the
-       person has never seen before: twelve symbols off a pad with no
-       letters on it, and somebody else's twelve with no statement of what
-       handing it over does. Shown on Secure ID whether creating or
-       logging in — the symbol glossary is what makes an existing ID
-       readable too, not only a new one. Nothing else occupies this corner
-       at screen level: the card's own controls (eye toggles, the
-       flip-to-mobile button) live on the card, which starts ~74px lower. */
-  }{(stage === "secureId" || stage === "referral") && <HelpCornerButton
-    onClick={() => setHelpSheet(stage === "referral" ? "referral" : "symbols")}
-    label={stage === "referral" ? "How the referral network works" : "What the GLOOBAL ID symbols mean"}
+    /* The typing steps of registration and login (25 Nov): mobile number,
+       code, the 12-symbol ID, who invited you, and logging in by number or
+       by ID. They are the shared screens in features/entry/entrySteps.jsx,
+       the same ones Helloo draws for its sign-in and for making a GLOOBAL
+       ID inside Helloo, so the two apps look and work alike. Each covers
+       the whole screen; the help sheets they open stay here. */
+  }{stage === "phone" && <GloobalPhoneStep
+    purpose="create"
+    country={dialCountry}
+    onPickCountry={() => setShowPicker(true)}
+    digits={phoneNumber.replace(/\D/g, "")}
+    onDigits={(next) => {
+      setPhoneAlreadyRegistered(false);
+      setAuthError(null);
+      setPhoneNumber(next);
+    }}
+    onSubmit={handleVerify}
+    busy={verifying}
+    error={authError || ""}
+    taken={phoneAlreadyRegistered}
+    onLoginInstead={handleSwitchToLogin}
+    footer={<>Already have a <GloobalWordmark suffix=" ID" />? <GloobalEntryLink onClick={openLoginFromStart} label="Flip to log in" testid="gloobal-open-login">Log in</GloobalEntryLink><div style={{ marginTop: 8, fontSize: 9.5, fontWeight: 700, letterSpacing: 0.4, color: T.inkFaint, textTransform: "uppercase" }}>Cashless · Taxless · Borderless · Limitless</div></>}
+  />}{stage === "otp" && <GloobalCodeStep
+    to={`${dialCountry.dialCode || ""} ${gloobalSpacedPhone(phoneNumber, dialCountry.dialCode)}`}
+    value={otp}
+    length={OTP_LENGTH2}
+    onChange={(v) => {
+      setAuthError(null);
+      setOtp(v);
+    }}
+    onSubmit={handleSubmitOtp}
+    busy={otpVerifying}
+    error={authError || ""}
+    onEditNumber={() => flipTo("phone")}
+    onResend={() => setOtp("")}
+    onBack={() => flipTo("phone")}
+  />}{stage === "secureId" && !isLoginAttempt && <GloobalSymbolStep
+    purpose="create"
+    value={secureId}
+    length={SECURE_ID_LENGTH}
+    onChange={(v) => {
+      setAuthError(null);
+      setSecureId(v);
+    }}
+    onSubmit={handleSubmitSecureId}
+    busy={authBusy}
+    waking={authBusy && authSlow}
+    error={authError || ""}
+    suggestion={<SuggestedIdRow id={suggestedRegId} onPick={setSecureId} />}
+    onBack={requestBackFromSecureId}
+    help={<HelpCornerButton onClick={() => setHelpSheet("symbols")} label="What the GLOOBAL ID symbols mean" />}
+  />}{stage === "secureId" && isLoginAttempt && loginEntryMode === "mobile" && <GloobalPhoneStep
+    purpose="login"
+    country={effectiveLoginCountry}
+    onPickCountry={() => setShowLoginPicker(true)}
+    digits={loginMobileBuffer}
+    onDigits={(v) => {
+      setAuthError(null);
+      setLoginMobileBuffer(v);
+    }}
+    onSubmit={handleSubmitSecureId}
+    busy={authBusy}
+    error={authError || ""}
+    modes={loginModes}
+    onBack={requestBackFromSecureId}
+    footer={loginFooter}
+  />}{stage === "secureId" && isLoginAttempt && loginEntryMode !== "mobile" && <GloobalSymbolStep
+    purpose="login"
+    value={secureId}
+    length={SECURE_ID_LENGTH}
+    onChange={(v) => {
+      setAuthError(null);
+      setSecureId(v);
+    }}
+    onSubmit={handleSubmitSecureId}
+    busy={authBusy}
+    waking={authBusy && authSlow}
+    error={authError || ""}
+    found={loginIdResolved}
+    modes={loginModes}
+    onBack={requestBackFromSecureId}
+    help={<HelpCornerButton onClick={() => setHelpSheet("symbols")} label="What the GLOOBAL ID symbols mean" />}
+    footer={loginFooter}
+  />}{stage === "referral" && <GloobalSymbolStep
+    purpose="referral"
+    value={referralCode}
+    length={REFERRAL_LENGTH}
+    onChange={(v) => {
+      setAuthError(null);
+      setReferralCode(v);
+    }}
+    onSubmit={handleSubmitReferral}
+    busy={authBusy}
+    waking={authBusy && authSlow}
+    error={authError || ""}
+    preview={referrerPreview}
+    onSkip={() => flipTo("profile")}
+    onBack={requestBackFromReferral}
+    help={<HelpCornerButton onClick={() => setHelpSheet("referral")} label="How the referral network works" />}
   />}{
     /* Mounted only while their own stage is active, so leaving the stage
        unmounts the sheet and useBackClose's cleanup pops its history
-       entry — rather than leaving an open sheet, or a stranded back-stack
-       entry, behind on a screen it does not belong to. */
-  }{(stage === "secureId" || helpSheet === "symbols") && <SymbolIdHelpSheet open={helpSheet === "symbols"} onClose={() => setHelpSheet(null)} />}{stage === "referral" && <ReferralHelpSheet open={helpSheet === "referral"} onClose={() => setHelpSheet(null)} />}{
-    /* "Gloobal ID" wordmark — now shown on every early registration/
-       login screen: phone entry, Secure ID (creating a new one,
-       logging in with an existing one, or logging in by phone), and
-       referral — not just the very first phone screen. */
-  }{(stage === "phone" || stage === "secureId" || stage === "referral") && <div
-    style={{
-      position: "absolute",
-      top: "calc(22px + env(safe-area-inset-top, 0px))",
-      left: "50%",
-      transform: "translateX(-50%)",
-      zIndex: 20,
-      fontSize: 22,
-      fontWeight: 800,
-      letterSpacing: 0.5,
-      color: T.ink,
-      fontFamily: T.fontDisplay
-    }}
-  ><GloobalWordmark suffix=" ID" withSymbols /></div>}<div
-    style={{
-      position: "absolute",
-      top: "calc(74px + env(safe-area-inset-top, 0px))",
-      left: "50%",
-      bottom: "6%",
-      transform: "translateX(-50%)",
-      // The card is still exactly 92% / 340px wide: the extra 48px here is
-      // padding, not card. See the overflow note below for why it exists.
-      width: "calc(92% + 48px)",
-      maxWidth: 340 + 48,
-      padding: "0 24px",
-      boxSizing: "border-box",
-      zIndex: 20,
-      display: "flex",
-      flexDirection: "column",
-      justifyContent: "flex-end",
-      // No horizontal scrollbar, ever — this is where the dark line under
-      // the symbol/digit row came from.
-      //
-      // This was `overflowY: "auto"` with overflow-x left at its `visible`
-      // default, which CSS does not allow: when one axis is not `visible`,
-      // the other computes to `auto`. So the column was silently
-      // horizontally scrollable — and the cards inside deliberately hang
-      // controls outside their own box, the flip-to-login /
-      // flip-to-mobile button most of all at `right: -18`. Those 18px gave
-      // the column a horizontal scroll range, and Chrome paints a scroll
-      // range as a track: the dark line, on exactly the REGISTRATION and
-      // LOGIN cards (the two with that button) and not on OTP, whose
-      // controls all sit inside the card's width.
-      //
-      // Pinning overflow-x to hidden on its own would clip 18px off that
-      // button. The 24px of horizontal padding above is what makes that
-      // safe: the overhang now falls inside the column's own padding box
-      // rather than past its edge, so there is no horizontal overflow left
-      // to scroll and nothing gets cut. Vertical scrolling is kept —
-      // the dial pad genuinely does not fit on a short screen, and
-      // dropping it there would strand the card off the top.
-      overflowY: "auto",
-      overflowX: "hidden",
-      WebkitOverflowScrolling: "touch"
-    }}
-  ><div style={{ perspective: 800, position: "relative", flexShrink: 0, maxWidth: "100%" }}><div
-    style={{
-      position: "relative",
-      width: "100%",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      transform: flipping ? "rotateY(90deg)" : "rotateY(0deg)",
-      transition: "transform 0.22s ease"
-    }}
-  >{
-    /* The Secure ID / Referral card itself — unmoved, unchanged:
-       same shadows, border radius, corner label, and counter as
-       before. Just the card; the dial and button now live below
-       it instead of inside it. */
-  }<div
-    style={{
-      position: "relative",
-      zIndex: 1,
-      width: "100%",
-      minHeight: stage === "phone" ? 96 : 100,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "18px 14px",
-      borderRadius: T.radiusLg,
-      boxShadow: T.shadowFloat,
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      boxSizing: "border-box",
-      overflow: "visible"
-    }}
-  >{
-    /* Corner shine — soft, low-opacity colored glows at each
-       corner, clipped to their own inset wrapper so the
-       card's own overflow:visible (needed for the corner
-       label/counter) stays untouched. Center stays plain
-       white — this is decoration at the edges only. */
-  }<div style={{ position: "absolute", inset: 0, borderRadius: T.radiusLg, overflow: "hidden", pointerEvents: "none", zIndex: 0 }}><div style={{ position: "absolute", top: -30, left: -30, width: 100, height: 100, borderRadius: "50%", background: `radial-gradient(circle, ${POSITION_COLORS[0]}22, transparent 70%)` }} /><div style={{ position: "absolute", top: -30, right: -30, width: 100, height: 100, borderRadius: "50%", background: `radial-gradient(circle, ${POSITION_COLORS[2]}22, transparent 70%)` }} /><div style={{ position: "absolute", bottom: -30, left: -30, width: 100, height: 100, borderRadius: "50%", background: `radial-gradient(circle, ${POSITION_COLORS[3]}1c, transparent 70%)` }} /><div style={{ position: "absolute", bottom: -30, right: -30, width: 100, height: 100, borderRadius: "50%", background: `radial-gradient(circle, ${POSITION_COLORS[1]}1c, transparent 70%)` }} /></div>{stage === "phone" && <PhoneConnector
-    country={dialCountry}
-    phoneNumber={phoneNumber}
-    onOpenPicker={() => setShowPicker(true)}
-    onOpenDial={() => setPhoneDialOpen(true)}
-    dialOpen={phoneDialOpen}
-    onActivate={handleVerify}
-    verifying={verifying}
-    showLogin={showLoginFace}
-    onLoginTap={() => {
-      setIsLoginAttempt(true);
-      setLoginEntryMode("id");
-      setLoginMobileBuffer("");
-      setLoginMobileCountry(null);
-      flipTo("secureId");
-    }}
-  />}{
-    /* Number already has an account. Shown inside the card, under the
-       number it is about, rather than in the root error banner: this
-       is not a failure to retry, it is a fork in the flow, and the
-       way out of it is the tap directly below the message. */
-  }{stage === "phone" && phoneAlreadyRegistered && <div style={{ width: "100%", marginTop: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}><span role="alert" style={{ fontSize: 12, fontWeight: 700, color: T.negative, textAlign: "center", lineHeight: 1.4 }}>
-                  This number is already registered.
-                </span><button
-    onClick={handleSwitchToLogin}
-    className="v2-tap"
-    style={{
-      border: "none",
-      background: "none",
-      padding: "4px 6px",
-      color: T.accent,
-      fontSize: 12.5,
-      fontWeight: 800,
-      cursor: "pointer"
-    }}
-  >
-                  Log in instead →
-                </button></div>}{
-    /* Flip to log in — on the card's own boundary now, not on
-       the call button, same treatment as the Secure ID card's
-       flip icon. Keeps a slow, continuous spin on its own (not
-       tied to being tapped) so it reads as "this can be flipped"
-       at a glance instead of sitting there looking static. */
-  }{stage === "phone" && <button
-    onClick={() => {
-      setShowLoginFace(true);
-      setIsLoginAttempt(true);
-      setLoginEntryMode("id");
-      setLoginMobileBuffer("");
-      setLoginMobileCountry(null);
-      flipTo("secureId");
-    }}
-    aria-label="Flip to log in"
-    className="v2-tap"
-    style={{
-      position: "absolute",
-      top: -20,
-      right: -18,
-      width: 48,
-      height: 48,
-      borderRadius: "50%",
-      border: `1.5px solid ${T.line}`,
-      background: T.surface,
-      color: T.accent,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      boxShadow: T.shadowRaised,
-      zIndex: 3
-    }}
-  ><RefreshCw6 size={22} style={{ animation: "iconAttention 2s linear infinite" }} /></button>}{stage === "phone" && <span
-    style={{
-      position: "absolute",
-      top: -11,
-      left: 16,
-      background: T.surface,
-      border: `1px solid ${T.line}`,
-      borderRadius: 7,
-      padding: "3px 9px",
-      fontSize: 10,
-      fontWeight: 800,
-      letterSpacing: 0.4,
-      textTransform: "uppercase",
-      color: T.accent,
-      boxShadow: T.shadowCard,
-      minWidth: 44,
-      textAlign: "center",
-      whiteSpace: "nowrap"
-    }}
-  ><CyclingBadge words={["Registration", <GloobalWordmark key="g" withSymbols />, "Id"]} intervalMs={2600} /></span>}{stage === "secureId" && <span
-    style={{
-      position: "absolute",
-      top: -11,
-      left: 16,
-      transform: "none",
-      background: T.surface,
-      border: `1px solid ${T.line}`,
-      borderRadius: 7,
-      padding: "3px 9px",
-      fontSize: 10,
-      fontWeight: 800,
-      letterSpacing: 0.4,
-      textTransform: "uppercase",
-      color: T.accent,
-      boxShadow: T.shadowCard,
-      minWidth: 44,
-      textAlign: "center",
-      whiteSpace: "nowrap"
-    }}
-  >{isLoginAttempt ? <CyclingBadge words={["Login", <GloobalWordmark key="g" withSymbols />, "Id"]} intervalMs={2600} /> : <CyclingBadge words={["Create", "Secure", <GloobalWordmark key="g" withSymbols />, "Id"]} intervalMs={2600} />}</span>}{stage === "referral" && <span
-    style={{
-      position: "absolute",
-      top: -11,
-      left: 16,
-      transform: "none",
-      background: T.surface,
-      border: `1px solid ${T.line}`,
-      borderRadius: 7,
-      padding: "3px 9px",
-      fontSize: 10,
-      fontWeight: 800,
-      letterSpacing: 0.4,
-      textTransform: "uppercase",
-      color: T.accent,
-      boxShadow: T.shadowCard,
-      whiteSpace: "nowrap"
-    }}
-  >
-                  Referral ID
-                </span>}{stage === "otp" && <span
-    style={{
-      position: "absolute",
-      top: -11,
-      left: 16,
-      background: T.surface,
-      border: `1px solid ${T.line}`,
-      borderRadius: 7,
-      padding: "3px 9px",
-      fontSize: 10,
-      fontWeight: 800,
-      letterSpacing: 0.4,
-      textTransform: "uppercase",
-      color: T.accent,
-      boxShadow: T.shadowCard
-    }}
-  >
-                  Verify OTP
-                </span>}{
-    /* Edit number — flips back to the phone step, same corner
-       spot the flip-to-login icon uses on that step. */
-  }{stage === "otp" && <button
-    onClick={() => flipTo("phone")}
-    aria-label="Edit phone number"
-    className="v2-tap"
-    style={{
-      position: "absolute",
-      top: -11,
-      right: 16,
-      background: "none",
-      border: "none",
-      color: T.accent2,
-      fontSize: 10.5,
-      fontWeight: 700,
-      cursor: "pointer",
-      padding: "3px 4px"
-    }}
-  >
-                  Edit number
-                </button>}{
-    /* Eye toggle: mask/reveal the code — same on both
-       registration and login, but only relevant in ID mode.
-       Shifted left of its usual spot on login so it doesn't
-       collide with the bigger flip-to-mobile icon in the
-       top-right corner. */
-  }{
-    /* Eye toggle for OTP — shifted left of "Edit number" so the
-       two controls don't collide in the same top-right corner. */
-  }{stage === "otp" && <button
-    onClick={() => setOtpRevealed((v) => !v)}
-    aria-label={otpRevealed ? "Hide OTP" : "Show OTP"}
-    className="v2-tap"
-    style={{
-      position: "absolute",
-      top: -11,
-      right: 90,
-      width: 24,
-      height: 24,
-      borderRadius: "50%",
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      boxShadow: T.shadowCard,
-      zIndex: 2
-    }}
-  ><MaskEyeIcon open={otpRevealed} color={T.inkSoft} /></button>}{stage === "secureId" && (!isLoginAttempt || loginEntryMode === "id") && <button
-    onClick={() => setSecureIdRevealed((v) => !v)}
-    aria-label={secureIdRevealed ? "Hide Secure ID" : "Show Secure ID"}
-    className="v2-tap"
-    style={{
-      position: "absolute",
-      top: -11,
-      right: isLoginAttempt ? 68 : 16,
-      width: 24,
-      height: 24,
-      borderRadius: "50%",
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      boxShadow: T.shadowCard,
-      zIndex: 2
-    }}
-  ><MaskEyeIcon open={secureIdRevealed} color={T.inkSoft} /></button>}{
-    /* Eye toggle for the mobile login number — same boundary
-       spot the Secure ID eye uses in ID mode (right: 68, clear
-       of the bigger flip-to-mobile icon in the corner). */
-  }{stage === "secureId" && isLoginAttempt && loginEntryMode === "mobile" && <button
-    onClick={() => setLoginMobileRevealed((v) => !v)}
-    aria-label={loginMobileRevealed ? "Hide mobile number" : "Show mobile number"}
-    className="v2-tap"
-    style={{
-      position: "absolute",
-      top: -11,
-      right: 68,
-      width: 24,
-      height: 24,
-      borderRadius: "50%",
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      boxShadow: T.shadowCard,
-      zIndex: 2
-    }}
-  ><MaskEyeIcon open={loginMobileRevealed} color={T.inkSoft} /></button>}{
-    /* Flip to mobile — login only. Fixed to the card's top-right
-       corner (not tied to the card's height, which changes
-       between ID and mobile content) so it's always in the same
-       reachable spot in both modes. Twice the size of the eye
-       toggle, and visibly rotates on tap. */
-  }{stage === "secureId" && isLoginAttempt && <button
-    onClick={() => setLoginEntryMode((m) => m === "id" ? "mobile" : "id")}
-    aria-label={`Switch to ${loginEntryMode === "id" ? "mobile number" : "Gloobal ID"}`}
-    className="v2-tap"
-    style={{
-      position: "absolute",
-      top: -20,
-      right: -18,
-      width: 48,
-      height: 48,
-      borderRadius: "50%",
-      border: `1.5px solid ${T.line}`,
-      background: T.surface,
-      color: T.accent,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      boxShadow: T.shadowRaised,
-      zIndex: 3
-    }}
-  ><RefreshCw6
-    size={22}
-    style={{
-      transform: loginEntryMode === "mobile" ? "rotate(180deg)" : "rotate(0deg)",
-      transition: "transform 0.45s cubic-bezier(0.22, 1, 0.36, 1)"
-    }}
-  /></button>}{stage === "referral" && <button
-    onClick={() => setReferralRevealed((v) => !v)}
-    aria-label={referralRevealed ? "Hide Referral ID" : "Show Referral ID"}
-    className="v2-tap"
-    style={{
-      position: "absolute",
-      top: -11,
-      right: 16,
-      width: 24,
-      height: 24,
-      borderRadius: "50%",
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      boxShadow: T.shadowCard
-    }}
-  ><MaskEyeIcon open={referralRevealed} color={T.inkSoft} /></button>}{stage === "secureId" && (!isLoginAttempt || loginEntryMode === "id") && <SymbolChipRow length={SECURE_ID_LENGTH} value={secureId} masked={!secureIdRevealed} />}{stage === "secureId" && isLoginAttempt && loginEntryMode === "mobile" && <div style={{ position: "relative", display: "flex", alignItems: "center", width: "100%", gap: 10 }}><button
-    onClick={() => setShowLoginPicker(true)}
-    aria-label={`Country: ${effectiveLoginCountry.name}. Tap to change`}
-    style={{ flexShrink: 0, width: 46, height: 40, borderRadius: 13, border: `1px solid ${T.line}`, background: T.surface, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}
-  ><FlagEmoji flag={effectiveLoginCountry.flag} width={38} height={32} radius={6} dropShadow={`drop-shadow(0 4px 10px rgba(${T.accentDeepRgb},0.18))`} /></button>{
-    /* Masked by default, revealed with the eye toggle that
-       now sits on the card's boundary (top-right corner)
-       instead of inline here — same spot the Secure ID eye
-       uses in ID mode. */
-  }<div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", background: T.surfaceAlt, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "9px 13px" }}><span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, letterSpacing: loginMobileRevealed ? 0 : 2, color: loginMobileBuffer ? T.ink : T.inkFaint, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{loginMobileBuffer ? loginMobileRevealed ? loginMobileBuffer.replace(/(\d{3})(?=\d)/g, "$1 ") : loginMobileBuffer.replace(/\d/g, "\u2022").replace(/(.{3})(?=.)/g, "$1 ") : "Mobile number"}</span></div></div>}{stage === "referral" && <SymbolChipRow length={REFERRAL_LENGTH} value={referralCode} masked={!referralRevealed} />}{stage === "referral" && referrerPreview && referrerPreview.status !== "unknown" ? <div data-testid="referrer-preview" role="status" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 10, fontSize: 13, fontWeight: 800, color: referrerPreview.status === "none" ? T.negative : referrerPreview.status === "found" ? T.ink : T.inkFaint }}>{referrerPreview.status === "found" ? <><span style={{ fontWeight: 600, color: T.inkSoft }}>Invited by</span><span style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{referrerPreview.name || "a GLOOBAL member"}</span><BadgeCheckReferrer size={16} color={T.positive} /></> : referrerPreview.status === "none" ? "No GLOOBAL account uses that ID" : "Checking…"}</div> : null}{stage === "otp" && <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, width: "100%" }}><span style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 600, textAlign: "center" }}>
-                    Enter the code sent to {dialCountry.dialCode} {phoneNumber}</span><SymbolChipRow length={OTP_LENGTH2} value={otp} masked={!otpRevealed} boxSize={34} justify="center" /></div>}</div>{
-    /* Symbol dial pad — same compact grid-button pattern as
-       PhoneDialPad, sized down so the card, dial, and button all
-       stay fully visible together on one screen. */
-  }{stage === "secureId" && (!isLoginAttempt || loginEntryMode === "id") && <div style={{ marginTop: 32, position: "relative", zIndex: 1, width: "100%" }}><SymbolDialPad value={secureId} onChange={setSecureId} length={SECURE_ID_LENGTH} /></div>}{
-    /* Two ready-made IDs — creation only, never shown while
-       logging in, since login needs the person's existing ID,
-       not a fresh suggestion.
-       (This comment has always said "Two"; the row actually
-       rendered one. It renders two now, so the two finally agree.
-       Someone meeting the symbol alphabet for the first time has no
-       basis on which to judge a single arbitrary string — a pair
-       side by side is a choice they can actually make. The Update
-       Gloobal ID screen still passes no count and still gets one:
-       replacing an ID you already have is a different, more
-       considered decision.) */
-  }{stage === "secureId" && !isLoginAttempt && <SuggestedIdRow id={suggestedRegId} onPick={setSecureId} />}{
-    /* Login only: proof the ID resolves to a real account, shown before
-       the PIN screen rather than after a sign-in that would have failed
-       for a reason the person could not see. */
-  }{stage === "secureId" && isLoginAttempt && loginEntryMode === "id" && loginIdResolved && <div style={{ width: "100%", display: "flex", justifyContent: "center", marginTop: 12 }}><span
-    style={{
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 6,
-      padding: "6px 12px",
-      borderRadius: 999,
-      background: T.accentSoft,
-      border: `1px solid ${T.line}`,
-      color: T.positive,
-      fontSize: 11.5,
-      fontWeight: 800
-    }}
-  >
-                  ✓ Account found
-                </span></div>}{stage === "secureId" && isLoginAttempt && loginEntryMode === "mobile" && <div style={{ marginTop: 28, position: "relative", zIndex: 1, width: "100%" }}><PhoneDialPad
-    value={loginMobileBuffer}
-    onChange={setLoginMobileBuffer}
-    minLength={loginMinLen}
-    maxLength={loginMaxLen}
-    onSubmit={handleSubmitSecureId}
-  /></div>}{stage === "referral" && <div style={{ marginTop: 32, position: "relative", zIndex: 1, width: "100%" }}><SymbolDialPad value={referralCode} onChange={setReferralCode} length={REFERRAL_LENGTH} /></div>}{stage === "phone" && phoneDialOpen && <div style={{ marginTop: 28, position: "relative", zIndex: 1, width: "100%" }}><PhoneDialPad
-    value={phoneNumber}
-    onChange={(next) => {
-      // Editing the number retracts the "already registered" verdict —
-      // it was about the previous digits, not these.
-      setPhoneAlreadyRegistered(false);
-      setPhoneNumber(next);
-    }}
-    minLength={mobileDigitRange(dialCountry.iso)[0]}
-    maxLength={mobileDigitRange(dialCountry.iso)[1]}
-    onSubmit={handleVerify}
-  /></div>}{
-    /* OTP dial pad — the numeric code is 6 digits, entered with
-       the exact same dial pad as the mobile number step, not the
-       symbol dial used for the 12-character Secure/Referral ID. */
-  }{stage === "otp" && <div style={{ marginTop: 28, position: "relative", zIndex: 1, width: "100%" }}><PhoneDialPad value={otp} onChange={setOtp} minLength={OTP_LENGTH2} maxLength={OTP_LENGTH2} onSubmit={handleSubmitOtp} processing={otpVerifying} /></div>}{stage === "secureId" && !isLoginAttempt && <div style={{ marginTop: 20 }}><SubmitButton
-    onClick={handleSubmitSecureId}
-    disabled={secureId.length !== SECURE_ID_LENGTH || authBusy}
-    label={authBusy ? (authSlow ? "Waking the server…" : "Checking…") : "Submit"}
-  /></div>}{stage === "secureId" && isLoginAttempt && loginEntryMode === "id" && <div style={{ marginTop: 20, display: "flex", justifyContent: "center" }}><CircularInButton
-    onClick={handleSubmitSecureId}
-    disabled={secureId.length !== SECURE_ID_LENGTH || authBusy}
-    size={44}
-  /></div>}{stage === "referral" && <div style={{ marginTop: 20, display: "flex", flexDirection: "column", alignItems: "center" }}><SubmitButton
-    onClick={handleSubmitReferral}
-    disabled={referralCode.length !== REFERRAL_LENGTH || authBusy}
-    label={authBusy ? (authSlow ? "Waking the server…" : "Checking…") : void 0}
-  /><button
-    onClick={() => flipTo("profile")}
-    style={{
-      marginTop: 10,
-      border: "none",
-      background: "none",
-      color: T.accent2,
-      fontSize: 12,
-      fontWeight: 700,
-      cursor: "pointer",
-      padding: "6px 8px"
-    }}
-  >
-                  Skip for now
-                </button></div>}{stage === "otp" && <div style={{ marginTop: 20, display: "flex", flexDirection: "column", alignItems: "center" }}><button
-    onClick={() => setOtp("")}
-    style={{
-      border: "none",
-      background: "none",
-      color: T.accent2,
-      fontSize: 12,
-      fontWeight: 700,
-      cursor: "pointer",
-      padding: "6px 8px"
-    }}
-  >
-                  Resend code
-                </button></div>}</div></div></div>{stage === "phone" && !phoneDialOpen && <div style={{ position: "absolute", left: "50%", bottom: "3%", transform: "translateX(-50%)", zIndex: 20, width: "100%", padding: "0 16px", display: "flex", justifyContent: "center" }}><span
-    style={{
-      fontSize: 9.5,
-      fontWeight: 700,
-      letterSpacing: 0.4,
-      color: T.inkFaint,
-      textTransform: "uppercase",
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      maxWidth: "100%"
-    }}
-  >
-            Cashless · Taxless · Borderless · Limitless
-          </span></div>}{stage === "permissions" && <PermissionsGateScreen onContinue={handleContinueFromPermissionsGate} />}{stage === "pin" && <PinScreen
+       entry. */
+  }{(stage === "secureId" || helpSheet === "symbols") && <SymbolIdHelpSheet open={helpSheet === "symbols"} onClose={() => setHelpSheet(null)} />}{stage === "referral" && <ReferralHelpSheet open={helpSheet === "referral"} onClose={() => setHelpSheet(null)} />}{stage === "permissions" && <PermissionsGateScreen onContinue={handleContinueFromPermissionsGate} />}{stage === "pin" && <PinScreen
     value={pin}
     length={PIN_LENGTH}
     onChange={setPin}
@@ -5231,7 +4752,7 @@ function GloobalId() {
        own message is surfaced as-is ("PIN must be 4 to 6 digits",
        "Please verify OTP before registration", "Account locked"), since
        it is already more specific than anything generic here. */
-  }{authError && <div
+  }{authError && !["phone", "otp", "secureId", "referral"].includes(stage) && <div
     role="alert"
     onClick={() => setAuthError(null)}
     style={{

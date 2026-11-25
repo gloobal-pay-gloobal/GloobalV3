@@ -37,7 +37,11 @@ await build({
   platform: "node",
   outfile: PROBE_OUT,
   loader: { ".jsx": "jsx" },
-  external: ["react", "react-dom"], // share one React instance with the renderer
+  // react: share one React instance with the renderer. @vladmandic/human: the
+  // face engine is only loaded in the browser (a dynamic import inside the live
+  // face check), and its node build wants @tensorflow/tfjs-node, which is not
+  // installed. Leaving it out keeps the probe off that path.
+  external: ["react", "react-dom", "@vladmandic/human"],
   logLevel: "error",
 });
 

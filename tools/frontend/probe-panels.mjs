@@ -89,7 +89,8 @@ for (const [label, flag] of PANELS) {
     platform: "node",
     outfile: PROBE_OUT,
     loader: { ".jsx": "jsx" },
-    external: ["react", "react-dom"],
+    // @vladmandic/human: browser-only face engine, see probe-screens.mjs.
+    external: ["react", "react-dom", "@vladmandic/human"],
     logLevel: "error",
   });
   delete require_.cache?.[require_.resolve(PROBE_OUT)];

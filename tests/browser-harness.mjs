@@ -1553,6 +1553,21 @@ export async function login(page, account) {
 // click it thinks something else would receive. They are decorative and
 // pointer-events-none in effect; the tap does reach the button.
 export async function revealBalance(page, account) {
+  // The balance card is drawn twice as the dashboard arrives: a 32-px
+  // placeholder first, then, about a tenth of a second later, the real
+  // button as a NEW element. A tap aimed at the first lands on an element
+  // that has just gone ("Element is not visible"), which is why B and C
+  // failed at random. No person taps that fast, so wait for the button to
+  // hold still (the same element, the same width, two looks 150 ms apart).
+  await page.waitForFunction(() => {
+    const b = document.querySelector('[aria-label="Show balance"]');
+    if (!b) return false;
+    const w = Math.round(b.getBoundingClientRect().width);
+    const still = window.__showBalanceEl === b && window.__showBalanceW === w;
+    window.__showBalanceEl = b;
+    window.__showBalanceW = w;
+    return still;
+  }, null, { polling: 150, timeout: 15000 });
   await page.getByLabel("Show balance", { exact: true }).click({ force: true });
   await page.getByLabel("Verify with fingerprint and Face ID", { exact: true }).click({ force: true });
   await page.getByLabel("Digit 1", { exact: true }).waitFor({ timeout: 15000 });

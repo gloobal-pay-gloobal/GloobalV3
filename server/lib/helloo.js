@@ -85,6 +85,7 @@ const HellooAsk = require('../models/HellooAsk');
 const HellooCall = require('../models/HellooCall');
 const CreatorItem = require('../models/CreatorItem');
 const hellooOrders = require('./hellooOrders');
+const hellooGroups = require('./hellooGroups');
 
 const REACH_MAX = 7;
 // A price is set on a slider in tenths: 0.10, 0.20 … 7.00 of the owner's
@@ -477,7 +478,7 @@ function createHelloo(deps) {
       out.replyTo = { id: String(m.replyTo.id), from: String(m.replyTo.from || ''), kind: m.replyTo.kind || 'text', preview: m.replyTo.preview || '' };
     }
     if (m.paid?.referenceId) out.paid = { amount: m.paid.amount, currency: m.paid.currency };
-    if (m.kind === 'text') out.text = m.text;
+    if (m.kind === 'text' || m.kind === 'note') out.text = m.text;
     if (m.kind === 'sticker') out.sticker = m.sticker?.id === 'mine' ? { id: 'mine', mood: m.sticker.mood, cup: m.sticker.cup, prop: m.sticker.prop || '', words: m.sticker.words || '' } : { id: m.sticker?.id || '' };
     if (m.kind === 'post') out.post = { id: m.post?.id ? String(m.post.id) : '', author: m.post?.author || '', caption: m.post?.caption || '', media: m.post?.mediaId ? { id: String(m.post.mediaId), kind: m.post.mediaKind || 'photo', url: `/api/social/media/${m.post.mediaId}` } : null };
     if (m.kind === 'call') out.call = { id: m.call?.id ? String(m.call.id) : '', video: Boolean(m.call?.video), status: m.call?.status || '', seconds: m.call?.seconds || 0 };
@@ -545,7 +546,8 @@ function createHelloo(deps) {
   async function unreadFor(conversation, meId) {
     const mine = stateOf(conversation, meId);
     // A call you were part of is not an unread message.
-    const filter = Object.assign(visibleFilter(conversation, meId), { from: { $ne: meId }, deletedAt: null, kind: { $ne: 'call' } });
+    // Nor is a group's own line ("Asha added Ravi").
+    const filter = Object.assign(visibleFilter(conversation, meId), { from: { $ne: meId }, deletedAt: null, kind: { $nin: ['call', 'note'] } });
     const after = [mine.at, mine.clearedAt].filter(Boolean).sort((a, b) => b - a)[0];
     if (after) filter.createdAt = { $gt: after };
     return HellooMessage.countDocuments(filter);
@@ -588,7 +590,54 @@ function createHelloo(deps) {
     return {};
   }
 
+  // A group, as one member sees it: its name where a person would be,
+  // how many are in it, whether you run it, and who wrote last.
+  function groupChatOut(conversation, meId, people, unread) {
+    const g = conversation.group;
+    const mine = stateOf(conversation, meId);
+    const members = (conversation.members || []).length;
+    const admin = hellooGroups.isAdmin(g, meId, sameId);
+    const lastFrom = conversation.last && conversation.last.from;
+    const lastCard = lastFrom ? (people.raw || people).get(String(lastFrom)) : null;
+    return {
+      id: String(conversation._id),
+      muted: Boolean(mine.muted),
+      pinned: Boolean(mine.pinned),
+      savedName: '',
+      private: false,
+      offHome: false,
+      theme: typeof mine.theme === 'string' ? mine.theme : '',
+      side: mine.side === 'shop' ? 'shop' : 'self',
+      group: { kind: g.kind, name: g.name, about: g.about || '', members, admin, invites: admin ? (g.invites || []).length : 0 },
+      person: { accountId: '', gloobalId: '', name: g.name, group: true, kind: g.kind, members },
+      lastAt: conversation.lastMessageAt || conversation.createdAt,
+      last: conversation.last?.kind
+        ? {
+            from: String(conversation.last.from), kind: conversation.last.kind, preview: conversation.last.preview,
+            fromName: sameId(lastFrom, meId) ? 'You' : lastCard ? faced(lastCard, 'self').name : '',
+          }
+        : null,
+      unread: unread || 0,
+      online: false,
+      theyReadAt: null,
+    };
+  }
+
+  // Everyone in a group, admins first, each as their personal self.
+  function groupPeopleOut(conversation, people, meId) {
+    const g = conversation.group || {};
+    const out = (conversation.members || []).map((id) => {
+      const p = personIn(conversation, id, people);
+      return {
+        accountId: String(id), gloobalId: p.gloobalId || '', name: p.name || '', hasPhoto: Boolean(p.hasPhoto), emoji: p.emoji || null,
+        countryIso: p.countryIso || '', admin: hellooGroups.isAdmin(g, id, sameId), you: sameId(id, meId),
+      };
+    });
+    return out.sort((a, b) => Number(b.admin) - Number(a.admin));
+  }
+
   function chatOut(conversation, meId, people, unread) {
+    if (conversation.group) return groupChatOut(conversation, meId, people, unread);
     const otherId = (conversation.members || []).find((m) => !sameId(m, meId)) || meId;
     const other = (conversation.reads || []).find((r) => sameId(r.userId, otherId));
     const mine = stateOf(conversation, meId);
@@ -816,7 +865,9 @@ function createHelloo(deps) {
   // the chat), and never across a block.
   async function announcePresence(userId, online, lastSeenAt) {
     try {
-      const chats = await HellooConversation.find({ members: userId }).select('members').limit(300).lean();
+      // Two-person chats only: being in a group with someone does not tell
+      // them when you are online.
+      const chats = await HellooConversation.find({ members: userId, group: null }).select('members').limit(300).lean();
       const others = chats.map((c) => c.members.find((m) => !sameId(m, userId))).filter((m) => m && sockets.has(String(m)));
       if (!others.length) return;
       // Someone who hides their presence is never announced.
@@ -849,6 +900,11 @@ function createHelloo(deps) {
     // The owner may be typing as one of their shops.
     if (!entry.members.includes(String(userId))) userId = (shopIds || []).find((id) => entry.members.includes(id));
     if (!userId) return;
+    // A group: "typing…" goes to the other members who are online.
+    if (entry.members.length > 2) {
+      for (const m of entry.members) if (m !== String(userId) && sockets.has(m)) emit(m, { type: 'typing', chatId: String(chatId), by: String(userId) });
+      return;
+    }
     const other = entry.members.find((m) => m !== String(userId));
     if (!other || !sockets.has(other)) return;
     const blocks = await blockState(userId, other);
@@ -1053,7 +1109,49 @@ function createHelloo(deps) {
     return new Map(rows.map((r) => [String(r._id), r]));
   }
 
+  // A group: every member hears it live; whoever is not online gets a
+  // notification named after the group, unless they muted it.
+  async function notifyGroupMessage(conversation, message, sender) {
+    const out = messageOut(message);
+    const offline = [];
+    for (const m of conversation.members || []) {
+      const live = emit(m, { type: 'message', message: out });
+      if (!sameId(m, sender._id) && live === 0) offline.push(m);
+    }
+    if (!offline.length || !pushService.isPushEnabled() || message.kind === 'note') return;
+    const g = conversation.group || {};
+    const who = nameOn(sender, storedSide(conversation, sender._id));
+    for (const m of offline) {
+      const theirs = stateOf(conversation, m);
+      if (theirs.muted) continue;
+      try {
+        await pushTo(
+          m,
+          {
+            v: 1,
+            app: 'helloo',
+            category: 'transactional',
+            type: 'helloo_message',
+            chatId: String(conversation._id),
+            title: g.name || 'Helloo group',
+            body: `${who}: ${previewOf(message)}`,
+            url: `/?chat=${encodeURIComponent(String(conversation._id))}&as=self`,
+            // Reply from the notification only where the member may post.
+            replyToken: hellooGroups.canPost(conversation, m, sameId).ok ? replyTokenFor(m, conversation._id, 'self') : undefined,
+            replyApi: process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL || '',
+            tag: `helloo-chat-${String(conversation._id)}`,
+            timestamp: Date.now(),
+          },
+          { category: 'transactional', app: 'helloo' }
+        );
+      } catch (error) {
+        console.error('Helloo group push failed (non-fatal):', error.message);
+      }
+    }
+  }
+
   async function notifyNewMessage(conversation, message, sender) {
+    if (conversation.group) return notifyGroupMessage(conversation, message, sender);
     const otherId = conversation.members.find((m) => !sameId(m, sender._id));
     if (!otherId) return;
     const out = messageOut(message);
@@ -1341,7 +1439,8 @@ function createHelloo(deps) {
             .limit(400)
             .select('fromUserId toUserId amount currency createdAt metadata.sourceAmount metadata.sourceCurrency metadata.destinationAmount metadata.destinationCurrency')
             .lean(),
-          HellooConversation.find({ members: me }).sort({ lastMessageAt: -1 }).limit(200).select('members lastMessageAt').lean(),
+          // People you chatted with one to one (a group does not make a contact).
+          HellooConversation.find({ members: me, group: null }).sort({ lastMessageAt: -1 }).limit(200).select('members lastMessageAt').lean(),
         ]);
 
         const seen = new Map(); // accountId -> extra
@@ -1463,7 +1562,8 @@ function createHelloo(deps) {
           .filter((c) => onMySide(req, c))
           // Pinned chats first, each group newest first.
           .sort((a, b) => Number(Boolean(stateOf(b, me).pinned)) - Number(Boolean(stateOf(a, me).pinned)));
-        const people = await cardsFor(conversations.flatMap((c) => c.members));
+        // A group needs only the card of who wrote last, not every member's.
+        const people = await cardsFor(conversations.flatMap((c) => (c.group ? [c.last && c.last.from, me].filter(Boolean) : c.members)));
         const unread = await Promise.all(conversations.map((c) => unreadFor(c, me)));
         return res.json({ success: true, chats: conversations.map((c, i) => chatOut(c, me, people, unread[i])) });
       } catch (error) {
@@ -1497,6 +1597,327 @@ function createHelloo(deps) {
       } catch (error) {
         console.error('Helloo open chat error:', error);
         return res.status(500).json({ success: false, message: 'Could not open that chat right now.' });
+      }
+    });
+
+    // ── GROUPS AND ANNOUNCEMENT GROUPS (lib/hellooGroups.js) ────────────
+    // A group is a chat with more than two members and a name. People who
+    // already know you are added; anyone else is invited and joins only if
+    // they say yes. Inside a group nobody pays anybody; in an announcement
+    // group only admins post.
+
+    // A group the person asking is in (and, with `admin`, runs).
+    async function groupOf(req, res, { admin = false } = {}) {
+      const conversation = await memberChat(req, res);
+      if (!conversation) return null;
+      if (!conversation.group) {
+        res.status(400).json({ success: false, code: 'not_a_group', message: 'That chat is not a group.' });
+        return null;
+      }
+      if (admin && !hellooGroups.isAdmin(conversation.group, req.authUser._id, sameId)) {
+        res.status(403).json({ success: false, code: 'admins_only', message: 'Only an admin can do that.' });
+        return null;
+      }
+      return conversation;
+    }
+
+    // Does `inviteeId` know `adderId`? Never (they set them to Never), yes
+    // (they let them message free, saved them, or the two paid each other),
+    // or no.
+    async function knownBy(inviteeId, adderId) {
+      const reach = await HellooReach.findOne({ userId: inviteeId }).select('allowed never').lean();
+      if (reach && (reach.never || []).some((a) => sameId(a, adderId))) return 'never';
+      if (reach && (reach.allowed || []).some((a) => sameId(a, adderId))) return true;
+      return knows(inviteeId, adderId);
+    }
+
+    // Names as people say them: "Ravi", "Ravi and Meena", "Ravi, Meena and 3 others".
+    async function namesOf(ids) {
+      const cards = await cardsFor(ids);
+      return ids.map((i) => { const c = (cards.raw || cards).get(String(i)); return { accountId: String(i), name: c ? faced(c, 'self').name : '' }; });
+    }
+    const listNames = (names) => {
+      const n = names.map((x) => x.name || 'someone');
+      if (n.length <= 1) return n[0] || '';
+      if (n.length <= 3) return `${n.slice(0, -1).join(', ')} and ${n[n.length - 1]}`;
+      return `${n.slice(0, 2).join(', ')} and ${n.length - 2} others`;
+    };
+
+    // A line in the group that the server writes ("Asha added Ravi"). It is
+    // the chat's newest message, so the group shows in everyone's chats.
+    async function groupNote(conversationId, byId, text) {
+      const message = (await HellooMessage.create({
+        conversationId, from: byId, kind: 'note', clientId: `note:${new mongoose.Types.ObjectId()}`, text: String(text).slice(0, 300),
+      })).toObject();
+      const after = await HellooConversation.findOneAndUpdate(
+        { _id: conversationId },
+        { $set: { lastMessageAt: message.createdAt, last: { from: byId, kind: 'note', preview: previewOf(message), paidAmount: 0, paidCurrency: '' } } },
+        { returnDocument: 'after', lean: true }
+      );
+      const out = messageOut(message);
+      for (const m of (after && after.members) || []) emit(m, { type: 'message', message: out });
+      return message;
+    }
+
+    // Bring people in: added if they know the adder, invited if not, left
+    // out if they block them or are not on GLOOBAL. Returns who went where.
+    async function placePeople(conversation, adder, raw) {
+      const list = (Array.isArray(raw) ? raw : []).map((x) => String(x || '').trim()).filter(Boolean).slice(0, hellooGroups.ADD_MAX + 1);
+      const candidates = [];
+      for (const r of list) {
+        let u = oid(r) ? await User.findById(r).select('_id').lean() : null;
+        if (!u) u = (await resolveUser(r).catch(() => null))?.user || null;
+        if (!u) { candidates.push({ id: r, exists: false }); continue; }
+        const b = await blockState(adder._id, u._id);
+        candidates.push({ id: u._id, exists: true, blocked: b.iBlocked || b.theyBlocked, known: b.iBlocked || b.theyBlocked ? false : await knownBy(u._id, adder._id) });
+      }
+      const plan = hellooGroups.place({ candidates, adderId: adder._id, members: conversation.members, invites: conversation.group.invites, kind: conversation.group.kind, sameId });
+      if (plan.add.length || plan.invite.length) {
+        const now = new Date();
+        await HellooConversation.updateOne(
+          { _id: conversation._id },
+          {
+            $addToSet: { members: { $each: plan.add } },
+            $push: {
+              reads: { $each: plan.add.map((id) => ({ userId: id, at: null, side: 'self' })) },
+              'group.invites': { $each: plan.invite.map((id) => ({ userId: id, by: adder._id, at: now })) },
+            },
+          }
+        );
+      }
+      memberCache.delete(String(conversation._id));
+      const [added, invited] = await Promise.all([namesOf(plan.add), namesOf(plan.invite)]);
+      const refusedFound = plan.refused.filter((r) => oid(r.id));
+      const refusedNames = new Map((await namesOf(refusedFound.map((r) => r.id))).map((x) => [x.accountId, x.name]));
+      const refused = plan.refused.map((r) => ({ id: String(r.id), reason: r.reason, name: refusedNames.get(String(r.id)) || '' }));
+      if (added.length) await groupNote(conversation._id, adder._id, `${nameOn(adder, 'self')} added ${listNames(added)}`);
+      for (const p of added) emit(p.accountId, { type: 'group', chatId: String(conversation._id), change: 'added' });
+      for (const p of invited) emit(p.accountId, { type: 'group-invite', chatId: String(conversation._id) });
+      return { added, invited, refused };
+    }
+
+    // Make a group or an announcement group, and bring people in.
+    app.post('/api/helloo/groups', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser;
+        const kind = hellooGroups.cleanKind(req.body?.kind);
+        if (!kind) return res.status(400).json({ success: false, code: 'group_kind', message: 'Choose a group or an announcement group.' });
+        const named = hellooGroups.cleanName(req.body?.name);
+        if (!named.ok) return res.status(400).json({ success: false, code: named.code, message: named.message });
+        const about = hellooGroups.cleanAbout(req.body?.about);
+        if (!about.ok) return res.status(400).json({ success: false, code: about.code, message: about.message });
+        const id = new mongoose.Types.ObjectId();
+        const side = req.hellooSide === 'shop' ? 'shop' : 'self';
+        await HellooConversation.create({
+          _id: id,
+          pairKey: `group:${id}`,
+          members: [me._id],
+          reads: [{ userId: me._id, at: new Date(), side }],
+          group: { kind, name: named.name, about: about.about, createdBy: me._id, admins: [me._id], invites: [] },
+        });
+        await groupNote(id, me._id, `${req.hellooName} made the ${hellooGroups.kindWord(kind)} “${named.name}”`);
+        const made = await HellooConversation.findById(id).lean();
+        const placed = await placePeople(made, me, req.body?.people);
+        const fresh = await HellooConversation.findById(id).lean();
+        // The maker's own read mark is moved past the lines just written.
+        await HellooConversation.updateOne({ _id: id }, { $set: { 'reads.$[mine].at': new Date() } }, { arrayFilters: [{ 'mine.userId': me._id }] });
+        const people = await cardsFor([me._id, fresh.last && fresh.last.from].filter(Boolean));
+        return res.status(201).json(Object.assign({ success: true, chat: chatOut(fresh, me._id, people, 0) }, placed));
+      } catch (error) {
+        console.error('Helloo make group error:', error);
+        return res.status(500).json({ success: false, message: 'Could not make that group right now.' });
+      }
+    });
+
+    // The groups you are invited to, newest first.
+    app.get('/api/helloo/groups/invites', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const rows = await HellooConversation.find({ 'group.invites.userId': me }).select('group members').limit(50).lean();
+        const mine = rows.map((r) => ({ r, inv: (r.group.invites || []).find((i) => sameId(i.userId, me)) })).filter((x) => x.inv);
+        const byNames = new Map((await namesOf(mine.map((x) => x.inv.by))).map((x) => [x.accountId, x.name]));
+        const invites = mine
+          .sort((a, b) => new Date(b.inv.at) - new Date(a.inv.at))
+          .map(({ r, inv }) => ({
+            chatId: String(r._id), kind: r.group.kind, name: r.group.name, about: r.group.about || '', members: (r.members || []).length,
+            by: { accountId: String(inv.by), name: byNames.get(String(inv.by)) || '' }, at: inv.at,
+          }));
+        return res.json({ success: true, invites });
+      } catch (error) {
+        console.error('Helloo group invites error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load your invites right now.' });
+      }
+    });
+
+    // Everything about one group: who is in it, who runs it, who is invited
+    // (admins see the invites).
+    app.get('/api/helloo/groups/:id', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const conversation = await groupOf(req, res);
+        if (!conversation) return undefined;
+        const me = req.authUser._id;
+        const g = conversation.group;
+        const admin = hellooGroups.isAdmin(g, me, sameId);
+        const people = await cardsFor(conversation.members);
+        const invites = admin ? await namesOf((g.invites || []).map((i) => i.userId)) : [];
+        return res.json({
+          success: true,
+          group: {
+            id: String(conversation._id), kind: g.kind, name: g.name, about: g.about || '', admin,
+            createdBy: String(g.createdBy), max: hellooGroups.GROUP_MAX[g.kind] || hellooGroups.GROUP_MAX.group,
+            members: groupPeopleOut(conversation, people, me), invites,
+          },
+        });
+      } catch (error) {
+        console.error('Helloo group info error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load that group right now.' });
+      }
+    });
+
+    // Name and what it is about (admins).
+    app.put('/api/helloo/groups/:id', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const conversation = await groupOf(req, res, { admin: true });
+        if (!conversation) return undefined;
+        const set = {};
+        if (req.body?.name !== undefined) {
+          const named = hellooGroups.cleanName(req.body.name);
+          if (!named.ok) return res.status(400).json({ success: false, code: named.code, message: named.message });
+          if (named.name !== conversation.group.name) set['group.name'] = named.name;
+        }
+        if (req.body?.about !== undefined) {
+          const about = hellooGroups.cleanAbout(req.body.about);
+          if (!about.ok) return res.status(400).json({ success: false, code: about.code, message: about.message });
+          set['group.about'] = about.about;
+        }
+        if (Object.keys(set).length) await HellooConversation.updateOne({ _id: conversation._id }, { $set: set });
+        if (set['group.name']) await groupNote(conversation._id, req.authUser._id, `${req.hellooName} renamed it “${set['group.name']}”`);
+        return res.json({ success: true });
+      } catch (error) {
+        console.error('Helloo group edit error:', error);
+        return res.status(500).json({ success: false, message: 'Could not change that group right now.' });
+      }
+    });
+
+    // Bring more people in (admins).
+    app.post('/api/helloo/groups/:id/people', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const conversation = await groupOf(req, res, { admin: true });
+        if (!conversation) return undefined;
+        const placed = await placePeople(conversation, req.authUser, req.body?.people);
+        return res.json(Object.assign({ success: true }, placed));
+      } catch (error) {
+        console.error('Helloo group add error:', error);
+        return res.status(500).json({ success: false, message: 'Could not add them right now.' });
+      }
+    });
+
+    // Take somebody out (admins). Leaving yourself is /leave.
+    app.post('/api/helloo/groups/:id/remove', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const conversation = await groupOf(req, res, { admin: true });
+        if (!conversation) return undefined;
+        const who = oid(req.body?.accountId);
+        if (!who || !conversation.members.some((m) => sameId(m, who))) return res.status(404).json({ success: false, code: 'not_in_group', message: 'They are not in this group.' });
+        if (sameId(who, req.authUser._id)) return res.status(400).json({ success: false, code: 'remove_self', message: 'To go, leave the group.' });
+        const [name] = await namesOf([who]);
+        await HellooConversation.updateOne({ _id: conversation._id }, { $pull: { members: who, reads: { userId: who }, 'group.admins': who } });
+        memberCache.delete(String(conversation._id));
+        await groupNote(conversation._id, req.authUser._id, `${req.hellooName} removed ${name.name || 'someone'}`);
+        emit(who, { type: 'group', chatId: String(conversation._id), change: 'removed' });
+        return res.json({ success: true });
+      } catch (error) {
+        console.error('Helloo group remove error:', error);
+        return res.status(500).json({ success: false, message: 'Could not remove them right now.' });
+      }
+    });
+
+    // Make somebody an admin, or not (admins). A group always keeps one.
+    app.post('/api/helloo/groups/:id/admin', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const conversation = await groupOf(req, res, { admin: true });
+        if (!conversation) return undefined;
+        const who = oid(req.body?.accountId);
+        if (!who || !conversation.members.some((m) => sameId(m, who))) return res.status(404).json({ success: false, code: 'not_in_group', message: 'They are not in this group.' });
+        const on = req.body?.admin !== false;
+        const admins = conversation.group.admins || [];
+        if (!on && admins.length <= 1 && admins.some((a) => sameId(a, who))) return res.status(409).json({ success: false, code: 'last_admin', message: 'A group needs at least one admin.' });
+        await HellooConversation.updateOne({ _id: conversation._id }, on ? { $addToSet: { 'group.admins': who } } : { $pull: { 'group.admins': who } });
+        const [name] = await namesOf([who]);
+        await groupNote(conversation._id, req.authUser._id, on ? `${req.hellooName} made ${name.name || 'someone'} an admin` : `${name.name || 'Someone'} is no longer an admin`);
+        return res.json({ success: true, admin: on });
+      } catch (error) {
+        console.error('Helloo group admin error:', error);
+        return res.status(500).json({ success: false, message: 'Could not change that right now.' });
+      }
+    });
+
+    // Leave. The last admin to go hands the group to whoever has been in
+    // longest.
+    app.post('/api/helloo/groups/:id/leave', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const conversation = await groupOf(req, res);
+        if (!conversation) return undefined;
+        const me = req.authUser._id;
+        const heir = hellooGroups.nextAdmin(conversation.group, conversation.members, me, sameId);
+        await groupNote(conversation._id, me, `${req.hellooName} left`);
+        await HellooConversation.updateOne({ _id: conversation._id }, { $pull: { members: me, reads: { userId: me }, 'group.admins': me } });
+        if (heir) await HellooConversation.updateOne({ _id: conversation._id }, { $addToSet: { 'group.admins': heir } });
+        memberCache.delete(String(conversation._id));
+        return res.json({ success: true });
+      } catch (error) {
+        console.error('Helloo group leave error:', error);
+        return res.status(500).json({ success: false, message: 'Could not leave right now.' });
+      }
+    });
+
+    // Say yes to an invite.
+    app.post('/api/helloo/groups/:id/join', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const id = oid(req.params.id);
+        const conversation = id ? await HellooConversation.findOne({ _id: id, 'group.invites.userId': me }).lean() : null;
+        if (!conversation) return res.status(404).json({ success: false, code: 'invite_gone', message: 'That invite is not here any more.' });
+        const max = hellooGroups.GROUP_MAX[conversation.group.kind] || hellooGroups.GROUP_MAX.group;
+        if ((conversation.members || []).length >= max) return res.status(409).json({ success: false, code: 'group_full', message: 'That group is full.' });
+        await HellooConversation.updateOne(
+          { _id: id, 'group.invites.userId': me },
+          { $pull: { 'group.invites': { userId: me } }, $addToSet: { members: me }, $push: { reads: { userId: me, at: new Date(), side: 'self' } } }
+        );
+        memberCache.delete(String(id));
+        await groupNote(id, me, `${req.hellooName} joined`);
+        const fresh = await HellooConversation.findById(id).lean();
+        const people = await cardsFor([me, fresh.last && fresh.last.from].filter(Boolean));
+        return res.json({ success: true, chat: chatOut(fresh, me, people, 0) });
+      } catch (error) {
+        console.error('Helloo group join error:', error);
+        return res.status(500).json({ success: false, message: 'Could not join right now.' });
+      }
+    });
+
+    // Say no to an invite. Nobody is told.
+    app.post('/api/helloo/groups/:id/decline', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const id = oid(req.params.id);
+        if (id) await HellooConversation.updateOne({ _id: id }, { $pull: { 'group.invites': { userId: req.authUser._id } } });
+        return res.json({ success: true });
+      } catch (error) {
+        console.error('Helloo group decline error:', error);
+        return res.status(500).json({ success: false, message: 'Could not do that right now.' });
+      }
+    });
+
+    // Take an invite back (admins).
+    app.post('/api/helloo/groups/:id/uninvite', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const conversation = await groupOf(req, res, { admin: true });
+        if (!conversation) return undefined;
+        const who = oid(req.body?.accountId);
+        if (who) await HellooConversation.updateOne({ _id: conversation._id }, { $pull: { 'group.invites': { userId: who } } });
+        return res.json({ success: true });
+      } catch (error) {
+        console.error('Helloo group uninvite error:', error);
+        return res.status(500).json({ success: false, message: 'Could not do that right now.' });
       }
     });
 
@@ -1546,9 +1967,12 @@ function createHelloo(deps) {
         if (before && !Number.isNaN(before.getTime())) filter.createdAt = Object.assign({}, filter.createdAt, { $lt: before });
         const rows = await withOriginals(await HellooMessage.find(filter).sort({ createdAt: -1, _id: -1 }).limit(limit).lean());
         const people = await cardsFor(conversation.members);
+        const chat = chatOut(conversation, req.authUser._id, people, 0);
+        // A group: everyone in it, so each message can say who wrote it.
+        if (conversation.group) chat.group.people = groupPeopleOut(conversation, people, req.authUser._id);
         return res.json({
           success: true,
-          chat: chatOut(conversation, req.authUser._id, people, 0),
+          chat,
           messages: rows.reverse().map(messageOut),
           more: rows.length === limit,
         });
@@ -1602,15 +2026,26 @@ function createHelloo(deps) {
         const existing = await HellooMessage.findOne({ conversationId: conversation._id, from: me._id, clientId }).lean();
         if (existing) return res.json({ success: true, message: messageOut(existing), duplicate: true });
 
-        const blocks = await blockState(me._id, otherId);
-        if (blocks.iBlocked) return res.status(403).json({ success: false, code: 'you_blocked', message: 'You blocked this person. Unblock them to send a message.' });
-        if (blocks.theyBlocked) return res.status(403).json({ success: false, code: 'blocked_by_them', message: 'This person is not taking messages from you.' });
+        // A group: no prices and no blocks between members (being in it is
+        // the yes), but an announcement group takes posts from its admins
+        // only, and money is never sent in a group.
+        const inGroup = Boolean(conversation.group);
+        if (inGroup) {
+          const may = hellooGroups.canPost(conversation, me._id, sameId);
+          if (!may.ok) return res.status(may.status).json({ success: false, code: may.code, message: may.message });
+          const what = hellooGroups.canSendKind(body.forwardOf ? 'text' : kind);
+          if (!what.ok) return res.status(what.status).json({ success: false, code: what.code, message: what.message });
+        } else {
+          const blocks = await blockState(me._id, otherId);
+          if (blocks.iBlocked) return res.status(403).json({ success: false, code: 'you_blocked', message: 'You blocked this person. Unblock them to send a message.' });
+          if (blocks.theyBlocked) return res.status(403).json({ success: false, code: 'blocked_by_them', message: 'This person is not taking messages from you.' });
+        }
 
         const doc = { conversationId: conversation._id, from: me._id, kind, clientId };
         let audio = null;
 
         // Your price, their choice. Money sent in the chat is never charged.
-        if (kind !== 'payment' && kind !== 'order') {
+        if (!inGroup && kind !== 'payment' && kind !== 'order') {
           const rule = await reachRule(otherId, me._id, storedSide(conversation, me._id), storedSide(conversation, otherId));
           if (!rule.free) {
             if (rule.never) {
@@ -1662,7 +2097,7 @@ function createHelloo(deps) {
             if (kind === 'video') doc.video = original.video;
             if (kind === 'voice') doc.voice = original.voice;
             if (kind !== 'voice') doc.view = { mode: 'keep', openedAt: null, expiresAt: null, save: Boolean(original.view && original.view.save) };
-            Object.assign(doc, await mediaHome(me, otherId));
+            Object.assign(doc, await mediaHome(me, inGroup ? null : otherId));
           }
         } else if (kind === 'text') {
           const text = String(body.text || '').trim();
@@ -1695,7 +2130,7 @@ function createHelloo(deps) {
           doc.photo = { width: Math.max(0, Math.round(Number(body.width) || 0)), height: Math.max(0, Math.round(Number(body.height) || 0)), mime, bytes: audio.length };
           { const mode = VIEW_MODES.includes(body.view) ? body.view : 'keep'; doc.view = { mode, openedAt: null, expiresAt: mode === 'day' ? new Date(Date.now() + 864e5) : null, save: mode === 'keep' && body.allowSave === true }; }
           if (FX_NAMES.includes(body.fx)) doc.fx = body.fx;
-          Object.assign(doc, await mediaHome(me, otherId));
+          Object.assign(doc, await mediaHome(me, inGroup ? null : otherId));
         } else if (kind === 'video') {
           const mime = String(body.mime || '').split(';')[0].trim().toLowerCase();
           const seconds = Number(body.seconds);
@@ -1712,7 +2147,7 @@ function createHelloo(deps) {
           const mode = VIEW_MODES.includes(body.view) ? body.view : 'keep';
           doc.view = { mode, openedAt: null, expiresAt: mode === 'day' ? new Date(Date.now() + 864e5) : null, save: mode === 'keep' && body.allowSave === true };
           if (FX_NAMES.includes(body.fx)) doc.fx = body.fx;
-          Object.assign(doc, await mediaHome(me, otherId));
+          Object.assign(doc, await mediaHome(me, inGroup ? null : otherId));
         } else if (kind === 'payment') {
           const referenceId = String(body.referenceId || '').trim();
           const txn = referenceId ? await Transaction.findOne({ referenceId }).lean() : null;
@@ -1840,8 +2275,9 @@ function createHelloo(deps) {
           { arrayFilters: [{ 'mine.userId': me._id }] }
         );
 
-        // You wrote to them, so their reply to you is free.
-        allow(me._id, otherId).catch(() => {});
+        // You wrote to them, so their reply to you is free. (Not in a
+        // group: writing there opens nobody's door.)
+        if (!inGroup) allow(me._id, otherId).catch(() => {});
 
         res.status(201).json({ success: true, message: messageOut(message) });
         notifyNewMessage(conversation, message, me).catch((error) => console.error('Helloo notify error:', error));
@@ -1863,7 +2299,8 @@ function createHelloo(deps) {
           { $set: { 'reads.$[mine].at': at } },
           { arrayFilters: [{ 'mine.userId': me }] }
         );
-        const otherId = conversation.members.find((m) => !sameId(m, me));
+        // Blue ticks are for two people; a group says nothing about who read.
+        const otherId = conversation.group ? null : conversation.members.find((m) => !sameId(m, me));
         if (otherId) emit(otherId, { type: 'read', chatId: String(conversation._id), by: String(me), at });
         return res.json({ success: true, at });
       } catch (error) {
@@ -2326,7 +2763,7 @@ function createHelloo(deps) {
         if (hidingChanged) {
           const me = req.authUser._id;
           if (reach.hideLastSeen) {
-            const chats = await HellooConversation.find({ members: me }).select('members').limit(300).lean();
+            const chats = await HellooConversation.find({ members: me, group: null }).select('members').limit(300).lean();
             for (const c of chats) { const other = c.members.find((m) => !sameId(m, me)); if (other && sockets.has(String(other))) emit(other, { type: 'presence', accountId: String(me), online: false, lastSeenAt: null, hidden: true }); }
           } else {
             announcePresence(me, sockets.has(String(me)), null);

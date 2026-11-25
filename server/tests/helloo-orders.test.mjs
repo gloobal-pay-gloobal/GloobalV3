@@ -72,7 +72,8 @@ test("the line the chat list shows", () => {
 
 test("the server: orders are never charged a reach price, only the shop answers, and a payment pays for one order", () => {
   const src = fs.readFileSync(new URL("../lib/helloo.js", import.meta.url), "utf8");
-  assert.match(src, /if \(kind !== 'payment' && kind !== 'order'\) \{\s*const rule = await reachRule/);
+  // (Since groups, 25 Nov: and not inside a group, where nobody pays.)
+  assert.match(src, /if \((?:!inGroup && )?kind !== 'payment' && kind !== 'order'\) \{\s*const rule = await reachRule/);
   assert.match(src, /CreatorItem\.find\(\{ _id: \{ \$in: ids \}, ownerSymbolId: shop\.symbolId \}\)/, "items are read from THIS shop's list");
   assert.match(src, /if \(sameId\(message\.from, me\)\) return res\.status\(403\)\.json\(\{ success: false, code: 'not_the_shop'/);
   assert.match(src, /\{ _id: id, 'order\.status': message\.order\?\.status \|\| 'placed' \}/, "guarded on the status it was read with");

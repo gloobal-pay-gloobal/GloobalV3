@@ -11,8 +11,31 @@ const mongoose = require('mongoose');
 // is one query, not one per row. `reads` holds, per member, the time up to
 // which they have read (unread counts are derived from it) and that member's
 // own mute / pin / clear settings.
+// A group or an announcement group (lib/hellooGroups.js). Null for a chat
+// between two people, so `conversation.group` stays a plain yes/no.
+const groupSchema = new mongoose.Schema(
+  {
+    kind: { type: String, enum: ['group', 'announce'], required: true },
+    name: { type: String, required: true, maxlength: 60 },
+    about: { type: String, default: '', maxlength: 300 },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    admins: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    // People asked to join who are not in yet: they say yes or no.
+    invites: [
+      {
+        _id: false,
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        at: { type: Date, default: Date.now },
+      },
+    ],
+  },
+  { _id: false }
+);
+
 const hellooConversationSchema = new mongoose.Schema(
   {
+    // Two people: their ids (and sides). A group: "group:" and its own id.
     pairKey: { type: String, required: true, unique: true },
     members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }],
     lastMessageAt: { type: Date, default: null },
@@ -66,10 +89,13 @@ const hellooConversationSchema = new mongoose.Schema(
         clearedAt: { type: Date, default: null },
       },
     ],
+    group: { type: groupSchema, default: null },
   },
   { timestamps: true }
 );
 
 hellooConversationSchema.index({ members: 1, lastMessageAt: -1 });
+// "Invited to a group": found by the person invited.
+hellooConversationSchema.index({ 'group.invites.userId': 1 }, { sparse: true });
 
 module.exports = mongoose.model('HellooConversation', hellooConversationSchema);

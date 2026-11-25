@@ -25,5 +25,6 @@ test('across a border: kept in both countries, and it says who in which', async 
   assert.deepEqual(h.sharedWith, [{ userId: 'li', gloobalId: 'LI001', country: 'CN' }]);
 });
 test('the route writes it on every photo and clip, and on every forward', () => {
-  assert.equal(src.split('Object.assign(doc, await mediaHome(me, otherId));').length - 1, 3);
+  // In a group (since 25 Nov) it is the sender's country alone: no one other person.
+  assert.equal((src.match(/Object\.assign\(doc, await mediaHome\(me, (?:inGroup \? null : )?otherId\)\);/g) || []).length, 3);
 });

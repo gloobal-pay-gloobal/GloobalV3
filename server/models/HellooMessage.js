@@ -19,7 +19,8 @@ const hellooMessageSchema = new mongoose.Schema(
   {
     conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'HellooConversation', required: true },
     from: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    kind: { type: String, enum: ['text', 'voice', 'payment', 'photo', 'video', 'call', 'order', 'sticker', 'post'], required: true },
+    // 'note': a line in a group ("Asha added Ravi"), written by the server.
+    kind: { type: String, enum: ['text', 'voice', 'payment', 'photo', 'video', 'call', 'order', 'sticker', 'post', 'note'], required: true },
     // A short video clip (a snap): its bytes are in the chat's media store,
     // like a photo's.
     video: { seconds: { type: Number, default: 0 }, width: { type: Number, default: 0 }, height: { type: Number, default: 0 }, mime: { type: String, default: '' }, bytes: { type: Number, default: 0 } },

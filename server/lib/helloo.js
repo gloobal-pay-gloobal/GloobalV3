@@ -3271,23 +3271,15 @@ function createHelloo(deps) {
       ws.on('error', () => {});
     });
 
-    // Calls left behind (26 Nov): once a minute, a ring past its time is
-    // closed as missed (its timer is lost when the server restarts), and an
-    // answered call whose two people have both been away for two sweeps in
-    // a row is closed as ended. See lib/hellooCallRules.js.
-    const awayCalls = new Set();
+    // Rings left behind (26 Nov): once a minute, a ring past its time is
+    // closed as missed (its timer is lost when the server restarts). An
+    // answered call is never closed here. See lib/hellooCallRules.js.
     const sweep = setInterval(async () => {
       try {
-        const rows = await HellooCall.find({ status: { $in: ['ringing', 'answered'] } }).select('status createdAt callerId calleeId').limit(500).lean();
-        const seen = new Set();
+        const rows = await HellooCall.find({ status: 'ringing', createdAt: { $lt: new Date(Date.now() - RING_MS) } }).select('status createdAt').limit(500).lean();
         for (const row of rows) {
-          const id = String(row._id);
-          const action = hellooCallRules.sweepAction(row, Date.now(), (u) => sockets.has(u), RING_MS, awayCalls.has(id));
-          if (action === 'watch') { seen.add(id); continue; }
-          if (action === 'missed' || action === 'ended') await finishCall(row._id, action, null).catch(() => {});
+          if (hellooCallRules.sweepAction(row, Date.now(), RING_MS) === 'missed') await finishCall(row._id, 'missed', null).catch(() => {});
         }
-        awayCalls.clear();
-        for (const id of seen) awayCalls.add(id);
       } catch (error) { /* the database is busy; next minute */ }
     }, 60000);
     sweep.unref?.();

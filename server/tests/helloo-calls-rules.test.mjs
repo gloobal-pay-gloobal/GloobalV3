@@ -31,19 +31,17 @@ test("an answered call makes them busy only while both people are connected", ()
   assert.equal(r.blocksNewRing({ status: "ended", createdAt: ago(1000) }, NOW, online("a", "b"), RING), false);
 });
 
-test("the sweep: an old ring is missed; an answered call nobody is on ends after two looks", () => {
-  assert.equal(r.sweepAction({ status: "ringing", createdAt: ago(10e3) }, NOW, online(), RING, false), null);
-  assert.equal(r.sweepAction({ status: "ringing", createdAt: ago(3 * 60e3) }, NOW, online(), RING, false), "missed");
-  const row = { status: "answered", createdAt: ago(20 * 60e3), callerId: "a", calleeId: "b" };
-  assert.equal(r.sweepAction(row, NOW, online("a"), RING, true), null, "someone is still there: leave it");
-  assert.equal(r.sweepAction(row, NOW, online(), RING, false), "watch", "both away once: look again");
-  assert.equal(r.sweepAction(row, NOW, online(), RING, true), "ended", "both away twice in a row: it is over");
+test("the sweep: an old ring is missed; an answered call is never closed by it", () => {
+  assert.equal(r.sweepAction({ status: "ringing", createdAt: ago(10e3) }, NOW, RING), null);
+  assert.equal(r.sweepAction({ status: "ringing", createdAt: ago(3 * 60e3) }, NOW, RING), "missed");
+  assert.equal(r.sweepAction({ status: "answered", createdAt: ago(3 * 3600e3), callerId: "a", calleeId: "b" }, NOW, RING), null, "two people out of the app may both lose the server while they talk");
 });
 
 test("helloo.js uses them: for busy, and in a sweep once a minute", () => {
   assert.match(src, /const busy = liveRows\.some\(\(row\) => hellooCallRules\.blocksNewRing\(row, Date\.now\(\), \(id\) => sockets\.has\(id\), RING_MS\)\);/);
-  assert.match(src, /hellooCallRules\.sweepAction\(row, Date\.now\(\), \(u\) => sockets\.has\(u\), RING_MS, awayCalls\.has\(id\)\)/);
-  assert.match(src, /if \(action === 'missed' \|\| action === 'ended'\) await finishCall\(row\._id, action, null\)/);
+  assert.match(src, /HellooCall\.find\(\{ status: 'ringing', createdAt: \{ \$lt: new Date\(Date\.now\(\) - RING_MS\) \} \}\)/, "the sweep looks at rings only");
+  assert.match(src, /if \(hellooCallRules\.sweepAction\(row, Date\.now\(\), RING_MS\) === 'missed'\) await finishCall\(row\._id, 'missed', null\)/);
+  assert.doesNotMatch(src, /finishCall\(row\._id, action, null\)|awayCalls/, "no sweep ends an answered call");
   assert.match(src, /\}, 60000\);\s*\n\s*sweep\.unref\?\.\(\);/);
   assert.doesNotMatch(src, /const busy = await HellooCall\.exists\(/, "the old four-hour busy check is gone");
 });

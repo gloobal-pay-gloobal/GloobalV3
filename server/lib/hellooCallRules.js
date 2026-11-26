@@ -16,8 +16,10 @@
 //     server — a phone that is not connected cannot be on a Helloo call
 //     we can vouch for, so the new call rings (and if they really are on
 //     one, their phone lets it go unanswered, as before);
-//   * the sweep closes a ring that is past its time, and an answered call
-//     whose two people have both been away on two sweeps in a row.
+//   * the sweep closes a ring that is past its time. It never closes an
+//     answered call (26 Nov): two people out of the app can both lose the
+//     server for a while — a phone may drop the connection in the
+//     background — while the call itself goes on phone to phone.
 
 const RING_GRACE_MS = 15 * 1000;
 
@@ -29,17 +31,11 @@ function blocksNewRing(row, nowMs, isOnline, ringMs) {
   return false;
 }
 
-// What the sweep does with a live row: 'missed' (a ring past its time),
-// 'ended' (an answered call nobody has been connected to for two sweeps),
-// 'watch' (both away now — look again next time), or null (leave it).
-function sweepAction(row, nowMs, isOnline, ringMs, awayBefore) {
+// What the sweep does with a live row: 'missed' for a ring past its time,
+// otherwise null — an answered call is left to the two phones to end.
+function sweepAction(row, nowMs, ringMs) {
   if (!row) return null;
   if (row.status === 'ringing') return nowMs - new Date(row.createdAt).getTime() > ringMs + RING_GRACE_MS ? 'missed' : null;
-  if (row.status === 'answered') {
-    const away = !isOnline(String(row.callerId)) && !isOnline(String(row.calleeId));
-    if (!away) return null;
-    return awayBefore ? 'ended' : 'watch';
-  }
   return null;
 }
 

@@ -127,6 +127,11 @@ function GloobalEntryHint({ tone = "soft", children, testid = "gloobal-entry-hin
 // field a third of the way between the top and the keys; the keys; the
 // button. Back top-left, help top-right.
 function GloobalEntryScreen({ testid, mark = <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: 0.5, color: T.ink, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" ID" withSymbols /></span>, title, subtitle, onBack, help = null, modes = null, field, hint = null, note = null, pad, button, footer = null, background = T.bg }) {
+  // With the Mobile / ID switch (logging in), the line saying what to type
+  // sits under the switch, as the name of the side that is chosen; the
+  // header is just the title (26 Nov). Without a switch it stays under the
+  // title.
+  const sub = subtitle ? <div data-testid="gloobal-entry-subtitle" style={{ fontSize: 13, fontWeight: 700, color: T.inkSoft, marginTop: modes ? 2 : 5, lineHeight: 1.4, textAlign: "center", maxWidth: modes ? 300 : undefined, padding: modes ? "0 12px" : 0, flexShrink: 0 }}>{subtitle}</div> : null;
   return <div data-testid={testid} className="gentry" style={{ position: "absolute", inset: 0, zIndex: 30, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, background, color: T.ink, fontFamily: T.fontBody, padding: "calc(12px + env(safe-area-inset-top, 0px)) 16px calc(14px + env(safe-area-inset-bottom, 0px))", boxSizing: "border-box", overflowX: "hidden", overflowY: "auto" }}>
     {/* A short phone (under ~720 px tall): the mark steps aside and the
         gaps close, so the keys and the button still fit without scrolling. */}
@@ -136,9 +141,10 @@ function GloobalEntryScreen({ testid, mark = <span style={{ fontSize: 22, fontWe
     <div style={{ width: "100%", flexShrink: 0, padding: "8px 44px 0", boxSizing: "border-box", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
       {mark ? <span data-testid="gloobal-entry-mark" className="gentry-mark" style={{ display: "inline-flex", marginBottom: 10 }}>{mark}</span> : null}
       <div data-testid="gloobal-entry-title" style={{ fontSize: 23, fontWeight: 900, fontFamily: T.fontDisplay, color: T.ink, letterSpacing: -0.4, lineHeight: 1.15 }}>{title}</div>
-      {subtitle ? <div data-testid="gloobal-entry-subtitle" style={{ fontSize: 13, fontWeight: 700, color: T.inkSoft, marginTop: 5, lineHeight: 1.4 }}>{subtitle}</div> : null}
+      {modes ? null : sub}
     </div>
     {modes}
+    {modes ? sub : null}
     <div style={{ flex: 1, minHeight: 6 }} />
     {field}
     {hint}
@@ -168,7 +174,7 @@ function GloobalPhoneStep({ purpose = "create", mark, title, subtitle, backgroun
     : <GloobalEntryHint>{d.length ? (least === most ? `${least - d.length} more` : "Keep going") : ""}</GloobalEntryHint>;
   return <GloobalEntryScreen testid={testid} mark={mark} background={background} onBack={onBack}
     title={title || (login ? "Log in" : "Create your ID")}
-    subtitle={subtitle || (login ? "With your mobile number · then your PIN" : "Your mobile number · we send it a code")}
+    subtitle={subtitle || (login ? "Your mobile number · then your PIN" : "Your mobile number · we send it a code")}
     modes={modes}
     field={<GloobalPhoneLine digits={d} dialCode={dialCode} country={country} onPick={onPickCountry} color={taken || error ? T.negative : complete ? T.positive : T.ink} testid={lineTestid} countryTestid={countryTestid} card={card} />}
     hint={hint}
@@ -218,7 +224,7 @@ function GloobalSymbolStep({ purpose = "create", value = "", length = 12, onChan
     : <GloobalEntryHint>{chars.length ? `${length - chars.length} more` : (purpose === "create" ? "Tap the symbols, or use the one suggested" : "")}</GloobalEntryHint>;
   return <GloobalEntryScreen testid={testid} mark={mark} background={background} onBack={onBack} help={help}
     title={title || (login ? "Log in" : referral ? "Who invited you?" : "Choose your ID")}
-    subtitle={subtitle || (login ? <>With your 12-symbol <GloobalWordmark suffix=" ID" /> · then your PIN</> : referral ? <>Their <GloobalWordmark suffix=" ID" /> · you can skip this</> : "12 symbols · where your money arrives")}
+    subtitle={subtitle || (login ? "Your 12-symbol ID · then your PIN" : referral ? <>Their <GloobalWordmark suffix=" ID" /> · you can skip this</> : "12 symbols · where your money arrives")}
     modes={modes}
     field={<GloobalSlotsBox value={value} length={length} done={complete && !bad && (!login || found || !error)} bad={bad} testid="gloobal-symbol-slots" label={`${chars.length} of ${length} symbols`} card={card} />}
     hint={hint}

@@ -108,8 +108,16 @@ describe("in a browser", () => {
       await page.getByLabel("Symbol −", { exact: true }).waitFor({ timeout: 10000 });
       assert.match(await page.getByTestId("gloobal-entry-title").textContent(), /^Log in$/);
       assert.equal(await page.getByLabel("Log in", { exact: true }).isDisabled(), true);
+      // (26 Nov) The line saying what to type sits under the switch, not in
+      // the header, and does not say GLOOBAL ID a second time.
+      const top = (id) => page.getByTestId(id).evaluate((n) => n.getBoundingClientRect().top);
+      assert.ok(await top("gloobal-entry-subtitle") > await top("gloobal-login-mode-id"), "under the switch");
+      assert.ok(await top("gloobal-login-mode-id") > await top("gloobal-entry-title"));
+      assert.equal(await page.getByTestId("gloobal-entry-subtitle").textContent(), "Your 12-symbol ID · then your PIN");
       await page.getByTestId("gloobal-login-mode-mobile").click();
       await page.getByTestId("gloobal-phone-step").waitFor({ timeout: 5000 });
+      assert.equal(await page.getByTestId("gloobal-entry-subtitle").textContent(), "Your mobile number · then your PIN");
+      assert.ok(await top("gloobal-entry-subtitle") > await top("gloobal-login-mode-mobile"));
       await page.getByTestId("gloobal-open-register").click();
       await page.waitForFunction(() => /Create your ID/.test(document.querySelector("[data-testid=gloobal-entry-title]")?.textContent || ""), null, { timeout: 5000 });
       assert.deepEqual(errors, []);

@@ -86,6 +86,7 @@ const HellooCall = require('../models/HellooCall');
 const CreatorItem = require('../models/CreatorItem');
 const hellooOrders = require('./hellooOrders');
 const hellooGroups = require('./hellooGroups');
+const hellooCallRules = require('./hellooCallRules');
 
 const REACH_MAX = 7;
 // A price is set on a slider in tenths: 0.10, 0.20 … 7.00 of the owner's
@@ -3006,12 +3007,15 @@ function createHelloo(deps) {
           paidCall = { payerId, payeeId: other._id, perMinute: rule.perMinute, currency: rule.currency, approvedAt: new Date(), maxSeconds: wallet.seconds };
         }
         // One live call per person: a second ring to someone already on a
-        // call is "busy", which reads as a missed call for them.
-        const busy = await HellooCall.exists({
+        // call is "busy", which reads as a missed call for them. A row left
+        // behind (a restart while it rang, two phones gone mid-call) does
+        // not count — see lib/hellooCallRules.js.
+        const liveRows = await HellooCall.find({
           status: { $in: ['ringing', 'answered'] },
           $or: [{ callerId: other._id }, { calleeId: other._id }],
           createdAt: { $gt: new Date(Date.now() - 4 * 3600e3) },
-        });
+        }).select('status createdAt callerId calleeId').lean();
+        const busy = liveRows.some((row) => hellooCallRules.blocksNewRing(row, Date.now(), (id) => sockets.has(id), RING_MS));
         const call = await HellooCall.create(Object.assign({ callerId: me, calleeId: other._id, conversationId: conversation._id, video: Boolean(req.body?.video) }, paidCall ? { paid: paidCall } : {}));
         const people = await cardsFor([me, other._id]);
         const out = callOut(call.toObject(), me, people, conversation);
@@ -3266,6 +3270,27 @@ function createHelloo(deps) {
       });
       ws.on('error', () => {});
     });
+
+    // Calls left behind (26 Nov): once a minute, a ring past its time is
+    // closed as missed (its timer is lost when the server restarts), and an
+    // answered call whose two people have both been away for two sweeps in
+    // a row is closed as ended. See lib/hellooCallRules.js.
+    const awayCalls = new Set();
+    const sweep = setInterval(async () => {
+      try {
+        const rows = await HellooCall.find({ status: { $in: ['ringing', 'answered'] } }).select('status createdAt callerId calleeId').limit(500).lean();
+        const seen = new Set();
+        for (const row of rows) {
+          const id = String(row._id);
+          const action = hellooCallRules.sweepAction(row, Date.now(), (u) => sockets.has(u), RING_MS, awayCalls.has(id));
+          if (action === 'watch') { seen.add(id); continue; }
+          if (action === 'missed' || action === 'ended') await finishCall(row._id, action, null).catch(() => {});
+        }
+        awayCalls.clear();
+        for (const id of seen) awayCalls.add(id);
+      } catch (error) { /* the database is busy; next minute */ }
+    }, 60000);
+    sweep.unref?.();
 
     // Render's proxy drops a socket that is silent for a while; a ping every
     // 25 s keeps it open, and a socket that missed one is gone.

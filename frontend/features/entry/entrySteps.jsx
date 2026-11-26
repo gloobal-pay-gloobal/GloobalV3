@@ -157,6 +157,14 @@ function GloobalEntryScreen({ testid, mark = <span style={{ fontSize: 22, fontWe
 
 // ── THE STEPS ─────────────────────────────────────────────────────────────
 
+// GLOOBAL's own Log in (26 Nov): the header is the GLOOBAL ID mark itself,
+// not the words "Log in" — the button already says that — and, being the
+// title, it stays on short phones too (the separate mark hides there).
+// Helloo passes its own mark and title, so this is GLOOBAL's alone.
+function GloobalLoginHead() {
+  return <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: 0.5 }}><GloobalWordmark suffix=" ID" withSymbols /></span>;
+}
+
 // The mobile number: the first step of making an ID, and one way to log in.
 function GloobalPhoneStep({ purpose = "create", mark, title, subtitle, background, Button = GloobalEntryButton, country, onPickCountry, digits = "", onDigits, onSubmit, busy = false, waking = false, error = "", taken = false, onLoginInstead, modes = null, onBack, footer = null, notice = null, testid = "gloobal-phone-step", lineTestid = "gloobal-phone-line", countryTestid = "gloobal-phone-country", card }) {
   const d = String(digits || "").replace(/\D/g, "");
@@ -172,8 +180,8 @@ function GloobalPhoneStep({ purpose = "create", mark, title, subtitle, backgroun
     : busy ? <GloobalEntryHint>{login ? "Checking…" : "Sending the code…"}</GloobalEntryHint>
     : complete ? <GloobalEntryHint tone="ok">{login ? "Next, your PIN" : "Next, a code to this number"}</GloobalEntryHint>
     : <GloobalEntryHint>{d.length ? (least === most ? `${least - d.length} more` : "Keep going") : ""}</GloobalEntryHint>;
-  return <GloobalEntryScreen testid={testid} mark={mark} background={background} onBack={onBack}
-    title={title || (login ? "Log in" : "Create your ID")}
+  return <GloobalEntryScreen testid={testid} mark={login && !title ? null : mark} background={background} onBack={onBack}
+    title={title || (login ? <GloobalLoginHead /> : "Create your ID")}
     subtitle={subtitle || (login ? "Your mobile number · then your PIN" : "Your mobile number · we send it a code")}
     modes={modes}
     field={<GloobalPhoneLine digits={d} dialCode={dialCode} country={country} onPick={onPickCountry} color={taken || error ? T.negative : complete ? T.positive : T.ink} testid={lineTestid} countryTestid={countryTestid} card={card} />}
@@ -222,8 +230,8 @@ function GloobalSymbolStep({ purpose = "create", value = "", length = 12, onChan
     : login && found ? <GloobalEntryHint tone="ok">Account found · next, your PIN</GloobalEntryHint>
     : complete ? <GloobalEntryHint tone="ok">{login ? "12 symbols · next, your PIN" : referral ? "12 symbols" : "12 symbols · next, who invited you"}</GloobalEntryHint>
     : <GloobalEntryHint>{chars.length ? `${length - chars.length} more` : (purpose === "create" ? "Tap the symbols, or use the one suggested" : "")}</GloobalEntryHint>;
-  return <GloobalEntryScreen testid={testid} mark={mark} background={background} onBack={onBack} help={help}
-    title={title || (login ? "Log in" : referral ? "Who invited you?" : "Choose your ID")}
+  return <GloobalEntryScreen testid={testid} mark={login && !title ? null : mark} background={background} onBack={onBack} help={help}
+    title={title || (login ? <GloobalLoginHead /> : referral ? "Who invited you?" : "Choose your ID")}
     subtitle={subtitle || (login ? "Your 12-symbol ID · then your PIN" : referral ? <>Their <GloobalWordmark suffix=" ID" /> · you can skip this</> : "12 symbols · where your money arrives")}
     modes={modes}
     field={<GloobalSlotsBox value={value} length={length} done={complete && !bad && (!login || found || !error)} bad={bad} testid="gloobal-symbol-slots" label={`${chars.length} of ${length} symbols`} card={card} />}

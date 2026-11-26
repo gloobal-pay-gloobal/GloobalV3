@@ -106,7 +106,10 @@ describe("in a browser", () => {
       await page.getByRole("button", { name: "I am IN" }).click();
       await page.getByLabel("Flip to log in", { exact: true }).click();
       await page.getByLabel("Symbol −", { exact: true }).waitFor({ timeout: 10000 });
-      assert.match(await page.getByTestId("gloobal-entry-title").textContent(), /^Log in$/);
+      // (26 Nov) The header is the GLOOBAL ID mark, once; "Log in" is the button's.
+      assert.equal(await page.getByTestId("gloobal-entry-title").getByLabel("Gloobal ID", { exact: true }).count(), 1);
+      assert.doesNotMatch(await page.getByTestId("gloobal-entry-title").textContent(), /Log in/);
+      assert.equal(await page.getByTestId("gloobal-entry-mark").count(), 0, "not the mark again above it");
       assert.equal(await page.getByLabel("Log in", { exact: true }).isDisabled(), true);
       // (26 Nov) The line saying what to type sits under the switch, not in
       // the header, and does not say GLOOBAL ID a second time.
@@ -118,6 +121,7 @@ describe("in a browser", () => {
       await page.getByTestId("gloobal-phone-step").waitFor({ timeout: 5000 });
       assert.equal(await page.getByTestId("gloobal-entry-subtitle").textContent(), "Your mobile number · then your PIN");
       assert.ok(await top("gloobal-entry-subtitle") > await top("gloobal-login-mode-mobile"));
+      assert.equal(await page.getByTestId("gloobal-entry-title").getByLabel("Gloobal ID", { exact: true }).count(), 1, "by mobile number too");
       await page.getByTestId("gloobal-open-register").click();
       await page.waitForFunction(() => /Create your ID/.test(document.querySelector("[data-testid=gloobal-entry-title]")?.textContent || ""), null, { timeout: 5000 });
       assert.deepEqual(errors, []);

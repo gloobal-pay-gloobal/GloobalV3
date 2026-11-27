@@ -4276,7 +4276,7 @@ function GloobalId() {
     preview={referrerPreview}
     onSkip={() => flipTo("profile")}
     onBack={requestBackFromReferral}
-    help={<HelpCornerButton onClick={() => setHelpSheet("referral")} label="How the referral network works" />}
+    help={<HelpCornerButton onClick={() => setHelpSheet("referral")} label="How inviting works" />}
   />}{
     /* Mounted only while their own stage is active, so leaving the stage
        unmounts the sheet and useBackClose's cleanup pops its history

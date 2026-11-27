@@ -1,6 +1,6 @@
 // src/components/inputs/codeInputs.jsx
 import React, { useState as useState7, useEffect as useEffect7, useRef as useRef5 } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Check as CheckSuggest } from "lucide-react";
 // Ready-made Gloobal IDs to pick instead of tapping out twelve symbols by
 // hand.
 //
@@ -20,7 +20,6 @@ import { RefreshCw } from "lucide-react";
 // keep and is one prop away if it is ever wanted again.
 function SuggestedIdRow({ id, onPick, count = 1 }) {
   const [picking, setPicking] = useState7(false);
-  const [dotColor, setDotColor] = useState7(() => randomLogoFlipColor());
   // Counts taps on the refresh circle, purely so the icon can spin a half
   // turn each time. Not derived from `currentIds`: two rerolls can produce
   // symbol strings that look alike at a glance, and the spin is the only
@@ -31,12 +30,6 @@ function SuggestedIdRow({ id, onPick, count = 1 }) {
   useEffect7(() => {
     setCurrentIds(genSuggestedIdSet(count, (id || "").length || 12, id));
   }, [id, count]);
-  useEffect7(() => {
-    const interval = setInterval(() => {
-      setDotColor((c) => randomLogoFlipColor(c));
-    }, 1400);
-    return () => clearInterval(interval);
-  }, []);
   useEffect7(() => {
     // The ten-second auto-reroll is kept only for the single-suggestion
     // case it was written for. With a row of choices on screen it works
@@ -52,11 +45,6 @@ function SuggestedIdRow({ id, onPick, count = 1 }) {
     }, 1e4);
     return () => clearInterval(refreshInterval);
   }, [picking, count, idLength]);
-  const rowDotColor = (index) => {
-    if (index === 0) return dotColor;
-    const base = LOGO_FLIP_COLORS.indexOf(dotColor);
-    return LOGO_FLIP_COLORS[((base < 0 ? 0 : base) + index) % LOGO_FLIP_COLORS.length];
-  };
   const handleManualRefresh = () => {
     if (picking) return;
     setRefreshTurns((n) => n + 1);
@@ -130,25 +118,26 @@ function SuggestedIdRow({ id, onPick, count = 1 }) {
       color: T.ink,
       fontFamily: T.fontDisplay
     }}
-  ><ColoredGloobalId id={suggestion} /></span><span
+  >{
+    /* (27 Nov) A suggested ID is shown in green, in groups of four like
+       the twelve places above it — the colour of an ID that is good to
+       use — rather than in the shifting rainbow of colours. */
+  }<span data-suggested-id="" style={{ display: "inline-flex", flexWrap: "nowrap", gap: 3 }}>{Array.from(suggestion).map((ch, i) => ch === " " ? null : <span key={i} style={{ color: T.positive, marginLeft: i && i % 4 === 0 ? 7 : 0 }}>{ch}</span>)}</span></span><span
     aria-hidden="true"
     style={{
       flexShrink: 0,
       width: 26,
       height: 26,
       borderRadius: "50%",
-      // Each suggestion gets its own colour, stepped from the one
-      // animated value rather than animated independently: several dots
-      // pulsing to their own clocks is noise, and dots that are always
-      // the same colour make the rows read as one repeated thing rather
-      // than as separate choices. Row 0 is the shared colour exactly, so
-      // the single-suggestion case is unchanged.
-      background: rowDotColor(index),
-      boxShadow: `0 2px 8px ${rowDotColor(index)}55`,
+      // Green with a tick: tap to use this one (27 Nov; it was a colour
+      // stepped per row from one animated value).
+      background: T.positive,
+      boxShadow: `0 2px 8px ${T.positive}55`,
+      display: "flex", alignItems: "center", justifyContent: "center",
       opacity: picking ? 0.6 : 1,
-      transition: "background 0.6s ease, box-shadow 0.6s ease"
+      transition: "opacity 0.3s ease"
     }}
-  /></button>)}</div><button
+  ><CheckSuggest size={15} color="#fff" strokeWidth={3} /></span></button>)}</div><button
     onClick={handleManualRefresh}
     disabled={picking}
     aria-label={count > 1 ? "Get new suggested IDs" : "Get a new suggested ID"}

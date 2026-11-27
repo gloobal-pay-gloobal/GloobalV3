@@ -25,7 +25,11 @@ import {
   RotateCw as HelpChoose,
   ChevronRight as HelpNext,
   Share2 as HelpShare,
-  Volume2 as HelpSpeak
+  Volume2 as HelpSpeak,
+  Gift as HelpGift,
+  UserRound as HelpPerson,
+  Users as HelpPeople,
+  Check as HelpTick
 } from "lucide-react";
 
 // The eight symbols, in DIAL_SYMBOLS order, each with the word to say for
@@ -305,35 +309,43 @@ function SymbolIdHelpSheet({ open, onClose }) {
 }
 
 // ── Referral ID ──────────────────────────────────────────────────────────
+// (27 Nov) Rewritten to be simple: who invited you, what they get (a small
+// thank-you from GLOOBAL — never from you), one example in plain rupees,
+// and a picture of how your own ID works the same way. The percentages are
+// the same as before (1%, 0.5%, 0.25% of cashback).
 function ReferralHelpSheet({ open, onClose }) {
+  const label = (text) => <span style={{ display: "block", fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: T.inkFaint, margin: "16px 2px 8px" }}>{text}</span>;
+  const steps = [
+    ["Your friend gives you their GLOOBAL ID.", HelpShare],
+    ["You type it on this screen.", HelpCreate],
+    ["When you get cashback, GLOOBAL sends your friend a small thank-you.", HelpGift]
+  ];
+  const ladder = [
+    [HelpPerson, "You", "", 0],
+    [HelpPeople, "Friends you invite", "1%", 1],
+    [HelpPeople, "Their friends", "0.5%", 2],
+    [HelpPeople, "One more step", "0.25%", 3]
+  ];
   return <HelpSheet
     open={open}
     onClose={onClose}
-    title="How the referral network works"
-    subtitle="This step is optional. If somebody's GLOOBAL ID brought you to GLOOBAL, type it here — it records them as the person who introduced you, once, at sign-up."
-  ><span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: T.inkFaint, marginBottom: 9 }}>
-      An example
-    </span><div
-    style={{
-      display: "flex",
-      flexDirection: "column",
-      gap: 11,
-      padding: "14px 13px",
-      borderRadius: T.radiusMd,
-      background: T.surface,
-      border: `1px solid ${T.line}`
-    }}
-  ><HelpStepRow n="1">You pay Jio <strong style={{ fontWeight: 800 }}><HelpRupees n={1000} /></strong> for a recharge.</HelpStepRow><HelpStepRow n="2">Jio's Creator Share is 2%, so <strong style={{ fontWeight: 800 }}><HelpRupees n={20} /></strong> comes straight back to you and is planted in My Assets.</HelpStepRow><HelpStepRow n="3">GLOOBAL gives the person whose ID you entered here <strong style={{ fontWeight: 800 }}>1% of your <HelpRupees n={20} /> — <HelpRupees n={0.2} cents /></strong>, the person who invited them 0.5%, and one more 0.25%. Your <HelpRupees n={20} /> stays yours.</HelpStepRow><HelpStepRow n="4" emphasis>Your <HelpRupees n={20} /> is not reduced. Their share is a percentage of what you <em>earn</em>, never a cut of what you pay.</HelpStepRow></div><div
-    style={{
-      marginTop: 12,
-      padding: "12px 13px",
-      borderRadius: T.radiusMd,
-      background: T.accentSoft,
-      border: `1px solid ${T.line}`
-    }}
-  ><span style={{ display: "block", fontSize: 12.5, lineHeight: 1.55, color: T.ink }}>
-      It runs the other way too. Once you are in, your own <GloobalWordmark /> ID is your referral ID — anyone who signs up with it joins your network, and you earn 1% of every Creator Share <em>they</em> get — plus 0.5% from the people they invite, and 0.25% one level further.
-    </span></div><div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}><HelpStepRow n="•">Your network and its earnings live under <strong style={{ fontWeight: 800 }}>My Referral Network</strong> in your profile.</HelpStepRow><HelpStepRow n="•">No code? Tap <strong style={{ fontWeight: 800 }}>Skip for now</strong>. Nothing about your account depends on it.</HelpStepRow></div></HelpSheet>;
+    title="How inviting works"
+    subtitle="Optional · it never costs you anything"
+  ><div data-referral-help="" style={{ display: "flex", flexDirection: "column" }}>
+    {label("Someone told you about GLOOBAL?")}
+    <div style={{ borderRadius: 16, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{steps.map(([text, Icon], i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 13px", borderTop: i ? `1px solid ${T.line}` : "none" }}><span style={{ width: 26, height: 26, borderRadius: "50%", background: T.accent, color: "#fff", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</span><span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: T.ink, lineHeight: 1.4 }}>{text}</span><span style={{ width: 34, height: 34, borderRadius: 11, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={16} color={T.accent} /></span></div>)}</div>
+
+    {label("A simple example")}
+    <div style={{ borderRadius: 16, background: T.surface, boxShadow: T.shadowCard, padding: "13px 13px 14px" }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.inkSoft, textAlign: "center" }}>You recharge <b style={{ color: T.ink }}>₹1,000</b> and get <b style={{ color: T.ink }}>₹20</b> cashback</span><div style={{ display: "flex", gap: 9, marginTop: 11 }}><div style={{ flex: 1, borderRadius: 13, padding: "11px 10px", background: T.positiveSoft || T.accentSoft, textAlign: "center" }}><span style={{ display: "block", fontSize: 11, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.positive }}>You keep</span><span style={{ display: "block", fontSize: 26, fontWeight: 900, color: T.positive, fontFamily: T.fontDisplay, marginTop: 2 }}>₹20</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: T.inkSoft, marginTop: 1, lineHeight: 1.35 }}>all of it, planted in My Assets</span></div><div style={{ flex: 1, borderRadius: 13, padding: "11px 10px", background: T.accentSoft, textAlign: "center" }}><span style={{ display: "block", fontSize: 11, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.accent }}>Your friend gets</span><span style={{ display: "block", fontSize: 26, fontWeight: 900, color: T.accent, fontFamily: T.fontDisplay, marginTop: 2 }}>20 paise</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: T.inkSoft, marginTop: 1 }}>from GLOOBAL</span></div></div></div>
+
+    {label("Your own ID works the same way")}
+    <div style={{ borderRadius: 16, background: T.surface, boxShadow: T.shadowCard, padding: "6px 13px" }}>{ladder.map(([Icon, who, pct, depth], i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", paddingLeft: depth * 7, borderTop: i ? `1px solid ${T.line}` : "none" }}>{depth ? <span aria-hidden="true" style={{ width: 10, height: 14, marginTop: -10, borderLeft: `2px solid ${T.line}`, borderBottom: `2px solid ${T.line}`, borderBottomLeftRadius: 6, flexShrink: 0 }} /> : null}<span style={{ width: 32, height: 32, borderRadius: "50%", background: depth ? T.accentSoft : T.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={16} color={depth ? T.accent : "#fff"} /></span><span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{who}</span>{pct ? <span style={{ fontSize: 12.5, fontWeight: 900, color: T.positive, background: T.positiveSoft || T.accentSoft, borderRadius: 999, padding: "4px 9px", whiteSpace: "nowrap", flexShrink: 0 }}>you get {pct}</span> : null}</div>)}<span style={{ display: "block", fontSize: 12, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45, padding: "4px 0 9px" }}>Of their cashback, paid by GLOOBAL. They keep all of theirs too.</span></div>
+
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>{[
+      <>See your friends and what you earn in <b style={{ color: T.ink }}>My Referral Network</b>, in your profile.</>,
+      <>No one invited you? Tap <b style={{ color: T.ink }}>Skip for now</b>. Nothing depends on it.</>
+    ].map((t, i) => <div key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}><HelpTick size={16} color={T.positive} style={{ flexShrink: 0, marginTop: 2 }} /><span style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5 }}>{t}</span></div>)}</div>
+  </div></HelpSheet>;
 }
 
 // The worked example's rupees, with GEU beside them like every figure in the

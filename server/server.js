@@ -2656,7 +2656,9 @@ app.post('/api/register-symbol', registerLimit, async (req, res) => {
       supplied: cleanReferrer,
       newSymbolId: cleanSymbolId,
       find: (ref) => User.findOne({ symbolId: ref }),
-      findDefault: (ref) => User.findOne({ $or: [{ symbolId: ref }, { referralCode: ref.toUpperCase() }] })
+      findDefault: (ref) => User.findOne({ $or: [{ symbolId: ref }, { referralCode: ref.toUpperCase() }] }),
+      // An invite made with one of a business's shop IDs is the owner's.
+      ownerOf: (shop) => User.findById(shop.shopOwnerId)
     });
     referrerUser = referrerChoice.user;
     const referralByDefault = referrerChoice.byDefault;

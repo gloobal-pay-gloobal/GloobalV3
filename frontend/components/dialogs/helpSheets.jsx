@@ -32,7 +32,9 @@ import {
   Check as HelpTick,
   Contact as HelpContact,
   Smartphone as HelpPhone,
-  ArrowRight as HelpArrow
+  ArrowRight as HelpArrow,
+  Store as HelpStore,
+  Zap as HelpBolt
 } from "lucide-react";
 
 // The eight symbols, in DIAL_SYMBOLS order, each with the word to say for
@@ -312,11 +314,45 @@ function SymbolIdHelpSheet({ open, onClose }) {
 }
 
 // ── Referral ID ──────────────────────────────────────────────────────────
-// (27 Nov) Pictures first, few words: three illustrated steps, the example
-// as coins splitting, and your network drawn as a tree. Same rules as
-// before: whoever invited you gets 1% of your cashback, the one who
-// invited them 0.5%, one more 0.25% — paid by GLOOBAL, never taken from
-// you; your cashback is planted in My Assets.
+// (27 Nov, again) Built around one line of four people, the way the founder
+// worked it out: Asha invited Bharat, Bharat invited Chetan, Chetan invited
+// Divya, and Divya pays. Each step up gets a slice of Divya's Creator Share,
+// 1%, 0.5% and 0.25%, paid by GLOOBAL; Divya keeps all of hers. Two
+// examples on a switch: a person (₹1,000 recharge, ₹20 Creator Share) and a
+// business (₹50,000 electricity, ₹500). A business is a GLOOBAL account like
+// any other, so it is the same rule. The rates are the server's
+// (REFERRAL_LEVEL_RATES in server.js); every figure below is worked out
+// from them, not typed in.
+//
+// The same sheet explains it on My Referral Network ("network"), opening
+// on the business example on the Creator side.
+var REFERRAL_HELP_RATES = [0.01, 0.005, 0.0025];
+var REFERRAL_HELP_LINES = {
+  person: {
+    people: ["Asha", "Bharat", "Chetan", "Divya"],
+    pays: "a ₹1,000 recharge",
+    share: 20,
+    Icon: HelpPhone
+  },
+  business: {
+    people: ["Asha's Salon", "Bharat's Bakery", "Chetan's Café", "Divya's Store"],
+    pays: "₹50,000 for electricity",
+    share: 500,
+    Icon: HelpBolt
+  }
+};
+
+// 20 paise, ₹5, ₹2.50, ₹1,250: rupees as people say them.
+function referralHelpMoney(n) {
+  const paise = Math.round((Number(n) || 0) * 100);
+  if (paise < 100) return `${paise} paise`;
+  const r = paise / 100;
+  return `₹${Number.isInteger(r) ? r.toLocaleString("en-IN") : r.toFixed(2)}`;
+}
+function referralHelpPct(rate) {
+  return `${Number((rate * 100).toFixed(2))}%`;
+}
+
 function ReferralHelpLabel({ children }) {
   return <span style={{ display: "block", fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: T.inkFaint, margin: "18px 2px 9px" }}>{children}</span>;
 }
@@ -326,30 +362,53 @@ function ReferralStepArt({ n, Icon, Badge, tone, soft, caption }) {
   return <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}><div style={{ position: "relative", width: 74, height: 74 }}><span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: soft, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `inset 0 0 0 2px ${tone}22` }}><Icon size={32} color={tone} strokeWidth={2.1} /></span>{Badge ? <span style={{ position: "absolute", right: -2, bottom: 2, width: 28, height: 28, borderRadius: "50%", background: tone, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 10px rgba(0,0,0,0.15)", border: `2px solid ${T.surface}` }}><Badge size={14} color="#fff" strokeWidth={2.6} /></span> : null}<span style={{ position: "absolute", left: -3, top: -3, width: 24, height: 24, borderRadius: "50%", background: T.ink, color: "#fff", fontSize: 11.5, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${T.surface}` }}>{n}</span></div><span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, textAlign: "center", lineHeight: 1.3 }}>{caption}</span></div>;
 }
 
-// ₹20 cashback: a tall green stack you keep, one small purple coin for the
-// friend, from GLOOBAL.
-function ReferralSplitArt() {
-  const coin = (cx, cy, rx, fill, edge, key) => <g key={key}><ellipse cx={cx} cy={cy + 4} rx={rx} ry={rx * 0.32} fill={edge} /><ellipse cx={cx} cy={cy} rx={rx} ry={rx * 0.32} fill={fill} /></g>;
-  const font = { fontFamily: T.fontBody || "inherit" };
-  return <svg viewBox="0 0 320 214" width="100%" role="img" aria-label="On a ₹1,000 recharge you get ₹20 cashback and keep all of it, planted in My Assets; your friend gets 20 paise from GLOOBAL." style={{ display: "block" }}>
-    <rect x="78" y="6" width="164" height="50" rx="14" fill={T.surfaceAlt || T.accentSoft} />
-    <text x="160" y="27" textAnchor="middle" fontSize="13" fontWeight="800" fill={T.ink} style={font}>Recharge ₹1,000</text>
-    <text x="160" y="45" textAnchor="middle" fontSize="11.5" fontWeight="700" fill={T.inkSoft} style={font}>₹20 cashback</text>
-    <path d="M160 56 C160 74 88 70 88 96" fill="none" stroke={T.positive} strokeWidth="3" strokeLinecap="round" />
-    <path d="M160 56 C160 74 236 70 236 104" fill="none" stroke={T.accent} strokeWidth="3" strokeLinecap="round" strokeDasharray="1 7" />
-    {[0, 1, 2, 3, 4, 5].map((k) => coin(88, 148 - k * 9, 34, T.positive, "#0B7A55", k))}
-    <text x="88" y="106" textAnchor="middle" fontSize="15" fontWeight="900" fill="#fff" style={font}>₹</text>
-    <text x="88" y="182" textAnchor="middle" fontSize="24" fontWeight="900" fill={T.positive} style={font}>₹20</text>
-    <text x="88" y="202" textAnchor="middle" fontSize="11.5" fontWeight="700" fill={T.inkSoft} style={font}>you keep</text>
-    {coin(236, 146, 17, T.accent, T.accentDeep || T.ink, "f")}
-    <circle cx="236" cy="117" r="13" fill={T.accentSoft} />
-    <path d="M230 117 h12 M236 111 v12" stroke={T.accent} strokeWidth="2.6" strokeLinecap="round" />
-    <text x="236" y="182" textAnchor="middle" fontSize="20" fontWeight="900" fill={T.accent} style={font}>20 paise</text>
-    <text x="236" y="202" textAnchor="middle" fontSize="11.5" fontWeight="700" fill={T.inkSoft} style={font}>your friend · from GLOOBAL</text>
-  </svg>;
+// A person's round face with their letter, or a shop with the letter on a
+// badge. Green for the one who pays: they keep their whole share.
+function ReferralLineFace({ name, business, payer }) {
+  const tone = payer ? T.positive : T.accent;
+  const soft = payer ? (T.positiveSoft || T.accentSoft) : T.accentSoft;
+  const letter = name.charAt(0);
+  return <span style={{ position: "relative", width: 42, height: 42, flexShrink: 0, borderRadius: business ? 13 : "50%", background: payer ? tone : soft, boxShadow: payer ? "none" : `inset 0 0 0 1.5px ${tone}55`, display: "flex", alignItems: "center", justifyContent: "center" }}>{business
+    ? <HelpStore size={19} color={payer ? "#fff" : tone} strokeWidth={2.2} />
+    : <span style={{ fontSize: 17, fontWeight: 900, color: payer ? "#fff" : tone, fontFamily: T.fontDisplay }}>{letter}</span>}{business ? <span style={{ position: "absolute", right: -5, bottom: -5, width: 19, height: 19, borderRadius: "50%", background: T.ink, color: "#fff", fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${payer ? soft : T.surface}` }}>{letter}</span> : null}</span>;
 }
 
-// You, the friends you invite, their friends, one step more — and what
+// The line itself, top to bottom in the order they joined: each one invited
+// the next, then the last one pays. What each one gets sits on their row.
+function ReferralLine({ kind }) {
+  const line = REFERRAL_HELP_LINES[kind] || REFERRAL_HELP_LINES.person;
+  const business = kind === "business";
+  const [a, b, c, d] = line.people;
+  const cut = (level) => line.share * REFERRAL_HELP_RATES[level];
+  const givers = [[a, b, 2], [b, c, 1], [c, d, 0]];
+  const fromGloobal = REFERRAL_HELP_RATES.reduce((sum, r) => sum + line.share * r, 0);
+  const link = <span aria-hidden="true" style={{ display: "block", width: 2, height: 14, margin: "3px 0 3px 20px", borderRadius: 1, background: T.line }} />;
+  return <div data-referral-line={kind}>
+    <div style={{ display: "flex", flexDirection: "column", padding: "14px 14px 4px" }}>{givers.map(([who, invited, level]) => <div key={who}><div data-referral-level={level + 1} style={{ display: "flex", alignItems: "center", gap: 12 }}><ReferralLineFace name={who} business={business} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{who}</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkSoft, marginTop: 1 }}>invited {invited}</span></span><span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 }}><span data-referral-gets="" style={{ padding: "4px 10px", borderRadius: 999, background: T.positiveSoft || T.accentSoft, color: T.positive, fontSize: 13.5, fontWeight: 900, whiteSpace: "nowrap" }}>+{referralHelpMoney(cut(level))}</span><span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkFaint, marginTop: 3 }}>{referralHelpPct(REFERRAL_HELP_RATES[level])}</span></span></div>{link}</div>)}</div>
+    <div data-referral-payer="" style={{ margin: "0 8px", padding: "12px 12px 11px", borderRadius: 16, background: T.positiveSoft || T.accentSoft }}><div style={{ display: "flex", alignItems: "center", gap: 12 }}><ReferralLineFace name={d} business={business} payer /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{d}</span><span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 700, color: T.inkSoft, marginTop: 2 }}><line.Icon size={12} color={T.inkSoft} strokeWidth={2.4} />pays {line.pays}</span></span><span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 }}><span style={{ fontSize: 22, fontWeight: 900, color: T.positive, fontFamily: T.fontDisplay, lineHeight: 1 }}>{referralHelpMoney(line.share)}</span><span style={{ fontSize: 10.5, fontWeight: 800, color: T.positive, marginTop: 4 }}>Creator Share</span></span></div><span style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 9, paddingTop: 9, borderTop: `1px solid ${T.positive}26`, fontSize: 12, fontWeight: 800, color: T.positive }}><HelpTick size={14} color={T.positive} strokeWidth={2.6} style={{ flexShrink: 0 }} /><span>Keeps all of it, planted in My Assets</span></span></div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px 14px" }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: T.inkSoft, lineHeight: 1.45 }}>The <b style={{ color: T.ink }}>{referralHelpMoney(fromGloobal)}</b> to {business ? "the three shops" : "the three of them"} is paid by GLOOBAL. Nothing is taken from {d}.</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, lineHeight: 1.45 }}>It stops at three steps: whoever invited {a} gets nothing from this.</span>
+    </div>
+  </div>;
+}
+
+// "A person pays" / "A business pays".
+function ReferralLineSwitch({ kind, onPick }) {
+  const tab = (key, label, Icon) => <button
+    key={key}
+    type="button"
+    role="tab"
+    aria-selected={kind === key}
+    data-testid={`referral-help-tab-${key}`}
+    onClick={() => onPick(key)}
+    className="v2-tap"
+    style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 6px", border: "none", borderRadius: 11, cursor: "pointer", background: kind === key ? T.surface : "transparent", boxShadow: kind === key ? T.shadowCard : "none", color: kind === key ? T.ink : T.inkSoft, fontSize: 12.5, fontWeight: 800, fontFamily: "inherit" }}
+  ><Icon size={15} color={kind === key ? T.accent : T.inkFaint} strokeWidth={2.3} />{label}</button>;
+  return <div role="tablist" aria-label="Example" style={{ display: "flex", gap: 4, padding: 4, borderRadius: 14, background: T.line, marginBottom: 10 }}>{tab("person", "A person pays", HelpPerson)}{tab("business", "A business pays", HelpStore)}</div>;
+}
+
+// You, the people you invite, the ones they invite, one step more, and what
 // you get from each level.
 function ReferralTreeArt() {
   const font = { fontFamily: T.fontBody || "inherit" };
@@ -360,7 +419,7 @@ function ReferralTreeArt() {
   const person = (cx, cy, r, color) => <g><circle cx={cx} cy={cy - r * 0.22} r={r * 0.3} fill={color} /><path d={`M${cx - r * 0.5} ${cy + r * 0.52} a${r * 0.5} ${r * 0.42} 0 0 1 ${r} 0`} fill={color} /></g>;
   const line = (x1, y1, x2, y2, k) => <line key={k} x1={x1} y1={y1} x2={x2} y2={y2} stroke={T.line} strokeWidth="1.6" />;
   const pill = (y, pct, words) => <g><rect x="250" y={y - 15} width="66" height="22" rx="11" fill={T.positiveSoft || T.accentSoft} /><text x="283" y={y + 1} textAnchor="middle" fontSize="13" fontWeight="900" fill={T.positive} style={font}>{pct}</text><text x="283" y={y + 21} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={T.inkSoft} style={font}>{words}</text></g>;
-  return <svg viewBox="0 0 320 214" width="100%" role="img" aria-label="Your network: friends you invite give you 1% of their cashback, their friends 0.5%, one step more 0.25%, paid by GLOOBAL." style={{ display: "block" }}>
+  return <svg viewBox="0 0 320 214" width="100%" role="img" aria-label="Your network: people and businesses you invite give you 1% of their Creator Share, the ones they invite 0.5%, one step more 0.25%, paid by GLOOBAL." style={{ display: "block" }}>
     {L1.map((x, i) => line(122, Y[0] + 18, x, Y[1] - 15, "a" + i))}
     {L2.map((x, i) => line(L1[i >> 1], Y[1] + 15, x, Y[2] - 10, "b" + i))}
     {L3.map((x, i) => line(L2[i >> 1], Y[2] + 10, x, Y[3] - 5, "c" + i))}
@@ -370,39 +429,49 @@ function ReferralTreeArt() {
     {L1.map((x, i) => <g key={"n1" + i}><circle cx={x} cy={Y[1]} r="15" fill={T.accentSoft} stroke={T.accent} strokeWidth="1.5" />{person(x, Y[1], 15, T.accent)}</g>)}
     {L2.map((x, i) => <circle key={"n2" + i} cx={x} cy={Y[2]} r="9.5" fill={T.accentSoft} stroke={T.accent} strokeWidth="1.2" />)}
     {L3.map((x, i) => <circle key={"n3" + i} cx={x} cy={Y[3]} r="5" fill={T.accent} opacity="0.45" />)}
-    {pill(Y[1], "1%", "friends")}
-    {pill(Y[2], "0.5%", "their friends")}
+    {pill(Y[1], "1%", "you invite")}
+    {pill(Y[2], "0.5%", "they invite")}
     {pill(Y[3], "0.25%", "next step")}
   </svg>;
 }
 
-function ReferralHelpSheet({ open, onClose }) {
+// context: "signup" — the "Who invited you?" step; "network" — My Referral
+// Network. startOn: which example shows first ("person" or "business").
+function ReferralHelpSheet({ open, onClose, context = "signup", startOn = "person" }) {
+  const [kind, setKind] = useState71(startOn === "business" ? "business" : "person");
+  useEffect67(() => { if (open) setKind(startOn === "business" ? "business" : "person"); }, [open, startOn]);
   const card = { borderRadius: 18, background: T.surface, boxShadow: T.shadowCard };
+  const network = context === "network";
+  const notes = network ? [
+    <>Businesses count too. Invite one with your ID or any of your shop IDs, and it joins your network.</>,
+    <>Settle what you earn to <b style={{ color: T.ink }}>GLOOBAL Bank</b> whenever you like.</>
+  ] : [
+    <>See who joined and what you earn in <b style={{ color: T.ink }}>My Referral Network</b>, in your profile.</>,
+    <>No one invited you? Tap <b style={{ color: T.ink }}>Skip for now</b>. Nothing depends on it.</>
+  ];
   return <HelpSheet
     open={open}
     onClose={onClose}
-    title="How inviting works"
-    subtitle="Optional · it never costs you anything"
-  ><div data-referral-help="" style={{ display: "flex", flexDirection: "column" }}>
-    <ReferralHelpLabel>Someone told you about GLOOBAL?</ReferralHelpLabel>
+    title={network ? "How your network works" : "How inviting works"}
+    subtitle={network ? "Paid by GLOOBAL · free for everyone" : "Optional · it never costs you anything"}
+  ><div data-referral-help={context} style={{ display: "flex", flexDirection: "column" }}>
+    <ReferralHelpLabel>{network ? "Invite someone" : "Someone told you about GLOOBAL?"}</ReferralHelpLabel>
     <div data-referral-steps="" style={{ ...card, padding: "16px 10px 15px", display: "flex", alignItems: "flex-start", gap: 2 }}>
-      <ReferralStepArt n={1} Icon={HelpContact} Badge={HelpShare} tone={T.accent} soft={T.accentSoft} caption="They share their ID" />
+      <ReferralStepArt n={1} Icon={HelpContact} Badge={HelpShare} tone={T.accent} soft={T.accentSoft} caption={network ? "You share your ID" : "They share their ID"} />
       <HelpArrow size={18} color={T.inkFaint} style={{ flexShrink: 0, marginTop: 28 }} />
-      <ReferralStepArt n={2} Icon={HelpPhone} Badge={HelpCreate} tone={T.accent} soft={T.accentSoft} caption="You type it here" />
+      <ReferralStepArt n={2} Icon={HelpPhone} Badge={HelpCreate} tone={T.accent} soft={T.accentSoft} caption={network ? "They join with it" : "You type it here"} />
       <HelpArrow size={18} color={T.inkFaint} style={{ flexShrink: 0, marginTop: 28 }} />
-      <ReferralStepArt n={3} Icon={HelpGift} Badge={HelpTick} tone={T.positive} soft={T.positiveSoft || T.accentSoft} caption="GLOOBAL thanks them" />
+      <ReferralStepArt n={3} Icon={HelpGift} Badge={HelpTick} tone={T.positive} soft={T.positiveSoft || T.accentSoft} caption={network ? "GLOOBAL thanks you" : "GLOOBAL thanks them"} />
     </div>
 
-    <ReferralHelpLabel>A simple example</ReferralHelpLabel>
-    <div data-referral-example="" style={{ ...card, padding: "12px 10px 10px" }}><ReferralSplitArt /><span style={{ display: "block", textAlign: "center", fontSize: 12.5, fontWeight: 800, color: T.positive, marginTop: 2 }}>You keep all of it, planted in My Assets</span></div>
+    <ReferralHelpLabel>Who gets what · an example</ReferralHelpLabel>
+    <ReferralLineSwitch kind={kind} onPick={setKind} />
+    <div data-referral-example="" style={{ ...card, overflow: "hidden" }}><ReferralLine kind={kind} /></div>
 
-    <ReferralHelpLabel>Your own ID works the same way</ReferralHelpLabel>
-    <div data-referral-tree="" style={{ ...card, padding: "14px 10px 12px" }}><ReferralTreeArt /><span style={{ display: "block", textAlign: "center", fontSize: 12, fontWeight: 700, color: T.inkSoft, marginTop: 6, lineHeight: 1.45 }}>Of their cashback, paid by GLOOBAL.<br />They keep all of theirs too.</span></div>
+    <ReferralHelpLabel>{network ? "Your network" : "Your own ID works the same way"}</ReferralHelpLabel>
+    <div data-referral-tree="" style={{ ...card, padding: "14px 10px 12px" }}><ReferralTreeArt /><span style={{ display: "block", textAlign: "center", fontSize: 12, fontWeight: 700, color: T.inkSoft, marginTop: 6, lineHeight: 1.45 }}>Of their Creator Share, paid by GLOOBAL.<br />They keep all of theirs too.</span></div>
 
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>{[
-      <>See your friends and what you earn in <b style={{ color: T.ink }}>My Referral Network</b>, in your profile.</>,
-      <>No one invited you? Tap <b style={{ color: T.ink }}>Skip for now</b>. Nothing depends on it.</>
-    ].map((t, i) => <div key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}><HelpTick size={16} color={T.positive} style={{ flexShrink: 0, marginTop: 2 }} /><span style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5 }}>{t}</span></div>)}</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>{notes.map((t, i) => <div key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}><HelpTick size={16} color={T.positive} style={{ flexShrink: 0, marginTop: 2 }} /><span style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5 }}>{t}</span></div>)}</div>
   </div></HelpSheet>;
 }
 

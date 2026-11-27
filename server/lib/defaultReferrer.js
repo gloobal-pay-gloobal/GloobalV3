@@ -24,19 +24,30 @@ const defaultReferrerRef = (env = process.env) => String(env.DEFAULT_REFERRER ||
 //   newSymbolId   the ID being registered (nobody refers themselves)
 //   find          async (ref) => user | null, looks a member up by GLOOBAL ID
 //   findDefault   async (ref) => user | null, by GLOOBAL ID or short code
+//   ownerOf       async (shop) => user | null, the account that runs a shop
+//                 (optional). A business's further shops each have a GLOOBAL
+//                 ID of their own (lib/shops.js), and nobody signs in to a
+//                 shop: an invite made with a shop's ID is the OWNER's
+//                 invite, so it lands in the owner's network and earns for
+//                 the owner. Without this it went to the shop account, which
+//                 no screen shows and no one can settle.
 // Returns { user, byDefault, missed }:
 //   user       the referrer, or null for none
 //   byDefault  true when `user` is the default rather than the person's choice
 //   missed     true when something was typed and it matched nobody
-async function resolveReferrer({ supplied, newSymbolId, find, findDefault, env = process.env }) {
+async function resolveReferrer({ supplied, newSymbolId, find, findDefault, ownerOf = null, env = process.env }) {
+  const asOwner = async (user) => {
+    if (!user || !user.shopOwnerId || typeof ownerOf !== 'function') return user;
+    return (await ownerOf(user)) || user;
+  };
   const typed = String(supplied || '').trim();
-  const own = typed ? await find(typed) : null;
+  const own = typed ? await asOwner(await find(typed)) : null;
   if (own) return { user: own, byDefault: false, missed: false };
 
   const missed = Boolean(typed);
   const ref = defaultReferrerRef(env);
   if (!ref) return { user: null, byDefault: false, missed };
-  const fallback = await findDefault(ref);
+  const fallback = await asOwner(await findDefault(ref));
   // The default member's own registration (or a setting that names nobody)
   // simply has no referrer.
   if (!fallback || fallback.symbolId === String(newSymbolId || '').trim()) {

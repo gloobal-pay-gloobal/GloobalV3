@@ -1132,7 +1132,6 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [selectedMember, setSelectedMember] = useState14(null);
   const requestCloseSelectedMember = useBackClose(!!selectedMember, () => setSelectedMember(null));
   const [showHowItWorks, setShowHowItWorks] = useState14(false);
-  const requestCloseHowItWorks = useBackClose(showHowItWorks, () => setShowHowItWorks(false));
   const [profileDetail, setProfileDetail] = useState14(null);
   // The live photo check (features/identity/liveFaceCheck.jsx) for a new
   // profile photo, and a different-face change still waiting its 24 hours.
@@ -6048,65 +6047,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   })()}<div style={{ display: "flex", gap: 22, marginTop: 2 }}><div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: T.accent, flexShrink: 0 }} /><div><div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}><GeuFigure amount={selectedMember.earnedToday} currency={ccyCode} lens={displayLens} size={13} /></div><div style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>Today</div></div></div><div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: T.accentSoft, flexShrink: 0 }} /><div><div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}><GeuFigure amount={selectedMember.earned} currency={ccyCode} lens={displayLens} size={13} /></div><div style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>All-time total</div></div></div></div></div></div>}{
     /* Explains how earning through the referral network works — opened
        from the option that replaced the old "Invite a friend" CTA. */
-  }{showHowItWorks && <div
-    onClick={requestCloseHowItWorks}
-    style={{
-      position: "fixed",
-      inset: 0,
-      zIndex: 400,
-      background: "rgba(20,12,36,0.55)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: 24
-    }}
-  ><div
-    onClick={(e) => e.stopPropagation()}
-    style={{
-      position: "relative",
-      width: "100%",
-      maxWidth: 340,
-      background: T.surface,
-      borderRadius: T.radiusLg,
-      boxShadow: T.shadowFloat,
-      padding: "28px 24px 24px",
-      display: "flex",
-      flexDirection: "column",
-      gap: 18
-    }}
-  ><button
-    onClick={requestCloseHowItWorks}
-    aria-label="Close"
-    className="v2-tap"
-    style={{
-      position: "absolute",
-      top: 14,
-      right: 14,
-      width: 32,
-      height: 32,
-      borderRadius: "50%",
-      border: "none",
-      background: T.bg,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer"
-    }}
-  ><X3 size={16} color={T.inkFaint} /></button><div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, textAlign: "center" }}><div style={{ width: 52, height: 52, borderRadius: "50%", background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><Users23 size={24} color={T.accent} /></div><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>
-                How your network works
-              </span></div><div style={{ display: "flex", flexDirection: "column", gap: 16 }}><div style={{ display: "flex", gap: 12 }}><div style={{ width: 34, height: 34, borderRadius: 10, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Share22 size={16} color={T.accent} /></div><div><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Share your link</div><div style={{ fontSize: 12, color: T.inkFaint, lineHeight: 1.4, marginTop: 2 }}>
-                    Your <GloobalWordmark suffix=" ID" /> doubles as your invite link. Send it to friends and family.
-                  </div></div></div><div style={{ display: "flex", gap: 12 }}><div style={{ width: 34, height: 34, borderRadius: 10, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Users23 size={16} color={T.accent} /></div><div><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>They join your network</div><div style={{ fontSize: 12, color: T.inkFaint, lineHeight: 1.4, marginTop: 2 }}>
-                    When they sign up with your ID they show up here, and you get a notification. The dot turns green once they pay.
-                  </div></div></div><div style={{ display: "flex", gap: 12 }}><div style={{ width: 34, height: 34, borderRadius: 10, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Gift size={16} color={T.accent} /></div><div><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>You earn three levels deep</div><div style={{ fontSize: 12, color: T.inkFaint, lineHeight: 1.4, marginTop: 2 }}>
-                    When someone you invited earns a Creator Share, GLOOBAL gives you 1% of it — 0.5% from the people they invite, and 0.25% one level further. Nothing is taken from them. Settle it to your bank whenever you like.
-                  </div></div></div></div><button
-    onClick={requestCloseHowItWorks}
-    className="v2-tap"
-    style={{ border: "none", background: T.gradButton, borderRadius: T.radiusMd, padding: "13px 0", color: "#fff", fontSize: 13.5, fontWeight: 800, cursor: "pointer", boxShadow: `0 8px 20px rgba(${T.accentRgb},0.32)` }}
-  >
-              Got it
-            </button></div></div>}{
+  }{
+    /* How the network works (27 Nov): the same pictures as "How inviting
+       works" at sign-up, the four-person line with what each one gets, a
+       person or a business paying. On the Creator side it opens on the
+       business example. The sheet handles the phone's Back itself. */
+  }<ReferralHelpSheet open={showHowItWorks} onClose={() => setShowHowItWorks(false)} context="network" startOn={shareRole === "merchant" ? "business" : "person"} />{
     /* The receipt behind a tapped row — Home's Recent Activity, the
        Receive sheet's Recent, and Gloobal Bank's Recent Transactions all
        open this one. Last in the tree and zIndex 500 inside the modal

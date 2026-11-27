@@ -309,7 +309,7 @@ describe("the app stops telling people the share is spendable", () => {
     // (27 Nov: the referral sheet was rewritten in simpler words; its
     // example still says where the cashback goes.)
     assert.match(readSource("frontend/components/dialogs/helpSheets.jsx"),
-      />all of it, planted in My Assets</);
+      /all of it, planted in My Assets</);
   });
 
   test("the assets read carries what is actually waiting", () => {

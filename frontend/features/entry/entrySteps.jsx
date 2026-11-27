@@ -157,10 +157,11 @@ function GloobalEntryScreen({ testid, mark = <span style={{ fontSize: 22, fontWe
 
 // ── THE STEPS ─────────────────────────────────────────────────────────────
 
-// GLOOBAL's own Log in (26 Nov): the header is the GLOOBAL ID mark itself,
-// not the words "Log in" — the button already says that — and, being the
-// title, it stays on short phones too (the separate mark hides there).
-// Helloo passes its own mark and title, so this is GLOOBAL's alone.
+// GLOOBAL's own Log in (26 Nov), and making an ID (27 Nov): the header is
+// the GLOOBAL ID mark itself, not words — the button says what happens
+// ("Log in", "Create", "Choose") — and, being the title, it stays on short
+// phones too (the separate mark hides there, and is not shown with it).
+// Helloo's sign-in passes its own title, so it keeps HELLOO.
 function GloobalLoginHead() {
   return <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: 0.5 }}><GloobalWordmark suffix=" ID" withSymbols /></span>;
 }
@@ -180,15 +181,15 @@ function GloobalPhoneStep({ purpose = "create", mark, title, subtitle, backgroun
     : busy ? <GloobalEntryHint>{login ? "Checking…" : "Sending the code…"}</GloobalEntryHint>
     : complete ? <GloobalEntryHint tone="ok">{login ? "Next, your PIN" : "Next, a code to this number"}</GloobalEntryHint>
     : <GloobalEntryHint>{d.length ? (least === most ? `${least - d.length} more` : "Keep going") : ""}</GloobalEntryHint>;
-  return <GloobalEntryScreen testid={testid} mark={login && !title ? null : mark} background={background} onBack={onBack}
-    title={title || (login ? <GloobalLoginHead /> : "Create your ID")}
+  return <GloobalEntryScreen testid={testid} mark={title ? mark : null} background={background} onBack={onBack}
+    title={title || <GloobalLoginHead />}
     subtitle={subtitle || (login ? "Your mobile number · then your PIN" : "Your mobile number · we send it a code")}
     modes={modes}
     field={<GloobalPhoneLine digits={d} dialCode={dialCode} country={country} onPick={onPickCountry} color={taken || error ? T.negative : complete ? T.positive : T.ink} testid={lineTestid} countryTestid={countryTestid} card={card} />}
     hint={hint}
     note={taken && onLoginInstead ? <>{notice}<GloobalEntryLink onClick={onLoginInstead} testid="gloobal-login-instead">Log in instead →</GloobalEntryLink></> : notice}
     pad={<GloobalNumberKeys digits={d} onDigits={onDigits} max={most} disabled={busy} />}
-    button={<Button onClick={go} disabled={!complete || busy || taken} label={login ? "Log in" : "Send code"} testid="gloobal-phone-go">{busy ? (login ? "Checking…" : "Sending…") : login ? "Log in" : "Continue"}</Button>}
+    button={<Button onClick={go} disabled={!complete || busy || taken} label={login ? "Log in" : "Create"} testid="gloobal-phone-go">{busy ? (login ? "Checking…" : "Sending…") : login ? "Log in" : "Create"}</Button>}
     footer={footer} />;
 }
 
@@ -230,15 +231,15 @@ function GloobalSymbolStep({ purpose = "create", value = "", length = 12, onChan
     : login && found ? <GloobalEntryHint tone="ok">Account found · next, your PIN</GloobalEntryHint>
     : complete ? <GloobalEntryHint tone="ok">{login ? "12 symbols · next, your PIN" : referral ? "12 symbols" : "12 symbols · next, who invited you"}</GloobalEntryHint>
     : <GloobalEntryHint>{chars.length ? `${length - chars.length} more` : (purpose === "create" ? "Tap the symbols, or use the one suggested" : "")}</GloobalEntryHint>;
-  return <GloobalEntryScreen testid={testid} mark={login && !title ? null : mark} background={background} onBack={onBack} help={help}
-    title={title || (login ? <GloobalLoginHead /> : referral ? "Who invited you?" : "Choose your ID")}
+  return <GloobalEntryScreen testid={testid} mark={!title && !referral ? null : mark} background={background} onBack={onBack} help={help}
+    title={title || (referral ? "Who invited you?" : <GloobalLoginHead />)}
     subtitle={subtitle || (login ? "Your 12-symbol ID · then your PIN" : referral ? <>Their <GloobalWordmark suffix=" ID" /> · you can skip this</> : "12 symbols · where your money arrives")}
     modes={modes}
     field={<GloobalSlotsBox value={value} length={length} done={complete && !bad && (!login || found || !error)} bad={bad} testid="gloobal-symbol-slots" label={`${chars.length} of ${length} symbols`} card={card} />}
     hint={hint}
     note={suggestion || notice ? <>{notice}{suggestion}</> : null}
     pad={<div style={{ flexShrink: 0, display: "flex", justifyContent: "center", width: "100%" }}><SymbolDialPad value={value} onChange={onChange} length={length} soundWhileTyping /></div>}
-    button={<Button onClick={go} disabled={!complete || busy || (referral && preview && preview.status === "none")} label={login ? "Log in" : "Continue"} testid="gloobal-symbol-go">{busy ? "Checking…" : login ? "Log in" : "Continue"}</Button>}
+    button={<Button onClick={go} disabled={!complete || busy || (referral && preview && preview.status === "none")} label={login ? "Log in" : referral ? "Continue" : "Choose"} testid="gloobal-symbol-go">{busy ? "Checking…" : login ? "Log in" : referral ? "Continue" : "Choose"}</Button>}
     footer={referral && onSkip ? <GloobalEntryLink onClick={onSkip} testid="gloobal-referral-skip">Skip for now</GloobalEntryLink> : footer} />;
 }
 

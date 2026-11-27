@@ -54,25 +54,29 @@ describe("in a browser", () => {
       await page.route("**/api/otp/verify", ok);
       await page.getByRole("button", { name: "I am IN" }).click();
       await page.getByTestId("gloobal-phone-step").waitFor({ timeout: 15000 });
-      assert.match(await page.getByTestId("gloobal-entry-title").textContent(), /Create your ID/);
-      assert.equal(await page.getByLabel("Send code", { exact: true }).isDisabled(), true, "nothing typed yet");
+      // (27 Nov) The header is the GLOOBAL ID mark; the button says Create.
+      assert.equal(await page.getByTestId("gloobal-entry-title").getByLabel("Gloobal ID", { exact: true }).count(), 1);
+      assert.equal(await page.getByTestId("gloobal-entry-mark").count(), 0, "not the mark twice");
+      assert.equal(await page.getByLabel("Create", { exact: true }).isDisabled(), true, "nothing typed yet");
       for (const d of "98765") await page.getByLabel(`Digit ${d}`, { exact: true }).click();
       assert.match(await page.getByTestId("gloobal-entry-hint").textContent(), /^5 more$/);
       // A keyboard types too.
       for (const d of "43210") await page.keyboard.press(d);
       assert.equal((await page.getByTestId("gloobal-phone-line-number").textContent()).trim(), "98765 43210");
       assert.match(await page.getByTestId("gloobal-entry-hint").textContent(), /Next, a code to this number/);
-      await page.getByLabel("Send code", { exact: true }).click();
+      await page.getByLabel("Create", { exact: true }).click();
       await page.getByTestId("gloobal-code-step").waitFor({ timeout: 10000 });
       assert.match(await page.getByTestId("gloobal-entry-subtitle").textContent(), /\+91 98765 43210/);
       assert.equal(await page.getByTestId("gloobal-code-slots").getAttribute("aria-label"), "6 of 6 digits", "the prototype code is filled in");
       await page.getByLabel("Verify code", { exact: true }).click();
       await page.getByTestId("gloobal-symbol-step").waitFor({ timeout: 10000 });
-      assert.match(await page.getByTestId("gloobal-entry-title").textContent(), /Choose your ID/);
+      assert.equal(await page.getByTestId("gloobal-entry-title").getByLabel("Gloobal ID", { exact: true }).count(), 1, "choosing: the GLOOBAL ID mark too");
+      assert.equal(await page.getByTestId("gloobal-entry-subtitle").textContent(), "12 symbols · where your money arrives");
       await page.getByLabel("Use suggested Gloobal ID 1").click();
       await page.waitForFunction(() => document.querySelectorAll("[data-testid=gloobal-symbol-slots] [data-filled]").length === 12, null, { timeout: 5000 });
-      await page.getByLabel("Continue", { exact: true }).click();
+      await page.getByLabel("Choose", { exact: true }).click();
       await page.getByText("Who invited you?").waitFor({ timeout: 10000 });
+      assert.equal(await page.getByLabel("Continue", { exact: true }).count(), 1, "who invited you: still Continue");
       assert.ok(api.calls.some((c) => /\/api\/users\/available/.test(c.path)), "the ID was checked");
       await page.getByTestId("gloobal-referral-skip").click();
       await page.getByRole("button", { name: "Take your photo" }).waitFor({ timeout: 10000 });
@@ -87,7 +91,7 @@ describe("in a browser", () => {
       await page.getByRole("button", { name: "I am IN" }).click();
       await page.getByTestId("gloobal-phone-step").waitFor({ timeout: 15000 });
       for (const d of "9876543210") await page.getByLabel(`Digit ${d}`, { exact: true }).click();
-      await page.getByLabel("Send code", { exact: true }).click();
+      await page.getByLabel("Create", { exact: true }).click();
       await page.getByTestId("gloobal-login-instead").waitFor({ timeout: 10000 });
       assert.match(await page.getByTestId("gloobal-entry-hint").textContent(), /already has a GLOOBAL ID/);
       await page.getByTestId("gloobal-login-instead").click();
@@ -123,7 +127,7 @@ describe("in a browser", () => {
       assert.ok(await top("gloobal-entry-subtitle") > await top("gloobal-login-mode-mobile"));
       assert.equal(await page.getByTestId("gloobal-entry-title").getByLabel("Gloobal ID", { exact: true }).count(), 1, "by mobile number too");
       await page.getByTestId("gloobal-open-register").click();
-      await page.waitForFunction(() => /Create your ID/.test(document.querySelector("[data-testid=gloobal-entry-title]")?.textContent || ""), null, { timeout: 5000 });
+      await page.getByLabel("Create", { exact: true }).waitFor({ timeout: 5000 });
       assert.deepEqual(errors, []);
     } finally { await context.close(); }
   });

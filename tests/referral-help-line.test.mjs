@@ -3,7 +3,7 @@
 // Chetan invited Divya, Divya pays. A person paying (₹1,000 recharge, ₹20
 // Creator Share) or a business paying (₹50,000 electricity, ₹500). The same
 // sheet explains My Referral Network, opening on the business example on the
-// Creator side.
+// Creator side. It is a full screen with a Back button.
 //   node --test tests/referral-help-line.test.mjs
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -26,6 +26,9 @@ describe("the rule on the screen is the server's rule", () => {
     assert.match(help, /const cut = \(level\) => line\.share \* REFERRAL_HELP_RATES\[level\];/);
     assert.match(help, /pays: "a ₹1,000 recharge",\s*share: 20,/);
     assert.match(help, /pays: "₹50,000 for electricity",\s*share: 500,/);
+  });
+  test("it is a full screen with Back, not a sheet (27 Nov)", () => {
+    assert.match(help, /onClose=\{onClose\}\s*fullScreen\s*title=\{network \? "How your network works" : "How inviting works"\}/);
   });
   test("the one who pays keeps all of it", () => {
     assert.match(help, /Keeps all of it, planted in My Assets</);
@@ -66,6 +69,8 @@ describe("in a browser", () => {
       await page.getByText("Who invited you?").waitFor({ timeout: 10000 });
       await page.getByLabel("How inviting works", { exact: true }).click();
       await page.locator('[data-referral-help="signup"]').waitFor({ timeout: 5000 });
+      assert.equal(await page.locator("[data-help-screen]").count(), 1, "a full screen");
+      assert.equal(await page.locator("[data-help-screen]").getByRole("button", { name: "Back" }).count(), 1);
 
       assert.equal(await page.getByTestId("referral-help-tab-person").getAttribute("aria-selected"), "true");
       assert.deepEqual(await amounts(page), ["+5 paise", "+10 paise", "+20 paise"], "Asha, Bharat, Chetan");
@@ -79,6 +84,10 @@ describe("in a browser", () => {
       text = await note(page);
       assert.match(text, /Divya's Store/); assert.match(text, /₹50,000 for electricity/); assert.match(text, /₹500/); assert.match(text, /₹8\.75/);
       assert.match(await page.locator('[data-referral-help="signup"]').innerText(), /Skip for now/);
+      // Back leaves the screen and returns to "Who invited you?".
+      await page.locator("[data-help-screen]").getByRole("button", { name: "Back" }).click();
+      await page.locator("[data-referral-help]").waitFor({ state: "detached", timeout: 5000 });
+      assert.ok(await page.getByText("Who invited you?").isVisible());
       assert.deepEqual(errors, []);
     } finally { await context.close(); }
   });

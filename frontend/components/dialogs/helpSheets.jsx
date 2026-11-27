@@ -99,10 +99,16 @@ function HelpSheet({ open, onClose, title, subtitle, children, fullScreen = fals
       style={{ position: "fixed", inset: 0, zIndex: 600, background: T.bg, display: "flex", flexDirection: "column", fontFamily: T.fontBody }}
     ><div style={{
       display: "flex", alignItems: "center", gap: 12, flexShrink: 0,
-      padding: "calc(16px + env(safe-area-inset-top, 0px)) 18px 10px"
+      padding: "calc(16px + env(safe-area-inset-top, 0px)) 18px 0"
     }}><NavBackButton onClick={requestClose} /><span style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{typeof gloobalText === "function" ? gloobalText(title) : title}</span></div><div style={{
       flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch",
-      padding: "4px 18px calc(28px + env(safe-area-inset-bottom, 0px))"
+      // (27 Nov) What scrolls under the header fades out over the first
+      // 12px instead of being cut in a hard line through the text. The
+      // 14px of padding on top keeps that fade over empty space until
+      // the page is scrolled (it was 10px under the header + 4px here).
+      WebkitMaskImage: "linear-gradient(to bottom, transparent 0, #000 12px)",
+      maskImage: "linear-gradient(to bottom, transparent 0, #000 12px)",
+      padding: "14px 18px calc(28px + env(safe-area-inset-bottom, 0px))"
     }}><div style={{ maxWidth: 480, margin: "0 auto" }}>{subtitle ? <div style={{ fontSize: 12.5, lineHeight: 1.5, color: T.inkSoft, marginBottom: 12 }}>{subtitle}</div> : null}{children}</div></div></div>;
   }
   return <div
@@ -449,9 +455,12 @@ function ReferralHelpSheet({ open, onClose, context = "signup", startOn = "perso
     <>See who joined and what you earn in <b style={{ color: T.ink }}>My Referral Network</b>, in your profile.</>,
     <>No one invited you? Tap <b style={{ color: T.ink }}>Skip for now</b>. Nothing depends on it.</>
   ];
+  // (27 Nov) Its own full screen with a Back button, not a sheet: the
+  // founder's pick of the four ways tried (line, story, calculator, circles).
   return <HelpSheet
     open={open}
     onClose={onClose}
+    fullScreen
     title={network ? "How your network works" : "How inviting works"}
     subtitle={network ? "Paid by GLOOBAL · free for everyone" : "Optional · it never costs you anything"}
   ><div data-referral-help={context} style={{ display: "flex", flexDirection: "column" }}>
